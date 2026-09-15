@@ -207,6 +207,7 @@ def main() -> int:
               "теневой baseline не выдаётся за реальный")
 
         print(f"\n=== 9. Lineage публикатора и доказательства публикации ===")
+        import csv as csv_module
         import sqlite3
         queue = work / "queue" / "content_queue.db"
         queue.parent.mkdir(parents=True, exist_ok=True)
@@ -254,7 +255,6 @@ def main() -> int:
               "без удалённых публикаций вердикт NOT_MEASURED, а не ноль публикаций")
 
         print(f"\n=== 10. Подлинность выгрузки решается сверкой ID, а не путём ===")
-        import csv as csv_module
         vroot = work / "verify"
         vshadow = vroot / "evidence" / "learning_shadow" / "analytics"
         vshadow.mkdir(parents=True)
@@ -362,7 +362,63 @@ def main() -> int:
         check("HONESTY", "FOLLOWERS BASELINE: NOT_MEASURED" not in result.stdout,
               "сбой расчёта не выдаётся за NOT_MEASURED")
 
-        print(f"\n=== 12. Изоляция: репозиторий не загрязнён ===")
+        print(f"\n=== 12. Копия очереди как анкер и ширина окна ===")
+        croot = work / "corroborate"
+        cev = croot / "evidence"
+        old_ids = [f"1812711411477{i:04d}" for i in range(20)]
+        new_ids = old_ids + [f"1812799999477{i:04d}" for i in range(6)]
+
+        def make_journal(path, media_ids):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(path)
+            conn.execute("CREATE TABLE content_items (id INTEGER, created_at TEXT, "
+                         "published_at TEXT, permalink TEXT, type TEXT, status TEXT, "
+                         "instagram_media_id TEXT)")
+            conn.executemany("INSERT INTO content_items VALUES (?,?,?,?,?,?,?)", [
+                (i, "2026-07-01", f"2026-08-{(i % 28) + 1:02d}",
+                 f"https://example.invalid/p/{media}", "REELS", "published", media)
+                for i, media in enumerate(media_ids)])
+            conn.commit()
+            conn.close()
+
+        make_journal(cev / "restore_drill" / "00_content_queue.db", old_ids)
+        make_journal(cev / "learning_shadow" / "content_queue.db", new_ids)
+        canalytics = cev / "learning_shadow" / "analytics"
+        canalytics.mkdir(parents=True, exist_ok=True)
+        # Выгрузка описывает поздние публикации: со старым журналом совпало бы <50%.
+        late_ids = new_ids[16:]
+        with (canalytics / "post_insights.csv").open("w", encoding="utf-8", newline="") as handle:
+            writer = csv_module.DictWriter(handle, fieldnames=[
+                "id", "media_type", "timestamp", "permalink", "reach", "saved", "shares"])
+            writer.writeheader()
+            for index, media in enumerate(late_ids):
+                writer.writerow({"id": media, "media_type": "REELS",
+                                 "timestamp": f"2026-08-{(index % 28) + 1:02d}T04:30:46+0000",
+                                 "permalink": f"https://example.invalid/p/{media}",
+                                 "reach": 1100 + index * 15, "saved": 14 + index,
+                                 "shares": 21 + index})
+
+        cout = work / "corroborated.json"
+        result = run([str(TOOLS / "ingest_insights.py"), "--studio", str(croot),
+                      "--out", str(cout)], expect=(0,))
+        check("CORROBORATE", "подтверждён как копия реальной очереди" in result.stdout,
+              "свежая копия очереди с теневым маркером признана копией, а не симуляцией")
+        corroborated = json.loads(cout.read_text(encoding="utf-8"))
+        check("CORROBORATE", corroborated["evidence_label"] == "REAL",
+              "выгрузка поздних публикаций подтверждена через расширенный анкер")
+
+        result = run([str(TOOLS / "growth_kpi.py"), "--snapshots", str(snapshots),
+                      "--days", "2", "--summary"], expect=(0, 1))
+        check("WINDOW", "DATA SPAN:" in result.stdout and "WINDOW:" in result.stdout,
+              "отчёт показывает диапазон данных и наполненность окна")
+        check("WINDOW", "выводы по нему делать нельзя" in result.stdout,
+              "узкое окно помечается как непригодное для выводов")
+        result = run([str(TOOLS / "growth_kpi.py"), "--snapshots", str(snapshots),
+                      "--days", "0", "--summary"], expect=(0, 1))
+        check("WINDOW", "весь диапазон" in result.stdout,
+              "--days 0 считает по всему доступному диапазону")
+
+        print(f"\n=== 13. Изоляция: репозиторий не загрязнён ===")
         real_snapshots = BASE / "data" / "followers_snapshots.json"
         check("ISOLATION", not real_snapshots.exists() or "SYNTHETIC" not in
               real_snapshots.read_text(encoding="utf-8"),

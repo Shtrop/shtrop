@@ -75,10 +75,18 @@ def parse_dated(items: list[dict]) -> list[dict]:
 
 
 def window(items: list[dict], days: int) -> list[dict]:
+    """Срез последних `days` дней. days <= 0 — весь доступный диапазон."""
     if not items:
         return []
+    if days <= 0:
+        return list(items)
     cutoff = items[-1]["_date"] - dt.timedelta(days=days)
     return [item for item in items if item["_date"] >= cutoff]
+
+
+def with_metrics(posts: list[dict]) -> list[dict]:
+    """Публикации, у которых есть охват: только они участвуют в KPI."""
+    return [post for post in posts if isinstance(post.get("reach"), (int, float))]
 
 
 def total(items: list[dict], field: str) -> float | None:
@@ -181,6 +189,16 @@ def compute(snapshots: list[dict], posts: list[dict], days: int) -> dict:
     }
     metrics["best_posts"], metrics["worst_posts"] = rank_posts(posts, days, snapshots)
     metrics["trend_attribution"] = attribute(posts, days, snapshots)
+
+    # Диапазон данных и наполненность окна: без них число вроде REACH: 376
+    # выглядит как провал охвата, хотя это всего лишь узкое окно.
+    measurable = with_metrics(posts)
+    in_window = with_metrics(window(posts, days))
+    metrics["data_span"] = (snapshots[0]["date"], snapshots[-1]["date"]) if snapshots else None
+    metrics["data_span_days"] = ((snapshots[-1]["_date"] - snapshots[0]["_date"]).days
+                                 if len(snapshots) > 1 else 0)
+    metrics["posts_with_metrics_total"] = len(measurable)
+    metrics["posts_with_metrics_in_window"] = len(in_window)
     return metrics
 
 
@@ -330,8 +348,12 @@ def render(payload: dict, metrics: dict) -> str:
     lines = [
         "# KPI роста Sofia",
         "",
-        f"Окно: {metrics['window_days']} дн. | последний снимок: {metrics['latest_date']} | "
-        f"точек в окне: {metrics['window_points']}",
+        f"Окно: {metrics['window_days'] or 'весь диапазон'} дн. | "
+        f"последний снимок: {metrics['latest_date']} | точек в окне: {metrics['window_points']}",
+        f"Диапазон данных: {metrics['data_span'][0]} — {metrics['data_span'][1]} "
+        f"({metrics['data_span_days']} дн.) | публикаций с метриками: "
+        f"{metrics['posts_with_metrics_in_window']} в окне из "
+        f"{metrics['posts_with_metrics_total']} всего",
         f"Источники данных: {len(sources) or NOT_MEASURED} | доказательность: {evidence}",
     ]
     for source in sources:
@@ -435,9 +457,16 @@ def summary_block(payload: dict, metrics: dict) -> str:
     # Теневые данные не могут подтвердить цикл: механика работает, рост — нет.
     loop = "VERIFIED" if (complete and evidence == "REAL") else "PARTIAL"
     sources = payload.get("sources", [])
+    span = metrics.get("data_span")
+    window_note = (f"WINDOW: {metrics['window_days'] or 'весь диапазон'} дн. | "
+                   f"публикаций с метриками в окне: {metrics['posts_with_metrics_in_window']} "
+                   f"из {metrics['posts_with_metrics_total']}")
     lines = [
         f"EVIDENCE: {evidence}" + ("" if evidence == "REAL"
                                    else "  ← НЕ метрики Instagram, теневой/обучающий контур"),
+        f"DATA SPAN: {span[0]} — {span[1]} ({metrics['data_span_days']} дн.)" if span
+        else "DATA SPAN: NOT_MEASURED",
+        window_note,
         "",
         f"FOLLOWERS BASELINE: {fmt(metrics['followers_baseline'], 0)}",
         f"30D GROWTH: {fmt(metrics['growth_30d'], 0)}",
@@ -457,6 +486,12 @@ def summary_block(payload: dict, metrics: dict) -> str:
     lines += [f"  [{s.get('evidence_label', 'REAL')}] {s['path']}" for s in sources] \
         or [f"  {NOT_MEASURED}"]
     action = next_action(metrics)
+    total_posts = metrics["posts_with_metrics_total"]
+    in_window = metrics["posts_with_metrics_in_window"]
+    if in_window < 3 and total_posts > in_window:
+        action = (f"Окно {metrics['window_days']} дн. захватило только {in_window} публикаций "
+                  f"с метриками из {total_posts} доступных — выводы по нему делать нельзя. "
+                  f"Пересчитать по всему диапазону: --days 0. " + action)
     if evidence != "REAL":
         action = ("Реальных метрик Instagram нет — контент-план по этим данным не меняется. "
                   "Разбор теневых чисел приведён только как проверка механики: " + action)
@@ -530,7 +565,8 @@ def main() -> int:
     base = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--snapshots", type=Path, default=base / "data" / "followers_snapshots.json")
-    parser.add_argument("--days", type=int, default=30, help="окно расчёта в днях")
+    parser.add_argument("--days", type=int, default=30,
+                        help="окно расчёта в днях; 0 — весь доступный диапазон")
     parser.add_argument("--summary", action="store_true", help="короткий блок для отчёта владельцу")
     parser.add_argument("--json", action="store_true", help="выдать метрики как JSON")
     parser.add_argument("--out", type=Path, help="записать отчёт в файл")

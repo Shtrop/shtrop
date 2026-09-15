@@ -25,7 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _console import force_utf8  # noqa: E402
 from ingest_insights import (  # noqa: E402
-    ID_MATCH_THRESHOLD as MATCH_THRESHOLD,
+    CORROBORATION_THRESHOLD, ID_MATCH_THRESHOLD as MATCH_THRESHOLD,
     classify_source, discover, is_post_record, published_ids, read_source,
 )
 
@@ -69,8 +69,20 @@ def main() -> int:
         confirmed |= found
         if evidence == "REAL":
             strict |= found
+    # Теневой журнал, чьи публикации в основном совпадают с реальным, —
+    # копия той же очереди, а не симуляция: его идентификаторы тоже надёжны.
+    for path in journals:
+        if classify_source(path)[0] == "REAL":
+            continue
+        ids = published_ids(path)
+        if ids and strict and len(ids & strict) / min(len(ids), len(strict)) >= CORROBORATION_THRESHOLD:
+            share = len(ids & strict) / min(len(ids), len(strict))
+            print(f"  подтверждён как копия реальной очереди "
+                  f"({round(share * 100, 1)}% общих публикаций): {path}")
+            strict |= ids
+
     print(f"\nВсего уникальных подтверждённых публикаций: {len(confirmed)}")
-    print(f"Из них в журналах без теневых маркеров (строгий анкер): {len(strict)}")
+    print(f"Надёжный анкер (реальные журналы и их подтверждённые копии): {len(strict)}")
     if not confirmed:
         print("\nBLOCKED: подтверждённых публикаций нет — сверка невозможна.")
         return 2

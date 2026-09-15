@@ -56,7 +56,8 @@ def main() -> int:
     parser.add_argument("--studio", type=Path, help="корень студии для сбора Insights")
     parser.add_argument("--snapshots", type=Path, default=BASE / "data" / "followers_snapshots.json")
     parser.add_argument("--memory", type=Path, default=BASE / "data" / "growth_memory.json")
-    parser.add_argument("--days", type=int, default=30, help="окно KPI в днях")
+    parser.add_argument("--days", type=int, default=0,
+                        help="окно KPI в днях; 0 (по умолчанию) — весь доступный диапазон")
     parser.add_argument("--plan-days", type=int, default=14, help="горизонт плана")
     parser.add_argument("--plan-out", type=Path, help="куда записать план (по умолчанию plans/<дата>)")
     parser.add_argument("--account", default="", help="handle аккаунта")

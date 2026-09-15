@@ -365,6 +365,8 @@ PROOF_COLUMNS = ("instagram_media_id", "remote_post_id", "remote_media_id", "ig_
 PROOF_NULLISH = ("", "none", "null", "n/a", "pending", "0")
 # Доля совпавших идентификаторов, с которой выгрузка считается подлинной.
 ID_MATCH_THRESHOLD = 0.5
+# Доля общих публикаций, с которой журнал признаётся копией реальной очереди.
+CORROBORATION_THRESHOLD = 0.5
 
 
 def published_ids(path: Path) -> set[str]:
@@ -544,17 +546,37 @@ def main() -> int:
     sources = [p for p in sources if p.exists()]
     trusted = {path.resolve() for path in args.trust}
 
-    # Анкер доверия: идентификаторы из журналов, которые сами не теневые.
-    # Совпасть с реально опубликованным контентом симуляция не может,
-    # поэтому сверка сильнее эвристики по имени каталога.
+    # Анкер доверия строится в два шага.
+    #
+    # 1. Ядро — журналы без теневых маркеров: их публикации подтверждены.
+    # 2. Журнал с теневым маркером принимается в анкер, только если его
+    #    идентификаторы в основном совпадают с ядром. Это означает, что перед
+    #    нами копия той же реальной очереди (снимок, drill, кросс-чек), а не
+    #    симуляция. Без этого шага свежая копия очереди отбрасывалась бы, и
+    #    вместе с ней — подтверждение самых новых публикаций.
     anchor: set[str] = set()
     if not args.no_auto_verify:
-        for path in sources:
-            if path.suffix.lower() in (".db", ".sqlite", ".sqlite3") \
-                    and classify_source(path)[0] == "REAL":
-                anchor |= published_ids(path)
+        journals = [p for p in sources if p.suffix.lower() in (".db", ".sqlite", ".sqlite3")]
+        core: set[str] = set()
+        for path in journals:
+            if classify_source(path)[0] == "REAL":
+                core |= published_ids(path)
+        anchor |= core
+        if core:
+            for path in journals:
+                if classify_source(path)[0] == "REAL":
+                    continue
+                ids = published_ids(path)
+                if not ids:
+                    continue
+                overlap = len(ids & core) / min(len(ids), len(core))
+                if overlap >= CORROBORATION_THRESHOLD:
+                    anchor |= ids
+                    print(f"Журнал подтверждён как копия реальной очереди "
+                          f"({round(overlap * 100, 1)}% общих публикаций): {path}")
         if anchor:
-            print(f"Анкер сверки: подтверждённых публикаций в реальных журналах: {len(anchor)}")
+            print(f"Анкер сверки: подтверждённых публикаций — {len(anchor)} "
+                  f"(ядро: {len(core)})")
 
     def verify_by_ids(rows: list[dict]) -> tuple[bool, float]:
         ids = [str(row["media_id"]) for row in rows if row.get("media_id")]
