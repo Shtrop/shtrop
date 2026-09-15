@@ -538,6 +538,43 @@ def main() -> int:
         check("DOCTOR", "только HTTPS" in result.stdout,
               "не-HTTPS источник отклоняется до сетевого вызова")
 
+        result = run([str(TOOLS / "publish_doctor.py"),
+                      "--media-url", "https://<домен>/<файл>.mp4"], expect=(1,))
+        check("DOCTOR", "это шаблон, а не адрес" in result.stdout,
+              "незаполненный шаблон URL распознаётся как шаблон, а не сетевая ошибка")
+
+        # Служебные артефакты рендера не должны попадать в нарушители.
+        write_png(media_dir / "mouth_movement_contact_sheet.jpg", 880, 396)
+        result = run([str(TOOLS / "publish_doctor.py"), "--media-dir", str(media_dir)], expect=(1,))
+        check("DOCTOR", "пропущено служебных артефактов" in result.stdout
+              and "mouth_movement_contact_sheet" not in result.stdout,
+              "контактные листы и превью исключены из проверки формата")
+
+        # Низкое разрешение видео — отдельная причина отбраковки. ffprobe в
+        # окружении может отсутствовать, поэтому измеритель подменяется, а
+        # проверяется именно логика порога и рекомендации.
+        import contextlib
+        import io
+        sys.path.insert(0, str(TOOLS))
+        import publish_doctor  # noqa: E402
+
+        video_dir = work / "video_check"
+        video_dir.mkdir()
+        (video_dir / "sofia_reel_low.mp4").write_bytes(b"\x00" * 64)
+        original = publish_doctor.video_size
+        publish_doctor.video_size = lambda path: (480, 832)
+        buffer = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buffer):
+                publish_doctor.analyse_media_format(video_dir)
+        finally:
+            publish_doctor.video_size = original
+        report = buffer.getvalue()
+        check("DOCTOR", "ниже минимума 540" in report,
+              "видео шириной 480 помечено как ниже минимального разрешения")
+        check("DOCTOR", "1080×1920" in report,
+              "целевой рендер закрывает и соотношение, и разрешение сразу")
+
         print(f"\n=== 16. Изоляция: репозиторий не загрязнён ===")
         real_snapshots = BASE / "data" / "followers_snapshots.json"
         check("ISOLATION", not real_snapshots.exists() or "SYNTHETIC" not in

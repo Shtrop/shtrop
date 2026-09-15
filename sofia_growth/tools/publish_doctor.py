@@ -54,6 +54,18 @@ SUPPORTED_RATIOS = {
     "1.91:1 (горизонт)": 1.91,
     "9:16 (Reels и Stories)": 9 / 16,
 }
+# Требования Instagram к разрешению. Соотношение можно выдержать и в 480p,
+# но платформа пережимает или отклоняет такое видео, а гейты качества
+# отбраковывают его ещё раньше.
+MIN_VIDEO_WIDTH = 540
+RECOMMENDED_VIDEO_WIDTH = 1080
+MIN_IMAGE_WIDTH = 320
+RECOMMENDED_IMAGE_WIDTH = 1080
+
+# Служебные артефакты рендера: контент-требования к ним не применяются.
+SERVICE_FILE_HINTS = ("contact_sheet", "contactsheet", "_thumb", "thumbnail",
+                      "preview", "proxy", "_mask", "_debug", "poster")
+
 EVIDENCE_PATTERN = re.compile(r"evidence_missing:([a-z_]+)", re.IGNORECASE)
 GATE_PATTERN = re.compile(r"gate_failed:([a-z_]+)", re.IGNORECASE)
 
@@ -61,6 +73,17 @@ GATE_PATTERN = re.compile(r"gate_failed:([a-z_]+)", re.IGNORECASE)
 def check_media_url(url: str) -> int:
     """Проверяет URL так, как это сделает Instagram при создании контейнера."""
     print(f"\n[A] МЕДИА-ХОСТИНГ — проверка {url}")
+    if any(ch in url for ch in "<>"):
+        print("    FAIL: в URL остались угловые скобки — это шаблон, а не адрес.")
+        print("    Подставить реальный домен и путь к файлу.")
+        return 1
+    try:
+        url.encode("ascii")
+    except UnicodeEncodeError:
+        print("    FAIL: в URL есть не-ASCII символы (кириллица или подобное).")
+        print("    Graph API принимает только ASCII-адреса; интернационализированный")
+        print("    домен нужно записать в punycode, а путь — в percent-encoding.")
+        return 1
     if not url.lower().startswith("https://"):
         print("    FAIL: Graph API принимает только HTTPS. Локальные файлы и HTTP не годятся.")
         return 1
@@ -178,6 +201,12 @@ def analyse_caption_guard(paths: list[Path]) -> int:
             print(f"      evidence_missing:{name:<20} ×{count}")
 
     print("\n    ДИАГНОЗ:")
+    if len(evidence) >= 5:
+        counts = sorted(evidence.values(), reverse=True)
+        print(f"      Отсутствует не отдельный артефакт, а {len(evidence)} ключей сразу "
+              f"(от {counts[-1]} до {counts[0]} раз).")
+        print("      Столько доказательств не может отсутствовать по содержательной")
+        print("      причине: не работает сама цепочка сбора evidence, а не подписи.")
     if evidence and demotions:
         print("      Гейт не получает артефакты, которые требует. Это дефект передачи")
         print("      доказательств между генерацией и гейтом, а не качество текста:")
@@ -253,34 +282,61 @@ def analyse_media_format(media_dir: Path) -> int:
         return 1
 
     suffixes = {".jpg", ".jpeg", ".png", ".mp4", ".mov"}
-    files = [p for p in media_dir.rglob("*") if p.suffix.lower() in suffixes][:200]
+    all_files = [p for p in media_dir.rglob("*") if p.suffix.lower() in suffixes]
+    service = [p for p in all_files if any(hint in p.name.lower() for hint in SERVICE_FILE_HINTS)]
+    files = [p for p in all_files if p not in service][:200]
+    if service:
+        print(f"    пропущено служебных артефактов рендера: {len(service)} "
+              f"(контактные листы, превью, прокси)")
     if not files:
-        print("    NOT_MEASURED: медиафайлов не найдено.")
+        print("    NOT_MEASURED: публикуемых медиафайлов не найдено.")
         return 1
 
-    bad = 0
+    ratio_bad, resolution_bad = 0, 0
     for path in files:
-        size = (video_size(path) if path.suffix.lower() in (".mp4", ".mov")
-                else image_size(path))
+        is_video = path.suffix.lower() in (".mp4", ".mov")
+        size = video_size(path) if is_video else image_size(path)
         if not size:
             continue
         width, height = size
         name, target, delta = nearest_ratio(width, height)
-        if delta <= 0.01:
-            continue
-        bad += 1
-        target_height = round(width / target)
-        target_width = round(height * target)
-        print(f"    {path.name}: {width}×{height} (={width / height:.4f}), "
-              f"ближайшее {name} (={target:.4f}), delta={delta:.4f}")
-        print(f"      под {name}: либо {width}×{target_height}, либо {target_width}×{height}")
-    if bad:
-        print(f"\n    Файлов вне допуска: {bad} из {len(files)}.")
-        print("    ИСПРАВЛЕНИЕ: привести рендер к целевым размерам выше.")
+        problems = []
+        if delta > 0.01:
+            ratio_bad += 1
+            target_height = round(width / target)
+            target_width = round(height * target)
+            problems.append(f"соотношение {width / height:.4f}, ближайшее {name} "
+                            f"(={target:.4f}), delta={delta:.4f}")
+            problems.append(f"под {name}: либо {width}×{target_height}, "
+                            f"либо {target_width}×{height}")
+
+        minimum = MIN_VIDEO_WIDTH if is_video else MIN_IMAGE_WIDTH
+        recommended = RECOMMENDED_VIDEO_WIDTH if is_video else RECOMMENDED_IMAGE_WIDTH
+        if width < minimum:
+            resolution_bad += 1
+            # Рекомендация закрывает оба дефекта сразу: правильное соотношение
+            # в рекомендованном разрешении, а не масштабирование текущей ошибки.
+            scaled_height = round(recommended / target)
+            problems.append(f"ширина {width} ниже минимума {minimum}: платформа отклонит "
+                            f"или сильно пережмёт")
+            problems.append(f"целевой рендер под {name}: {recommended}×{scaled_height}")
+        if problems:
+            print(f"    {path.name}: {width}×{height}")
+            for line in problems:
+                print(f"      {line}")
+
+    print()
+    if resolution_bad:
+        print(f"    Файлов ниже минимального разрешения: {resolution_bad}.")
+        print("    Это отдельная причина отбраковки, независимая от соотношения:")
+        print("    качественные гейты и сама платформа отсеивают низкое разрешение")
+        print("    раньше, чем дело доходит до публикации.")
+    if ratio_bad:
+        print(f"    Файлов с неверным соотношением: {ratio_bad}.")
         print("    Для Reels обязательно 9:16 — иначе нефолловерского охвата не будет.")
-    else:
-        print(f"    PASS: все {len(files)} проверенных файлов в допуске.")
-    return 1 if bad else 0
+    if not (ratio_bad or resolution_bad):
+        print(f"    PASS: все {len(files)} публикуемых файлов в допуске.")
+    return 1 if (ratio_bad or resolution_bad) else 0
 
 
 def main() -> int:
