@@ -48,8 +48,16 @@ class VramSampler(threading.Thread):
         self._stop.set()
 
 
+def torchrun_prefix() -> list:
+    """torchrun из PATH, иначе python -m torch.distributed.run (Windows без Scripts в PATH)."""
+    exe = shutil.which("torchrun")
+    if exe:
+        return [exe]
+    return [sys.executable, "-m", "torch.distributed.run"]
+
+
 def build_cmd(a) -> list:
-    cmd = ["torchrun"]
+    cmd = torchrun_prefix()
     if a.nproc > 1:
         cmd += [f"--nproc_per_node={a.nproc}"]
     cmd += [
@@ -92,6 +100,23 @@ def main():
     p.add_argument("--dry_run", action="store_true", help="только показать команду и план")
     a = p.parse_args()
 
+    repo = os.path.abspath(a.repo)
+    demo = os.path.join(repo, "run_demo_avatar_single_audio_to_video.py")
+    if not os.path.isdir(repo):
+        print(f"ОШИБКА: каталог репозитория не найден: {repo}\n"
+              f"Сначала выполните setup.ps1 / setup.sh — он клонирует LongCat-Video и патчит его.",
+              file=sys.stderr)
+        return 2
+    if not os.path.isfile(demo):
+        print(f"ОШИБКА: в {repo} нет run_demo_avatar_single_audio_to_video.py — "
+              f"это не клон LongCat-Video.", file=sys.stderr)
+        return 2
+    ckpt = os.path.abspath(a.checkpoint_dir)
+    if not a.dry_run and not os.path.isdir(ckpt):
+        print(f"ОШИБКА: каталог весов не найден: {ckpt}\n"
+              f"Скачайте их: setup.ps1 -Weights (или setup.sh --weights).", file=sys.stderr)
+        return 2
+
     cmd = build_cmd(a)
     vid_s = video_seconds(a.segments)
     print("repo        :", a.repo)
@@ -104,7 +129,15 @@ def main():
     sampler = VramSampler()
     sampler.start()
     t0 = time.time()
-    rc = subprocess.run(cmd, cwd=a.repo).returncode
+    try:
+        rc = subprocess.run(cmd, cwd=repo).returncode
+    except (FileNotFoundError, NotADirectoryError, OSError) as e:
+        sampler.stop()
+        print(f"ОШИБКА запуска: {type(e).__name__}: {e}\n"
+              f"команда: {' '.join(cmd)}\ncwd: {repo}\n"
+              f"Проверьте, что torch установлен в текущем интерпретаторе "
+              f"({sys.executable}).", file=sys.stderr)
+        return 2
     wall = time.time() - t0
     sampler.stop()
     sampler.join(timeout=5)
