@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Расчёт KPI роста подписчиков Sofia по фактическим снимкам аккаунта.
+"""KPI роста подписчиков Sofia по фактическим Instagram Insights.
 
-Только чтение. Скрипт не ходит в Instagram, не публикует и не пишет в
-canonical state студии. Он считает KPI из снимков, которые выгрузил
-analytics-контур, и честно помечает отсутствующие данные как NOT_MEASURED.
+Только чтение и расчёт. Не ходит в сеть, не публикует, не пишет в canonical
+state студии. Считает то, что реально измерено, и честно перечисляет то, что
+измерить нечем.
 
 Правило: отсутствующая метрика никогда не превращается в 0.
 
+Вход — `followers_snapshots.json` (schema 2.0 от ingest_insights.py либо
+схема 1.0 из ручного шаблона).
+
 Пример:
-    python3 sofia_growth/tools/growth_kpi.py --snapshots sofia_growth/data/followers_snapshots.json
+    python growth_kpi.py --snapshots sofia_growth/data/followers_snapshots.json --summary
 """
 
 from __future__ import annotations
@@ -21,63 +24,85 @@ from pathlib import Path
 
 NOT_MEASURED = "NOT_MEASURED"
 
-# Ориентиры 2026 из открытых источников (не из аккаунта Sofia).
-SENDS_PER_REACH_STRONG = 0.01   # 1% — сильный показатель
-SENDS_PER_REACH_VIRAL = 0.03    # 3%+ — разнос через DM
-# Реалистичный таймлайн: 1k за 60-90 дней при работающем цикле.
+# Внешние ориентиры 2026 (открытые источники, не данные Sofia).
+SENDS_PER_REACH_STRONG = 0.01
+SENDS_PER_REACH_VIRAL = 0.03
+PROFILE_CONVERSION_WEAK = 0.10
+FOLLOWS_PER_1K_REACH_WEAK = 5.0
 TARGET_MILESTONES = (1000, 10000, 50000)
 
+# KPI, которые движок обязан либо посчитать, либо назвать NOT_MEASURED.
+KPI_REGISTRY = (
+    "followers_baseline", "growth_7d", "growth_30d", "growth_per_day",
+    "reach", "follows_per_1k_reach", "profile_to_follow_conversion",
+    "sends_per_reach", "saves_per_reach", "views", "watch_time",
+    "average_watch_time", "retention", "unfollows", "net_follower_change",
+    "best_posts", "worst_posts", "trend_attribution",
+)
 
-def load_snapshots(path: Path) -> list[dict]:
+
+def load(path: Path) -> dict:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        sys.exit(f"BLOCKED: файл снимков не найден: {path}\n"
-                 f"Выгрузить его из analytics-контура студии или заполнить по шаблону "
-                 f"followers_snapshots.template.json. Без реальных данных KPI = NOT_MEASURED.")
+        sys.exit(
+            f"BLOCKED: файл снимков не найден: {path}\n"
+            "Сначала собрать реальные данные: tools/ingest_insights.py --studio <корень студии>.\n"
+            "Без реальных данных все KPI остаются NOT_MEASURED; нули не подставляются."
+        )
     except json.JSONDecodeError as exc:
         sys.exit(f"FAIL: некорректный JSON в {path}: {exc}")
+    if isinstance(payload, list):
+        payload = {"snapshots": payload}
+    return payload
 
-    snapshots = payload.get("snapshots", payload if isinstance(payload, list) else [])
+
+def parse_dated(items: list[dict]) -> list[dict]:
     dated = []
-    for snapshot in snapshots:
-        raw_date = snapshot.get("date")
+    for item in items:
         try:
-            snapshot["_date"] = dt.date.fromisoformat(raw_date)
-        except (TypeError, ValueError):
-            print(f"WARN: пропущен снимок без корректной даты: {raw_date!r}", file=sys.stderr)
+            item = dict(item)
+            item["_date"] = dt.date.fromisoformat(item["date"])
+        except (KeyError, TypeError, ValueError):
             continue
-        dated.append(snapshot)
-    dated.sort(key=lambda item: item["_date"])
+        dated.append(item)
+    dated.sort(key=lambda entry: entry["_date"])
     return dated
 
 
-def window(snapshots: list[dict], days: int) -> list[dict]:
-    if not snapshots:
+def window(items: list[dict], days: int) -> list[dict]:
+    if not items:
         return []
-    last = snapshots[-1]["_date"]
-    cutoff = last - dt.timedelta(days=days)
-    return [item for item in snapshots if item["_date"] >= cutoff]
+    cutoff = items[-1]["_date"] - dt.timedelta(days=days)
+    return [item for item in items if item["_date"] >= cutoff]
 
 
-def total(snapshots: list[dict], field: str) -> float | None:
-    values = [item[field] for item in snapshots if isinstance(item.get(field), (int, float))]
+def total(items: list[dict], field: str) -> float | None:
+    values = [i[field] for i in items if isinstance(i.get(field), (int, float))]
     return sum(values) if values else None
 
 
+def mean(items: list[dict], field: str) -> float | None:
+    values = [i[field] for i in items if isinstance(i.get(field), (int, float))]
+    return sum(values) / len(values) if values else None
+
+
 def ratio(numerator: float | None, denominator: float | None) -> float | None:
-    if numerator is None or not denominator:
+    if numerator is None or denominator in (None, 0):
         return None
     return numerator / denominator
 
 
-def fmt(value: float | None, suffix: str = "", digits: int = 2) -> str:
-    return NOT_MEASURED if value is None else f"{round(value, digits)}{suffix}"
+def fmt(value: float | None, digits: int = 2, suffix: str = "") -> str:
+    return NOT_MEASURED if value is None else f"{round(value, digits):g}{suffix}"
 
 
-def follower_growth(snapshots: list[dict]) -> tuple[float | None, float | None]:
-    """Возвращает (чистый прирост за окно, прирост в день)."""
-    points = [item for item in snapshots if isinstance(item.get("followers"), (int, float))]
+def pct(value: float | None) -> str:
+    return NOT_MEASURED if value is None else f"{round(value * 100, 3):g}%"
+
+
+def follower_delta(items: list[dict]) -> tuple[float | None, float | None]:
+    points = [i for i in items if isinstance(i.get("followers"), (int, float))]
     if len(points) < 2:
         return None, None
     delta = points[-1]["followers"] - points[0]["followers"]
@@ -85,135 +110,411 @@ def follower_growth(snapshots: list[dict]) -> tuple[float | None, float | None]:
     return delta, (delta / span if span else None)
 
 
-def eta_days(current: float | None, per_day: float | None, target: int) -> str:
-    if current is None or per_day is None or per_day <= 0:
-        return NOT_MEASURED
-    if current >= target:
-        return "достигнуто"
-    return f"~{round((target - current) / per_day)} дн. (PREDICTED)"
-
-
-def verdict_for_sends(value: float | None) -> str:
-    if value is None:
-        return NOT_MEASURED
-    if value >= SENDS_PER_REACH_VIRAL:
-        return "PASS (вирусный разнос через DM)"
-    if value >= SENDS_PER_REACH_STRONG:
-        return "PASS (сильно)"
-    return "WARN (ниже ориентира 1%)"
-
-
-def report(snapshots: list[dict], days: int) -> tuple[str, int]:
-    if not snapshots:
-        return ("# KPI роста Sofia\n\nВердикт: NOT_MEASURED — валидных снимков нет.\n"
-                "Ни одну метрику нельзя посчитать; нули подставлять нельзя.\n"), 2
-
+def compute(snapshots: list[dict], posts: list[dict], days: int) -> dict:
     recent = window(snapshots, days)
-    latest = snapshots[-1]
-    followers = latest.get("followers") if isinstance(latest.get("followers"), (int, float)) else None
+    week = window(snapshots, 7)
+    month = window(snapshots, 30)
+    latest = snapshots[-1] if snapshots else {}
 
-    net, per_day = follower_growth(recent)
+    followers = latest.get("followers") if isinstance(latest.get("followers"), (int, float)) else None
+    net_30d, per_day_30d = follower_delta(month)
+    net_7d, _ = follower_delta(week)
+
     reach = total(recent, "reach")
+    follows = total(recent, "follows")
+    visits = total(recent, "profile_visits")
     sends = total(recent, "sends")
     saves = total(recent, "saves")
-    visits = total(recent, "profile_visits")
-    follows = total(recent, "follows")
 
-    sends_per_reach = ratio(sends, reach)
-    saves_per_reach = ratio(saves, reach)
-    follows_per_1k_reach = ratio(follows, reach)
-    follows_per_1k_reach = follows_per_1k_reach * 1000 if follows_per_1k_reach is not None else None
-    follow_rate_from_visits = ratio(follows, visits)
-
-    measured = [net, reach, sends, saves, visits, follows]
-    known = sum(1 for value in measured if value is not None)
-
-    lines = [
-        "# KPI роста Sofia",
-        "",
-        f"Окно: {days} дн. | последний снимок: {latest['_date'].isoformat()} | "
-        f"снимков в окне: {len(recent)}",
-        f"Покрытие данными: {known}/{len(measured)} метрик.",
-        "",
-        "| Метрика | Значение | Метка | Комментарий |",
-        "|---|---|---|---|",
-        f"| Подписчиков сейчас | {fmt(followers, digits=0)} | "
-        f"{'REAL' if followers is not None else NOT_MEASURED} | из снимка аккаунта |",
-        f"| Чистый прирост за окно | {fmt(net, digits=0)} | "
-        f"{'REAL' if net is not None else NOT_MEASURED} | followers[последний] - followers[первый] |",
-        f"| Прирост в день | {fmt(per_day)} | "
-        f"{'REAL' if per_day is not None else NOT_MEASURED} | основной индикатор цикла |",
-        f"| Follows на 1k охвата | {fmt(follows_per_1k_reach)} | "
-        f"{'REAL' if follows_per_1k_reach is not None else NOT_MEASURED} | конверсия охвата в подписку |",
-        f"| Follows / профильный визит | {fmt(follow_rate_from_visits)} | "
-        f"{'REAL' if follow_rate_from_visits is not None else NOT_MEASURED} | качество профиля и шапки |",
-        f"| Sends per reach | {fmt(sends_per_reach, digits=4)} | "
-        f"{'REAL' if sends_per_reach is not None else NOT_MEASURED} | {verdict_for_sends(sends_per_reach)} |",
-        f"| Saves per reach | {fmt(saves_per_reach, digits=4)} | "
-        f"{'REAL' if saves_per_reach is not None else NOT_MEASURED} | сохранения тянут возвраты |",
-        f"| Охват за окно | {fmt(reach, digits=0)} | "
-        f"{'REAL' if reach is not None else NOT_MEASURED} | знаменатель всех ratio |",
-        "",
-        "## Прогноз по вехам (PREDICTED, при текущем темпе)",
-        "",
-        "| Веха | Оценка |",
-        "|---|---|",
-    ]
-    for milestone in TARGET_MILESTONES:
-        lines.append(f"| {milestone} подписчиков | {eta_days(followers, per_day, milestone)} |")
-
-    lines += [
-        "",
-        "## Узкое место",
-        "",
-        bottleneck(follows_per_1k_reach, sends_per_reach, reach, follow_rate_from_visits),
-        "",
-        "---",
-        "REAL — из снимков аккаунта. PREDICTED — расчёт по текущему темпу, не обещание.",
-        "Отсутствующие данные показаны как NOT_MEASURED и не заменяются нулями.",
-    ]
-
-    exit_code = 0 if known == len(measured) else (1 if known else 2)
-    return "\n".join(lines), exit_code
+    follows_per_1k = ratio(follows, reach)
+    metrics = {
+        "window_days": days,
+        "window_points": len(recent),
+        "latest_date": latest.get("date"),
+        "followers_baseline": followers,
+        "growth_7d": net_7d,
+        "growth_30d": net_30d,
+        "growth_per_day": per_day_30d,
+        "net_follower_change": total(recent, "follows"),
+        "reach": reach,
+        "follows_per_1k_reach": follows_per_1k * 1000 if follows_per_1k is not None else None,
+        "profile_to_follow_conversion": ratio(follows, visits),
+        "sends_per_reach": ratio(sends, reach),
+        "saves_per_reach": ratio(saves, reach),
+        "views": total(recent, "views"),
+        "watch_time": total(recent, "watch_time"),
+        "average_watch_time": mean(recent, "average_watch_time"),
+        "retention": mean(recent, "retention"),
+        "unfollows": total(recent, "unfollows"),
+    }
+    metrics["rolling"] = {
+        "7d": rolling_block(week),
+        "30d": rolling_block(month),
+    }
+    metrics["best_posts"], metrics["worst_posts"] = rank_posts(posts, days, snapshots)
+    metrics["trend_attribution"] = attribute(posts, days, snapshots)
+    return metrics
 
 
-def bottleneck(follows_per_1k: float | None, sends_per_reach: float | None,
-               reach: float | None, follow_from_visits: float | None) -> str:
-    """Называет самый вероятный ограничитель роста по имеющимся данным."""
-    if reach is None and follows_per_1k is None:
+def rolling_block(items: list[dict]) -> dict:
+    reach = total(items, "reach")
+    net, per_day = follower_delta(items)
+    return {
+        "points": len(items),
+        "net_followers": net,
+        "per_day": per_day,
+        "reach": reach,
+        "sends_per_reach": ratio(total(items, "sends"), reach),
+        "saves_per_reach": ratio(total(items, "saves"), reach),
+        "follows": total(items, "follows"),
+    }
+
+
+def post_score(post: dict) -> float | None:
+    """Ранжирующая метрика публикации — sends per reach (главный сигнал 2026)."""
+    return ratio(post.get("sends"), post.get("reach"))
+
+
+def rank_posts(posts: list[dict], days: int, snapshots: list[dict]) -> tuple[list, list]:
+    if not posts or not snapshots:
+        return [], []
+    cutoff = snapshots[-1]["_date"] - dt.timedelta(days=days)
+    scored = []
+    for post in posts:
+        if post["_date"] < cutoff:
+            continue
+        score = post_score(post)
+        if score is None:
+            continue
+        scored.append({
+            "date": post["date"],
+            "media_id": post.get("media_id"),
+            "permalink": post.get("permalink"),
+            "media_type": post.get("media_type"),
+            "format_id": post.get("format_id"),
+            "trend_id": post.get("trend_id"),
+            "sends_per_reach": score,
+            "reach": post.get("reach"),
+            "follows": post.get("follows"),
+            "saves_per_reach": ratio(post.get("saves"), post.get("reach")),
+        })
+    if not scored:
+        return [], []
+    scored.sort(key=lambda item: item["sends_per_reach"], reverse=True)
+    return scored[:3], scored[-3:][::-1]
+
+
+def attribute(posts: list[dict], days: int, snapshots: list[dict]) -> list[dict]:
+    """Атрибуция по lineage: группирует публикации по trend_id/format_id.
+    Возвращает пусто, если lineage в данных реально нет."""
+    if not posts or not snapshots:
+        return []
+    cutoff = snapshots[-1]["_date"] - dt.timedelta(days=days)
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for post in posts:
+        if post["_date"] < cutoff:
+            continue
+        key = post.get("trend_id") or post.get("format_id")
+        if not key:
+            continue
+        kind = "trend_id" if post.get("trend_id") else "format_id"
+        groups.setdefault((kind, key), []).append(post)
+
+    rows = []
+    for (kind, key), items in groups.items():
+        reach = total(items, "reach")
+        rows.append({
+            "lineage": kind,
+            "key": key,
+            "posts": len(items),
+            "reach": reach,
+            "sends_per_reach": ratio(total(items, "sends"), reach),
+            "saves_per_reach": ratio(total(items, "saves"), reach),
+            "follows": total(items, "follows"),
+            "follows_per_1k_reach": (lambda r: r * 1000 if r is not None else None)(
+                ratio(total(items, "follows"), reach)),
+            # Одна публикация не доказывает повторяемость.
+            "repeatable": len(items) >= 3,
+        })
+    rows.sort(key=lambda row: (row["sends_per_reach"] is None, -(row["sends_per_reach"] or 0)))
+    return rows
+
+
+def split_measured(metrics: dict) -> tuple[list[str], list[str]]:
+    measured, missing = [], []
+    for name in KPI_REGISTRY:
+        value = metrics.get(name)
+        empty = value is None or (isinstance(value, list) and not value)
+        (missing if empty else measured).append(name)
+    return measured, missing
+
+
+def bottleneck(metrics: dict) -> str:
+    sends = metrics["sends_per_reach"]
+    conversion = metrics["profile_to_follow_conversion"]
+    per_1k = metrics["follows_per_1k_reach"]
+    if metrics["reach"] is None and per_1k is None:
         return f"{NOT_MEASURED}: без охвата и конверсии узкое место не определяется."
-    if sends_per_reach is not None and sends_per_reach < SENDS_PER_REACH_STRONG:
+    if sends is not None and sends < SENDS_PER_REACH_STRONG:
         return ("Дистрибуция: sends per reach ниже 1%. Охват вне подписчиков ограничен на входе — "
                 "работать над «переслать другу», а не над частотой постинга.")
-    if follow_from_visits is not None and follow_from_visits < 0.1:
-        return ("Конверсия профиля: люди доходят до профиля, но не подписываются. "
-                "Узкое место — шапка, закреплённые Reels и обещание аккаунта, а не контент ленты.")
-    if follows_per_1k is not None and follows_per_1k < 5:
+    if conversion is not None and conversion < PROFILE_CONVERSION_WEAK:
+        return ("Конверсия профиля: до профиля доходят, но не подписываются. Узкое место — "
+                "шапка, закреплённые Reels и обещание аккаунта, а не контент ленты.")
+    if per_1k is not None and per_1k < FOLLOWS_PER_1K_REACH_WEAK:
         return ("Релевантность: охват есть, подписок с него мало. Контент собирает случайную "
                 "аудиторию — сузить тему и усилить повторяемость персоны.")
     return "Явного узкого места по имеющимся метрикам не видно; расширять то, что уже работает."
 
 
+def next_action(metrics: dict) -> str:
+    """Следующее изменение контент-плана, выведенное из данных."""
+    attribution = [row for row in metrics["trend_attribution"] if row["repeatable"]]
+    best = metrics["best_posts"][0] if metrics["best_posts"] else None
+    parts = [bottleneck(metrics)]
+    if attribution:
+        top = attribution[0]
+        parts.append(
+            f"Масштабировать {top['lineage']}={top['key']}: {top['posts']} публикаций, "
+            f"sends per reach {pct(top['sends_per_reach'])} — повторяемость подтверждена."
+        )
+        weak = [row for row in attribution if row["sends_per_reach"] is not None][-1:]
+        if weak and weak[0]["key"] != top["key"]:
+            parts.append(f"Свернуть {weak[0]['lineage']}={weak[0]['key']} "
+                         f"(sends per reach {pct(weak[0]['sends_per_reach'])}).")
+    elif best:
+        parts.append(
+            f"Лучший пост {best.get('format_id') or best.get('media_id')} даёт "
+            f"sends per reach {pct(best['sends_per_reach'])}, но повторяемость не доказана "
+            "(<3 публикаций формата) — добрать серию до 3, прежде чем переводить в ядро."
+        )
+    else:
+        parts.append("Атрибуции нет: в данных отсутствует lineage публикация→тренд/формат. "
+                     "Пока нельзя сказать, какой формат растит подписчиков.")
+    return " ".join(parts)
+
+
+def render(payload: dict, metrics: dict) -> str:
+    measured, missing = split_measured(metrics)
+    sources = payload.get("sources", [])
+    lines = [
+        "# KPI роста Sofia",
+        "",
+        f"Окно: {metrics['window_days']} дн. | последний снимок: {metrics['latest_date']} | "
+        f"точек в окне: {metrics['window_points']}",
+        f"Источники данных: {len(sources) or NOT_MEASURED}",
+    ]
+    for source in sources:
+        lines.append(f"  - `{source['path']}` (строк: {source.get('rows', '?')}, "
+                     f"sha256:{source.get('sha256', '?')})")
+    lines += [
+        "",
+        "| Метрика | Значение | Метка |",
+        "|---|---|---|",
+        f"| Подписчиков (baseline) | {fmt(metrics['followers_baseline'], 0)} | {label(metrics['followers_baseline'])} |",
+        f"| Прирост за 7 дн. | {fmt(metrics['growth_7d'], 0)} | {label(metrics['growth_7d'])} |",
+        f"| Прирост за 30 дн. | {fmt(metrics['growth_30d'], 0)} | {label(metrics['growth_30d'])} |",
+        f"| Прирост в день | {fmt(metrics['growth_per_day'])} | {label(metrics['growth_per_day'])} |",
+        f"| Охват за окно | {fmt(metrics['reach'], 0)} | {label(metrics['reach'])} |",
+        f"| Follows на 1k охвата | {fmt(metrics['follows_per_1k_reach'])} | {label(metrics['follows_per_1k_reach'])} |",
+        f"| Профиль → подписка | {pct(metrics['profile_to_follow_conversion'])} | {label(metrics['profile_to_follow_conversion'])} |",
+        f"| Sends per reach | {pct(metrics['sends_per_reach'])} | {label(metrics['sends_per_reach'])} |",
+        f"| Saves per reach | {pct(metrics['saves_per_reach'])} | {label(metrics['saves_per_reach'])} |",
+        f"| Просмотры | {fmt(metrics['views'], 0)} | {label(metrics['views'])} |",
+        f"| Watch time | {fmt(metrics['watch_time'], 0)} | {label(metrics['watch_time'])} |",
+        f"| Средний watch time | {fmt(metrics['average_watch_time'])} | {label(metrics['average_watch_time'])} |",
+        f"| Retention | {fmt(metrics['retention'])} | {label(metrics['retention'])} |",
+        f"| Отписки | {fmt(metrics['unfollows'], 0)} | {label(metrics['unfollows'])} |",
+        "",
+        "## Rolling",
+        "",
+        "| Окно | Точек | Прирост | В день | Охват | Sends/reach | Saves/reach |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for name in ("7d", "30d"):
+        block = metrics["rolling"][name]
+        lines.append(
+            f"| {name} | {block['points']} | {fmt(block['net_followers'], 0)} | {fmt(block['per_day'])} | "
+            f"{fmt(block['reach'], 0)} | {pct(block['sends_per_reach'])} | {pct(block['saves_per_reach'])} |"
+        )
+
+    lines += ["", "## Лучшие и худшие публикации (по sends per reach)", ""]
+    if metrics["best_posts"]:
+        lines += ["| Ранг | Дата | Формат | Sends/reach | Охват | Follows |", "|---|---|---|---|---|---|"]
+        for index, post in enumerate(metrics["best_posts"], start=1):
+            lines.append(f"| ЛУЧШИЙ {index} | {post['date']} | "
+                         f"{post.get('format_id') or post.get('media_type') or '—'} | "
+                         f"{pct(post['sends_per_reach'])} | {fmt(post['reach'], 0)} | {fmt(post['follows'], 0)} |")
+        for index, post in enumerate(metrics["worst_posts"], start=1):
+            lines.append(f"| ХУДШИЙ {index} | {post['date']} | "
+                         f"{post.get('format_id') or post.get('media_type') or '—'} | "
+                         f"{pct(post['sends_per_reach'])} | {fmt(post['reach'], 0)} | {fmt(post['follows'], 0)} |")
+    else:
+        lines.append(f"{NOT_MEASURED}: в данных нет публикаций с охватом и пересылками.")
+
+    lines += ["", "## Атрибуция тренд/формат → рост", ""]
+    if metrics["trend_attribution"]:
+        lines += ["| Lineage | Ключ | Публикаций | Sends/reach | Follows/1k охвата | Повторяемость |",
+                  "|---|---|---|---|---|---|"]
+        for row in metrics["trend_attribution"]:
+            lines.append(f"| {row['lineage']} | {row['key']} | {row['posts']} | "
+                         f"{pct(row['sends_per_reach'])} | {fmt(row['follows_per_1k_reach'])} | "
+                         f"{'да' if row['repeatable'] else 'нет (<3 публикаций)'} |")
+    else:
+        lines.append(f"{NOT_MEASURED}: lineage публикация→тренд/формат в данных отсутствует.")
+
+    lines += [
+        "",
+        "## Измеримость",
+        "",
+        f"**MEASURED ({len(measured)}):** {', '.join(measured) or '—'}",
+        "",
+        f"**NOT_MEASURED ({len(missing)}):** {', '.join(missing) or '—'}",
+        "",
+        "## Узкое место и следующее действие",
+        "",
+        next_action(metrics),
+        "",
+        "---",
+        "REAL — из выгрузок Insights. PREDICTED — расчёт по текущему темпу, не обещание.",
+        "Отсутствующие данные показаны как NOT_MEASURED и не заменяются нулями.",
+    ]
+    return "\n".join(lines)
+
+
+def label(value) -> str:
+    return "REAL" if value is not None else NOT_MEASURED
+
+
+def summary_block(payload: dict, metrics: dict) -> str:
+    measured, missing = split_measured(metrics)
+    loop = "VERIFIED" if (metrics["trend_attribution"] and metrics["followers_baseline"] is not None
+                          and metrics["sends_per_reach"] is not None) else "PARTIAL"
+    sources = payload.get("sources", [])
+    lines = [
+        f"FOLLOWERS BASELINE: {fmt(metrics['followers_baseline'], 0)}",
+        f"30D GROWTH: {fmt(metrics['growth_30d'], 0)}",
+        f"REACH: {fmt(metrics['reach'], 0)}",
+        f"FOLLOWS PER REACH: {fmt(metrics['follows_per_1k_reach'])} на 1k охвата",
+        f"PROFILE→FOLLOW CONVERSION: {pct(metrics['profile_to_follow_conversion'])}",
+        f"SENDS PER REACH: {pct(metrics['sends_per_reach'])}",
+        f"SAVES PER REACH: {pct(metrics['saves_per_reach'])}",
+        "",
+        f"MEASURED KPI: {', '.join(measured) or '—'}",
+        f"NOT MEASURED KPI: {', '.join(missing) or '—'}",
+        "",
+        f"GROWTH LOOP: {loop}",
+        "",
+        "REAL DATA SOURCE:",
+    ]
+    lines += [f"  {s['path']}" for s in sources] or [f"  {NOT_MEASURED}"]
+    lines += ["", "NEXT GROWTH ACTION:", f"  {next_action(metrics)}"]
+    return "\n".join(lines)
+
+
+def build_memory(payload: dict, metrics: dict, previous: dict | None) -> dict:
+    """Growth memory: накапливает только измеренные исходы форматов/трендов."""
+    memory = previous or {"schema_version": "1.0", "evidence_label": "REAL", "entries": {}}
+    memory.setdefault("entries", {})
+    for row in metrics["trend_attribution"]:
+        key = f"{row['lineage']}:{row['key']}"
+        entry = memory["entries"].setdefault(key, {"observations": []})
+        entry["lineage"] = row["lineage"]
+        entry["key"] = row["key"]
+        entry["posts"] = row["posts"]
+        entry["sends_per_reach"] = row["sends_per_reach"]
+        entry["follows_per_1k_reach"] = row["follows_per_1k_reach"]
+        entry["repeatable"] = row["repeatable"]
+        entry["verdict"] = verdict_for(row)
+        entry["observations"].append({
+            "measured_at": payload.get("generated_at") or dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+            "window_days": metrics["window_days"],
+            "posts": row["posts"],
+            "sends_per_reach": row["sends_per_reach"],
+        })
+        entry["observations"] = entry["observations"][-12:]  # история не растёт бесконечно
+    memory["updated_at"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    memory["baseline"] = {
+        "followers": metrics["followers_baseline"],
+        "sends_per_reach": metrics["sends_per_reach"],
+        "saves_per_reach": metrics["saves_per_reach"],
+        "follows_per_1k_reach": metrics["follows_per_1k_reach"],
+        "profile_to_follow_conversion": metrics["profile_to_follow_conversion"],
+        "measured_at": metrics["latest_date"],
+    }
+    return memory
+
+
+def verdict_for(row: dict) -> str:
+    if not row["repeatable"]:
+        return "INSUFFICIENT"  # <3 публикаций — не доказательство
+    value = row["sends_per_reach"]
+    if value is None:
+        return NOT_MEASURED
+    if value >= SENDS_PER_REACH_VIRAL:
+        return "SCALE"
+    if value >= SENDS_PER_REACH_STRONG:
+        return "KEEP"
+    return "DROP"
+
+
+def atomic_write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     base = Path(__file__).resolve().parent.parent
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--snapshots", type=Path, default=base / "data" / "followers_snapshots.json")
-    parser.add_argument("--days", type=int, default=14, help="окно расчёта в днях")
-    parser.add_argument("--out", type=Path, help="записать отчёт в файл (создаёт, не удаляет)")
+    parser.add_argument("--days", type=int, default=30, help="окно расчёта в днях")
+    parser.add_argument("--summary", action="store_true", help="короткий блок для отчёта владельцу")
+    parser.add_argument("--json", action="store_true", help="выдать метрики как JSON")
+    parser.add_argument("--out", type=Path, help="записать отчёт в файл")
+    parser.add_argument("--write-memory", type=Path, nargs="?", const=base / "data" / "growth_memory.json",
+                        help="обновить growth memory измеренными исходами")
     args = parser.parse_args()
 
-    snapshots = load_snapshots(args.snapshots)
-    text, code = report(snapshots, args.days)
+    payload = load(args.snapshots)
+    snapshots = parse_dated(payload.get("snapshots", []))
+    posts = parse_dated(payload.get("posts", []))
+
+    if not snapshots:
+        print("# KPI роста Sofia\n\nВердикт: NOT_MEASURED — валидных снимков нет.\n"
+              "Ни одну метрику посчитать нельзя; нули подставлять нельзя.")
+        return 2
+
+    metrics = compute(snapshots, posts, args.days)
+    measured, missing = split_measured(metrics)
+
+    if args.json:
+        text = json.dumps({k: v for k, v in metrics.items()}, ensure_ascii=False, indent=2, default=str)
+    elif args.summary:
+        text = summary_block(payload, metrics)
+    else:
+        text = render(payload, metrics)
 
     if args.out:
-        args.out.parent.mkdir(parents=True, exist_ok=True)
-        tmp = args.out.with_suffix(args.out.suffix + ".tmp")
-        tmp.write_text(text, encoding="utf-8")
-        tmp.replace(args.out)
+        atomic_write(args.out, text)
         print(f"Записано: {args.out}")
     else:
         print(text)
-    return code
+
+    if args.write_memory:
+        previous = None
+        if args.write_memory.exists():
+            try:
+                previous = json.loads(args.write_memory.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                print(f"WARN: {args.write_memory} повреждён, память пересоздана", file=sys.stderr)
+        memory = build_memory(payload, metrics, previous)
+        atomic_write(args.write_memory, json.dumps(memory, ensure_ascii=False, indent=2))
+        print(f"Growth memory обновлена: {args.write_memory} "
+              f"(записей: {len(memory['entries'])})", file=sys.stderr)
+
+    return 0 if not missing else 1
 
 
 if __name__ == "__main__":

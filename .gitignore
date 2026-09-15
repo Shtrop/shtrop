@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+*.tmp
+sofia_growth/data/followers_snapshots.json

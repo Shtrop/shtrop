@@ -47,6 +47,22 @@ CONFIDENCE_SCORE = {"high": 1.0, "medium": 0.7, "low": 0.45}
 # Стоимость производства как штраф: GPU — ограниченный ресурс (один тяжёлый job).
 COST_PENALTY = {"low": 1.0, "medium": 0.8, "high": 0.55}
 
+# Множители по РЕАЛЬНО измеренному исходу формата (growth_memory.json).
+# Память побеждает априорную оценку: измеренное важнее предсказанного.
+# Приоритет доказательства. Измеренный победитель обязан стоять выше догадки,
+# а измеренный проигравший — ниже неё, каким бы привлекательным ни был априорный
+# score: данные аккаунта весомее эвристики.
+EVIDENCE_PRIORITY = {"SCALE": 3, "KEEP": 2, "INSUFFICIENT": 1, "NOT_MEASURED": 1, "DROP": 0}
+UNMEASURED_PRIORITY = 1
+
+MEMORY_MULTIPLIER = {
+    "SCALE": 1.6,   # повторяемо и выше 3% sends per reach
+    "KEEP": 1.25,   # повторяемо и выше 1%
+    "DROP": 0.35,   # повторяемо и ниже 1% — сворачивать
+    "INSUFFICIENT": 1.0,  # <3 публикаций: не доказательство ни в одну сторону
+    "NOT_MEASURED": 1.0,
+}
+
 KPI_BY_LEVER = {
     "sends": "sends_per_reach (цель 1-2%, >3% — вирусный разнос через DM)",
     "watch_time": "total_watch_seconds / reach и доля досмотров",
@@ -55,6 +71,26 @@ KPI_BY_LEVER = {
     "profile_visits": "profile_visits и follows_per_profile_visit",
     "likes": "likes_per_reach",
 }
+
+
+def load_memory(path: Path) -> dict:
+    """Growth memory необязательна: без неё скоринг остаётся чисто априорным."""
+    if not path or not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        print(f"WARN: growth memory повреждена, игнорируется: {path}", file=sys.stderr)
+        return {}
+    return payload.get("entries", {})
+
+
+def memory_entry(memory: dict, signal_id: str) -> dict | None:
+    """Ищет измеренный исход формата по lineage-ключам."""
+    for key in (f"format_id:{signal_id}", f"trend_id:{signal_id}"):
+        if key in memory:
+            return memory[key]
+    return None
 
 
 def load_json(path: Path) -> dict:
@@ -82,21 +118,24 @@ def brand_safety_flags(signal: dict, blocked: list[str]) -> list[str]:
     return [term for term in blocked if term.lower() in haystack]
 
 
-def score_signal(signal: dict) -> tuple[float, list[str]]:
+def score_signal(signal: dict, entry: dict | None) -> tuple[float, list[str], float]:
     levers = FORMAT_LEVERS.get(signal["id"], ["watch_time"])
     lever_value = max(LEVER_WEIGHTS.get(lever, 0.3) for lever in levers)
     fit = FIT_SCORE.get(signal.get("sofia_fit", "medium"), 0.65)
     confidence = CONFIDENCE_SCORE.get(signal.get("confidence", "medium"), 0.7)
     cost = COST_PENALTY.get(signal.get("production_cost", "medium"), 0.8)
-    return round(lever_value * fit * confidence * cost, 3), levers
+    prior = lever_value * fit * confidence * cost
+    multiplier = MEMORY_MULTIPLIER.get((entry or {}).get("verdict", "NOT_MEASURED"), 1.0)
+    return round(prior * multiplier, 3), levers, round(prior, 3)
 
 
-def build_backlog(radar: dict, guardrails: dict) -> list[dict]:
+def build_backlog(radar: dict, guardrails: dict, memory: dict) -> list[dict]:
     blocked = guardrails.get("brand_safety_block", [])
     backlog = []
     for signal in radar.get("format_signals", []):
         flags = brand_safety_flags(signal, blocked)
-        score, levers = score_signal(signal)
+        entry = memory_entry(memory, signal["id"])
+        score, levers, prior = score_signal(signal, entry)
         backlog.append(
             {
                 "id": signal["id"],
@@ -107,13 +146,24 @@ def build_backlog(radar: dict, guardrails: dict) -> list[dict]:
                 "sofia_fit": signal.get("sofia_fit", "medium"),
                 "production_cost": signal.get("production_cost", "medium"),
                 "confidence": signal.get("confidence", "medium"),
+                "prior_score": prior,
+                "evidence_priority": (EVIDENCE_PRIORITY.get(entry.get("verdict"), 1)
+                                      if entry else UNMEASURED_PRIORITY),
                 "status": "BLOCKED_BRAND_SAFETY" if flags else "PROPOSED",
                 "brand_safety_flags": flags,
                 "source": signal.get("source", ""),
-                "evidence_label": "PREDICTED",
+                # Метка повышается до REAL только там, где формат действительно измерен.
+                "evidence_label": "REAL" if entry else "PREDICTED",
+                "measured": {
+                    "verdict": entry.get("verdict"),
+                    "posts": entry.get("posts"),
+                    "sends_per_reach": entry.get("sends_per_reach"),
+                    "repeatable": entry.get("repeatable"),
+                } if entry else None,
             }
         )
-    backlog.sort(key=lambda item: item["score"], reverse=True)
+    # Сначала уровень доказательства, затем численный score внутри уровня.
+    backlog.sort(key=lambda item: (item["evidence_priority"], item["score"]), reverse=True)
     return backlog
 
 
@@ -132,25 +182,35 @@ def render(radar: dict, backlog: list[dict], top: int, age: int | None, max_age:
         lines.append(f"> WARN: радар устарел ({age} дн.). Обновить до постановки в план.\n")
 
     lines += [
-        "| # | Формат | Score | Рычаг | Fit | Cost | Confidence | Статус |",
+        "| # | Формат | Score | Рычаг | Fit | Cost | Доказательство | Измерено |",
         "|---|---|---|---|---|---|---|---|",
     ]
     for index, item in enumerate(backlog[:top], start=1):
+        measured = item.get("measured")
+        measured_cell = (f"{measured['verdict']} ({measured['posts']} публ., "
+                         f"s/r {round((measured['sends_per_reach'] or 0) * 100, 2)}%)"
+                         if measured else "—")
         lines.append(
             f"| {index} | {item['title']} | {item['score']} | {', '.join(item['levers'])} | "
-            f"{item['sofia_fit']} | {item['production_cost']} | {item['confidence']} | {item['status']} |"
+            f"{item['sofia_fit']} | {item['production_cost']} | {item['evidence_label']} | {measured_cell} |"
         )
 
     lines += ["", "## Гипотезы и что измерять", ""]
     for index, item in enumerate(backlog[:top], start=1):
-        lines += [
-            f"### {index}. {item['title']}",
-            f"- Гипотеза: формат поднимет `{item['levers'][0]}` относительно baseline последних 14 дней.",
-            f"- Метрика решения: {item['kpi'][0]}",
-            "- Критерий успеха: задать по фактическому baseline (сейчас NOT_MEASURED без данных аккаунта).",
-            f"- Источник сигнала: {item['source']}",
-            "",
-        ]
+        measured = item.get("measured")
+        lines += [f"### {index}. {item['title']}"]
+        if measured:
+            lines += [
+                f"- Измерено (REAL): {measured['posts']} публикаций, "
+                f"sends per reach {measured['sends_per_reach']}, вердикт `{measured['verdict']}`.",
+                f"- Априорный score был {item['prior_score']}, с учётом памяти — {item['score']}.",
+            ]
+        else:
+            lines += [
+                f"- Гипотеза (PREDICTED): формат поднимет `{item['levers'][0]}` относительно baseline.",
+                "- Критерий успеха: задать по фактическому baseline; без данных — NOT_MEASURED.",
+            ]
+        lines += [f"- Метрика решения: {item['kpi'][0]}", f"- Источник сигнала: {item['source']}", ""]
     lines += [
         "---",
         "Все оценки — PREDICTED (AI ANALYSIS). Это не метрики Instagram.",
@@ -164,6 +224,8 @@ def main() -> int:
     base = Path(__file__).resolve().parent.parent
     parser.add_argument("--radar", type=Path, default=base / "data" / "trend_radar.json")
     parser.add_argument("--guardrails", type=Path, default=base / "data" / "persona_guardrails.json")
+    parser.add_argument("--memory", type=Path, default=base / "data" / "growth_memory.json",
+                        help="growth memory с измеренными исходами форматов")
     parser.add_argument("--top", type=int, default=8, help="сколько позиций показать")
     parser.add_argument("--max-age-days", type=int, default=14, help="порог свежести радара")
     parser.add_argument("--json", action="store_true", help="вывести backlog как JSON")
@@ -172,7 +234,8 @@ def main() -> int:
 
     radar = load_json(args.radar)
     guardrails = load_json(args.guardrails)
-    backlog = build_backlog(radar, guardrails)
+    memory = load_memory(args.memory)
+    backlog = build_backlog(radar, guardrails, memory)
     age = radar_age_days(radar, dt.date.today())
 
     if args.json:
@@ -181,7 +244,7 @@ def main() -> int:
                 "radar_date": radar.get("radar_date"),
                 "radar_age_days": age,
                 "stale": age is None or age > args.max_age_days,
-                "evidence_label": "PREDICTED",
+                "memory_entries": len(memory),
                 "backlog": backlog,
             },
             ensure_ascii=False,
