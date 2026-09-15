@@ -552,6 +552,110 @@ class SubtitleCritic:
 
 
 # --------------------------------------------------------------------------
+class EditorCritic:
+    """Strong first frame, fast hook, no dead time, sensible pacing, framing.
+
+    Ducking, safe zones, subtitles and the cover have their own critics; this
+    covers what is left of the EditorAgent's brief, and measures it from the
+    delivered file rather than from the plan.
+    """
+
+    name = "reel.edit"
+    role = "EditorAgent:qa"
+
+    def __init__(self, thresholds: "EditThresholds | None" = None) -> None:
+        from sofia.reel.edit_qa import EditThresholds
+
+        self.thresholds = thresholds or EditThresholds()
+
+    def review(
+        self,
+        *,
+        final_path: Optional[str],
+        shots: Sequence[Shot],
+        mix_path: Optional[str],
+        editor,
+        workdir,
+        music_bpm: Optional[float] = None,
+    ) -> CriticOutcome:
+        from pathlib import Path as _Path
+
+        from sofia.reel.edit_qa import analyse_edit
+
+        if not final_path or not _Path(str(final_path)).exists():
+            return _blocked(
+                self.name, "no assembled edit exists", ReelDefect.EDIT
+            )
+
+        issues = analyse_edit(
+            final_path=final_path,
+            shots=shots,
+            mix_path=mix_path,
+            editor=editor,
+            workdir=_Path(workdir),
+            music_bpm=music_bpm,
+            thresholds=self.thresholds,
+        )
+        measurement = Measurement(
+            "edit_issues",
+            float(len(issues.blocking)),
+            Evidence.MEASURED_LOCAL,
+            source="edit-qa",
+            detail=issues.to_dict(),
+        )
+
+        if issues.not_measured:
+            return CriticOutcome(
+                GateResult(
+                    name=self.name,
+                    verdict=Verdict.NOT_MEASURED,
+                    critical=True,
+                    reason="; ".join(issues.not_measured[:3]),
+                    measurement=measurement,
+                ),
+                tuple(
+                    ReelDiagnosis(
+                        ReelDefect.NOT_MEASURED, detail=msg, critic=self.role
+                    )
+                    for msg in issues.not_measured
+                ),
+            )
+
+        if issues.blocking:
+            return CriticOutcome(
+                GateResult(
+                    name=self.name,
+                    verdict=Verdict.FAIL,
+                    critical=True,
+                    reason="; ".join(issues.blocking[:4]),
+                    measurement=measurement,
+                ),
+                tuple(
+                    ReelDiagnosis(ReelDefect.EDIT, detail=msg, critic=self.role)
+                    for msg in issues.blocking
+                ),
+            )
+
+        m = issues.measurements
+        note = (
+            f"hook {m.get('hook_s', 0):.1f}s, {m.get('shots', 0)} shots, "
+            f"{m.get('cuts_per_10s', 0):.1f} cuts/10s, "
+            f"dead air {m.get('longest_silence_s', 0):.2f}s"
+        )
+        if issues.advisory:
+            note += f" (advisory: {issues.advisory[0]})"
+        return CriticOutcome(
+            GateResult(
+                name=self.name,
+                verdict=Verdict.PASS,
+                critical=True,
+                reason=note,
+                measurement=measurement,
+            )
+        )
+
+
+# --------------------------------------------------------------------------
 class AudioMixCritic:
     """Music must not fight the voice; ducking is verified, not assumed."""
 

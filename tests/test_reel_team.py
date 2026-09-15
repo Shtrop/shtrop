@@ -787,3 +787,175 @@ def test_reel_artifact_paths_are_sanitised(tmp_path):
     assert "/" not in slug
     assert ReelDirector._slug("..") == "reel"
     assert ReelDirector._slug("sofia-reel-001") == "sofia-reel-001"
+
+
+# ---- editing QA ----------------------------------------------------------
+def _ppm(path, width=54, height=96, fill=(120, 90, 60), noise=True):
+    """Write a small binary PPM for frame analysis."""
+    import random
+
+    rng = random.Random(3)
+    rows = []
+    for y in range(height):
+        row = bytearray()
+        for x in range(width):
+            r, g, b = fill
+            if noise:
+                n = rng.randint(-40, 40)
+                r, g, b = (max(0, min(255, c + n)) for c in (r, g, b))
+            row += bytes((r, g, b))
+        rows.append(bytes(row))
+    path.write_bytes(f"P6\n{width} {height}\n255\n".encode() + b"".join(rows))
+    return path
+
+
+class _StubEditor:
+    """An editor that hands back a prepared frame."""
+
+    def __init__(self, frame_path):
+        self.frame_path = frame_path
+
+    def extract_frame(self, video, at_s, out_path):
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(self.frame_path.read_bytes())
+        return out_path
+
+
+def test_frame_analysis_reads_a_real_ppm(tmp_path):
+    from sofia.reel.frames import analyse_frame
+
+    stats = analyse_frame(_ppm(tmp_path / "f.ppm"))
+    assert stats.width == 54 and stats.height == 96
+    assert 0.0 < stats.brightness < 1.0
+    assert stats.sharpness > 0
+    assert not stats.is_black_frame
+
+
+def test_a_black_opening_frame_is_caught(tmp_path):
+    from sofia.reel.frames import analyse_frame
+
+    stats = analyse_frame(_ppm(tmp_path / "b.ppm", fill=(0, 0, 0), noise=False))
+    assert stats.is_black_frame
+    assert stats.is_flat
+
+
+def test_edit_gate_fails_on_a_black_first_frame(tmp_path):
+    from sofia.reel.critics import EditorCritic
+
+    final = tmp_path / "reel.mp4"
+    final.write_bytes(b"x")
+    editor = _StubEditor(_ppm(tmp_path / "black.ppm", fill=(0, 0, 0), noise=False))
+    outcome = EditorCritic().review(
+        final_path=str(final), shots=_shots(), mix_path=None,
+        editor=editor, workdir=tmp_path,
+    )
+    assert outcome.result.verdict in (Verdict.FAIL, Verdict.NOT_MEASURED)
+    detail = outcome.result.measurement.detail
+    assert any("black frame" in m for m in detail["first_frame"])
+
+
+def test_edit_gate_fails_on_a_horizontal_delivery(tmp_path):
+    from sofia.reel.critics import EditorCritic
+
+    final = tmp_path / "reel.mp4"
+    final.write_bytes(b"x")
+    editor = _StubEditor(_ppm(tmp_path / "wide.ppm", width=96, height=54))
+    outcome = EditorCritic().review(
+        final_path=str(final), shots=_shots(), mix_path=None,
+        editor=editor, workdir=tmp_path,
+    )
+    detail = outcome.result.measurement.detail
+    assert any("must be vertical" in m for m in detail["framing"])
+
+
+def test_edit_gate_flags_dead_air_in_the_real_mix(tmp_path):
+    import math
+
+    from sofia.reel.critics import EditorCritic
+    from sofia.voice.audio import write_wav
+
+    rate = 22050
+    samples = []
+    for i in range(int(rate * 5.0)):
+        t = i / rate
+        # Two seconds of silence in the middle of the programme.
+        env = 0.0 if 1.5 < t < 3.5 else 0.3
+        samples.append(env * math.sin(2 * math.pi * 200 * t))
+    mix = write_wav(tmp_path / "mix.wav", samples, rate)
+
+    final = tmp_path / "reel.mp4"
+    final.write_bytes(b"x")
+    outcome = EditorCritic().review(
+        final_path=str(final), shots=_shots(), mix_path=str(mix),
+        editor=_StubEditor(_ppm(tmp_path / "ok.ppm")), workdir=tmp_path,
+    )
+    assert outcome.result.verdict is Verdict.FAIL
+    assert any("dead air" in m for m in outcome.result.measurement.detail["dead_time"])
+
+
+def test_edit_gate_flags_a_reel_that_drags_on_one_shot():
+    from sofia.reel.edit_qa import EditIssues, EditThresholds, check_pacing
+
+    shots = _shots()
+    shots[2].duration_s = 40.0  # one shot swallows the reel
+    issues = EditIssues()
+    check_pacing(shots, EditThresholds(), issues)
+    assert any("drags on one image" in m for m in issues.pacing)
+
+
+def test_edit_gate_flags_a_slow_hook():
+    from sofia.reel.edit_qa import EditIssues, EditThresholds, check_pacing
+
+    shots = _shots()
+    shots[0].duration_s = 7.0
+    issues = EditIssues()
+    check_pacing(shots, EditThresholds(), issues)
+    assert any("hook must land" in m for m in issues.pacing)
+
+
+def test_edit_gate_flags_too_few_shots():
+    from sofia.reel.edit_qa import EditIssues, EditThresholds, check_pacing
+
+    issues = EditIssues()
+    check_pacing(_shots()[:2], EditThresholds(), issues)
+    assert any("at least" in m for m in issues.pacing)
+
+
+def test_a_missing_edit_blocks_rather_than_passing(tmp_path):
+    from sofia.reel.critics import EditorCritic
+
+    outcome = EditorCritic().review(
+        final_path=None, shots=_shots(), mix_path=None,
+        editor=_StubEditor(_ppm(tmp_path / "f.ppm")), workdir=tmp_path,
+    )
+    assert outcome.result.blocking
+
+
+def test_beat_sync_is_reported_but_never_fatal():
+    from sofia.reel.edit_qa import EditIssues, EditThresholds, check_beat_sync
+
+    issues = EditIssues()
+    check_beat_sync(_shots(), 96.0, EditThresholds(), issues)
+    # It lands in advisory, which is excluded from blocking.
+    assert issues.advisory or "cuts_on_beat" in issues.measurements
+    assert issues.blocking == []
+
+
+def test_unknown_tempo_does_not_invent_a_beat_score():
+    from sofia.reel.edit_qa import EditIssues, EditThresholds, check_beat_sync
+
+    issues = EditIssues()
+    check_beat_sync(_shots(), None, EditThresholds(), issues)
+    assert "cuts_on_beat" not in issues.measurements
+    assert any("tempo unknown" in m for m in issues.advisory)
+
+
+def test_cut_points_and_beat_grid_line_up():
+    from sofia.reel.edit_qa import beat_grid, cut_points
+
+    shots = _shots()
+    cuts = cut_points(shots)
+    assert len(cuts) == len(shots) - 1
+    assert cuts[0] == pytest.approx(shots[0].duration_s)
+    grid = beat_grid(120.0, 2.0)
+    assert grid == [0.0, 0.5, 1.0, 1.5, 2.0]

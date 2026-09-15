@@ -83,6 +83,31 @@ numeric gates passed: the burned-in subtitles were rendering inside the bottom
 platform-UI safe zone, because the renderer invents its own script resolution
 when burning an `.srt`. Fixed by emitting ASS with explicit `PlayRes`.
 
+## Editing is measured, not assumed
+
+`EditorAgent` is asked for a strong first frame, a fast hook, no dead time,
+pacing, beat sync, ducking, safe zones, subtitles, transitions and a cover.
+Ducking, safe zones, subtitles and the cover have their own critics; the rest
+is measured by `sofia/reel/edit_qa.py` **from the delivered file**, not from the
+plan:
+
+| Check | How it is measured | Blocks? |
+|---|---|---|
+| Strong first frame | frame 0 decoded to PPM; brightness, contrast, sharpness, blown ratio | yes |
+| Vertical delivery | aspect from the decoded frame | yes |
+| Fast hook | opening shot ≤ 3 s | yes |
+| Dead time | longest silence in the actual mix | yes |
+| Pacing | shot count, cuts per 10 s, longest-shot share of runtime | yes |
+| Beat sync | cut points against the music grid | **no** — advisory |
+
+Frame analysis is pure standard library (`sofia/reel/frames.py` reads binary
+PPM), so a black or flat opener is caught on any machine, with no numpy or PIL.
+
+Beat sync is deliberately advisory. Landing cuts on the beat is a craft signal,
+not a correctness property — a reel with intentionally off-beat cuts is not
+broken — so it is reported and never fails the gate. Every other check here is
+hard, and a frame or mix that cannot be decoded is `NOT_MEASURED`, which blocks.
+
 ## Champion vs Challenger
 
 A newer lip-sync model does not become champion by being newer. It enters as a

@@ -117,9 +117,11 @@ class DevMusicBed:
     """Generates a quiet pad to sit under the voice."""
 
     name: str = "devkit-music-bed"
+    #: Constant tempo of the generated bed, so cuts can be checked against it.
+    bpm: float = 96.0
 
     def generate(self, out_path: Path, duration_s: float) -> Path:
-        return music_bed_wav(out_path, duration_s=duration_s)
+        return music_bed_wav(out_path, duration_s=duration_s, bpm=self.bpm)
 
 
 def build_dev_voice_backends() -> VoiceBackends:

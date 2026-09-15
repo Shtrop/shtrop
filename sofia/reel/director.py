@@ -41,6 +41,7 @@ from sofia.reel.critics import (
     FINAL_GATE_CATEGORIES,
     AudioMixCritic,
     CoverCritic,
+    EditorCritic,
     FinalGate,
     LipSyncCritic,
     PerceptualReviewGate,
@@ -153,6 +154,7 @@ class ReelDirector:
         self.subtitle_critic = SubtitleCritic()
         self.audio_critic = AudioMixCritic(self.thresholds)
         self.cover_critic = CoverCritic()
+        self.editor_critic = EditorCritic()
         self.perceptual_gate = PerceptualReviewGate()
 
     # ---- lifecycle -------------------------------------------------------
@@ -717,7 +719,16 @@ class ReelDirector:
         collect(self.video_critic.review(assets.shots))
         results.append(_voice_gate(voice_results))
         collect(self.lipsync_critic.review(assets.shots))
-        results.append(_edit_gate(assets))
+        collect(
+            self.editor_critic.review(
+                final_path=assets.final,
+                shots=assets.shots,
+                mix_path=_audio_for_analysis(assets),
+                editor=self.backends.editor,
+                workdir=self.workdir,
+                music_bpm=getattr(self.music_backend, "bpm", None),
+            )
+        )
 
         transcripts = [
             v.artifact.transcript for v in voice_results.values() if v.artifact
@@ -882,35 +893,6 @@ def _voice_gate(voice_results: Mapping[int, VoiceVerdict]) -> GateResult:
         verdict=Verdict.PASS,
         critical=True,
         reason=f"{len(voice_results)} voice clip(s) passed every critical voice gate",
-    )
-
-
-def _edit_gate(assets: ReelAssets) -> GateResult:
-    if not assets.edit or not Path(assets.edit).exists():
-        return GateResult(
-            name="reel.edit",
-            verdict=Verdict.MISSING,
-            critical=True,
-            reason="no assembled edit exists",
-        )
-    first = assets.shots[0] if assets.shots else None
-    problems = []
-    if first is not None and first.duration_s > 3.0:
-        problems.append(f"opening shot runs {first.duration_s:.1f}s before the hook lands")
-    if len(assets.shots) < 3:
-        problems.append(f"only {len(assets.shots)} shots; a reel needs 3-6 meaningful shots")
-    if problems:
-        return GateResult(
-            name="reel.edit",
-            verdict=Verdict.FAIL,
-            critical=True,
-            reason="; ".join(problems),
-        )
-    return GateResult(
-        name="reel.edit",
-        verdict=Verdict.PASS,
-        critical=True,
-        reason=f"edit assembled from {len(assets.shots)} shots with a fast hook",
     )
 
 
