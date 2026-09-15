@@ -482,7 +482,63 @@ def main() -> int:
         check("FUNNEL", "опубликовано 12" in result.stdout,
               "по типу, который публикуется, показан фактический выход")
 
-        print(f"\n=== 15. Изоляция: репозиторий не загрязнён ===")
+        print(f"\n=== 15. Диагностика блокеров публикации ===")
+        doctor_db = work / "doctor" / "content_queue.db"
+        doctor_db.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(doctor_db)
+        conn.execute("CREATE TABLE content_items (id INTEGER, created_at TEXT, "
+                     "status TEXT, error_message TEXT)")
+        seeded, index = [], 0
+        for _ in range(12):
+            index += 1
+            seeded.append((index, "2026-09-01", "review",
+                           "bridge: no_caption_passed_guard_semantic_editorial_worldclass"))
+        for _ in range(5):
+            index += 1
+            seeded.append((index, "2026-09-01", "review",
+                           "approval demoted to review: gate_failed:world_class_gate; "
+                           "evidence_missing:caption_guard; evidence_missing:duplicate"))
+        conn.executemany("INSERT INTO content_items VALUES (?,?,?,?)", seeded)
+        conn.commit()
+        conn.close()
+
+        result = run([str(TOOLS / "publish_doctor.py"), "--studio", str(doctor_db.parent)],
+                     expect=(1,))
+        check("DOCTOR", "evidence_missing:caption_guard" in result.stdout
+              and "world_class_gate" in result.stdout,
+              "названы конкретный гейт и недостающие доказательства")
+        check("DOCTOR", "не качество текста" in result.stdout,
+              "различены дефект передачи доказательств и качество подписи")
+
+        # Формат медиа: файл с отклонением от поддерживаемых соотношений.
+        import struct as struct_module
+        import zlib as zlib_module
+        media_dir = work / "media"
+        media_dir.mkdir()
+
+        def write_png(path, width, height):
+            def chunk(tag, payload):
+                return (struct_module.pack(">I", len(payload)) + tag + payload
+                        + struct_module.pack(">I", zlib_module.crc32(tag + payload) & 0xffffffff))
+            header = struct_module.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+            path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header)
+                             + chunk(b"IDAT", zlib_module.compress(b"\x00" * 16))
+                             + chunk(b"IEND", b""))
+
+        write_png(media_dir / "ok.png", 1080, 1350)
+        write_png(media_dir / "drift.png", 1080, 1220)
+        result = run([str(TOOLS / "publish_doctor.py"), "--media-dir", str(media_dir)], expect=(1,))
+        check("DOCTOR", "drift.png" in result.stdout and "ok.png" not in result.stdout,
+              "нарушитель соотношения найден, корректный файл не помечен")
+        check("DOCTOR", "1080×1350" in result.stdout,
+              "названы целевые размеры под ближайшее поддерживаемое соотношение")
+
+        result = run([str(TOOLS / "publish_doctor.py"),
+                      "--media-url", "http://example.invalid/media.mp4"], expect=(1,))
+        check("DOCTOR", "только HTTPS" in result.stdout,
+              "не-HTTPS источник отклоняется до сетевого вызова")
+
+        print(f"\n=== 16. Изоляция: репозиторий не загрязнён ===")
         real_snapshots = BASE / "data" / "followers_snapshots.json"
         check("ISOLATION", not real_snapshots.exists() or "SYNTHETIC" not in
               real_snapshots.read_text(encoding="utf-8"),
