@@ -451,7 +451,38 @@ def main() -> int:
         check("VOLUME", "Лучший пост" not in result.stdout,
               "ранжирование публикаций не предлагается при отсутствии событий")
 
-        print(f"\n=== 14. Изоляция: репозиторий не загрязнён ===")
+        print(f"\n=== 14. Воронка публикаций: где умирает контент ===")
+        funnel_db = work / "funnel" / "content_queue.db"
+        funnel_db.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(funnel_db)
+        conn.execute("CREATE TABLE content_items (id INTEGER, created_at TEXT, "
+                     "published_at TEXT, type TEXT, status TEXT, error_message TEXT)")
+        plan = [("IMAGE", "published", 12), ("IMAGE", "review", 8),
+                ("REELS", "review_needed", 9), ("REELS", "rejected", 4),
+                ("REELS", "approved", 5), ("REELS", "failed", 2)]
+        seeded, index = [], 0
+        for kind, status, count in plan:
+            for _ in range(count):
+                index += 1
+                seeded.append((index, "2026-07-01",
+                               "2026-08-15" if status == "published" else None, kind, status,
+                               "video gate: face drift 0.62 < 0.70"
+                               if status in ("rejected", "failed") else None))
+        conn.executemany("INSERT INTO content_items VALUES (?,?,?,?,?,?)", seeded)
+        conn.commit()
+        conn.close()
+
+        result = run([str(TOOLS / "publish_funnel.py"), "--source", str(funnel_db)], expect=(1,))
+        check("FUNNEL", "REELS: всего 20, опубликовано 0" in result.stdout,
+              "по типу контента видно, что ни один Reel не опубликован")
+        check("FUNNEL", "ГОТОВО, НО НЕ ОПУБЛИКОВАНО: 5" in result.stdout,
+              "одобренный, но неопубликованный контент выделен как резерв охвата")
+        check("FUNNEL", "video gate: face drift" in result.stdout,
+              "повторяющаяся причина отбраковки названа дословно")
+        check("FUNNEL", "опубликовано 12" in result.stdout,
+              "по типу, который публикуется, показан фактический выход")
+
+        print(f"\n=== 15. Изоляция: репозиторий не загрязнён ===")
         real_snapshots = BASE / "data" / "followers_snapshots.json"
         check("ISOLATION", not real_snapshots.exists() or "SYNTHETIC" not in
               real_snapshots.read_text(encoding="utf-8"),
