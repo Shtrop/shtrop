@@ -1,0 +1,200 @@
+diff --git a/longcat_video/modules/attention.py b/longcat_video/modules/attention.py
+index bb5630f..573340d 100644
+--- a/longcat_video/modules/attention.py
++++ b/longcat_video/modules/attention.py
+@@ -7,7 +7,6 @@ from einops import rearrange
+ 
+ from .rope_3d import RotaryPositionalEmbedding
+ from .blocks import RMSNorm_FP32
+-from ..block_sparse_attention.bsa_interface import flash_attn_bsa_3d
+ from ..context_parallel.ulysses_wrapper import ulysses_wrapper
+ 
+ 
+@@ -64,6 +63,8 @@ class Attention(nn.Module):
+             Tk = SKV // (H * W)
+             latent_shape_q = (Tq, H, W)
+             latent_shape_k = (Tk, H, W)
++            # ленивый импорт: triton нужен только для block-sparse attention
++            from ..block_sparse_attention.bsa_interface import flash_attn_bsa_3d
+             x = flash_attn_bsa_3d(q, k, v, latent_shape_q, latent_shape_k, **self.bsa_params)
+         elif self.enable_flashattn3:
+             from flash_attn_interface import flash_attn_func
+diff --git a/longcat_video/modules/avatar/attention.py b/longcat_video/modules/avatar/attention.py
+index a169a7a..8a889ae 100644
+--- a/longcat_video/modules/avatar/attention.py
++++ b/longcat_video/modules/avatar/attention.py
+@@ -7,7 +7,6 @@ from einops import rearrange
+ 
+ from .rope_3d import RotaryPositionalEmbedding
+ from ..blocks import RMSNorm_FP32
+-from ...block_sparse_attention.bsa_interface import flash_attn_bsa_3d
+ from ...context_parallel.ulysses_wrapper import ulysses_wrapper
+ from ...audio_process.torch_utils import get_attn_map_with_target
+ from .rope_3d import RotaryPositionalEmbedding1D
+@@ -75,6 +74,8 @@ class Attention(nn.Module):
+             Tk = SKV // (H * W)
+             latent_shape_q = (Tq, H, W)
+             latent_shape_k = (Tk, H, W)
++            # ленивый импорт: triton нужен только для block-sparse attention
++            from ...block_sparse_attention.bsa_interface import flash_attn_bsa_3d
+             x = flash_attn_bsa_3d(q, k, v, latent_shape_q, latent_shape_k, **self.bsa_params)
+         elif self.enable_flashattn3:
+             from flash_attn_interface import flash_attn_func
+diff --git a/run_demo_avatar_multi_audio_to_video.py b/run_demo_avatar_multi_audio_to_video.py
+index f867be5..641b499 100644
+--- a/run_demo_avatar_multi_audio_to_video.py
++++ b/run_demo_avatar_multi_audio_to_video.py
+@@ -131,6 +131,10 @@ def generate(args):
+         height, width = 480, 832
+     elif resolution == '720p':
+         height, width = 768, 1280
++    if args.height and args.width:
++        height, width = args.height, args.width  # напр. 832x480 / 1280x768 для 9:16
++    if height % 16 or width % 16:
++        raise ValueError(f"height/width должны делиться на 16, получено {height}x{width}")
+ 
+     # case setup
+     with open(input_json, 'r', encoding='utf-8') as f:
+@@ -158,7 +162,8 @@ def generate(args):
+     num_gpus = torch.cuda.device_count()
+     local_rank = rank % num_gpus
+     torch.cuda.set_device(local_rank)
+-    dist.init_process_group(backend="nccl", timeout=datetime.timedelta(seconds=3600*24))
++    _backend = "nccl" if dist.is_nccl_available() else "gloo"  # на Windows NCCL нет
++    dist.init_process_group(backend=_backend, timeout=datetime.timedelta(seconds=3600*24))
+     global_rank    = dist.get_rank()
+     num_processes  = dist.get_world_size()
+ 
+@@ -510,6 +515,18 @@ def _parse_args():
+         "--use_distill",
+         action='store_true',
+     )
++    parser.add_argument(
++        '--height',
++        type=int,
++        default=None,
++        help="переопределить высоту кадра (вертикаль 9:16: --height 832 --width 480)"
++    )
++    parser.add_argument(
++        '--width',
++        type=int,
++        default=None,
++        help="переопределить ширину кадра"
++    )
+     parser.add_argument(
+         "--use_int8",
+         action='store_true',
+diff --git a/run_demo_avatar_single_audio_to_video.py b/run_demo_avatar_single_audio_to_video.py
+index 5fc822a..f737af3 100644
+--- a/run_demo_avatar_single_audio_to_video.py
++++ b/run_demo_avatar_single_audio_to_video.py
+@@ -86,6 +86,10 @@ def generate(args):
+         height, width = 480, 832
+     elif resolution == '720p':
+         height, width = 768, 1280
++    if args.height and args.width:
++        height, width = args.height, args.width  # напр. 832x480 / 1280x768 для 9:16
++    if height % 16 or width % 16:
++        raise ValueError(f"height/width должны делиться на 16, получено {height}x{width}")
+ 
+     # case setup
+     with open(input_json, 'r', encoding='utf-8') as f:
+@@ -99,7 +103,8 @@ def generate(args):
+     num_gpus = torch.cuda.device_count()
+     local_rank = rank % num_gpus
+     torch.cuda.set_device(local_rank)
+-    dist.init_process_group(backend="nccl", timeout=datetime.timedelta(seconds=3600*24))
++    _backend = "nccl" if dist.is_nccl_available() else "gloo"  # на Windows NCCL нет
++    dist.init_process_group(backend=_backend, timeout=datetime.timedelta(seconds=3600*24))
+     global_rank    = dist.get_rank()
+     num_processes  = dist.get_world_size()
+ 
+@@ -425,6 +430,18 @@ def _parse_args():
+         "--use_distill",
+         action='store_true',
+     )
++    parser.add_argument(
++        '--height',
++        type=int,
++        default=None,
++        help="переопределить высоту кадра (вертикаль 9:16: --height 832 --width 480)"
++    )
++    parser.add_argument(
++        '--width',
++        type=int,
++        default=None,
++        help="переопределить ширину кадра"
++    )
+     parser.add_argument(
+         "--use_int8",
+         action='store_true',
+diff --git a/run_demo_image_to_video.py b/run_demo_image_to_video.py
+index aa3668f..975204c 100644
+--- a/run_demo_image_to_video.py
++++ b/run_demo_image_to_video.py
+@@ -42,7 +42,8 @@ def generate(args):
+     num_gpus = torch.cuda.device_count()
+     local_rank = rank % num_gpus
+     torch.cuda.set_device(local_rank)
+-    dist.init_process_group(backend="nccl", timeout=datetime.timedelta(seconds=3600*24))
++    _backend = "nccl" if dist.is_nccl_available() else "gloo"  # на Windows NCCL нет
++    dist.init_process_group(backend=_backend, timeout=datetime.timedelta(seconds=3600*24))
+     global_rank    = dist.get_rank()
+     num_processes  = dist.get_world_size()
+ 
+diff --git a/run_demo_interactive_video.py b/run_demo_interactive_video.py
+index dd13f36..2b34b97 100644
+--- a/run_demo_interactive_video.py
++++ b/run_demo_interactive_video.py
+@@ -48,7 +48,8 @@ def generate(args):
+     num_gpus = torch.cuda.device_count()
+     local_rank = rank % num_gpus
+     torch.cuda.set_device(local_rank)
+-    dist.init_process_group(backend="nccl", timeout=datetime.timedelta(seconds=3600*24))
++    _backend = "nccl" if dist.is_nccl_available() else "gloo"  # на Windows NCCL нет
++    dist.init_process_group(backend=_backend, timeout=datetime.timedelta(seconds=3600*24))
+     global_rank    = dist.get_rank()
+     num_processes  = dist.get_world_size()
+ 
+diff --git a/run_demo_long_video.py b/run_demo_long_video.py
+index 6b2aee8..6bbc37b 100644
+--- a/run_demo_long_video.py
++++ b/run_demo_long_video.py
+@@ -41,7 +41,8 @@ def generate(args):
+     num_gpus = torch.cuda.device_count()
+     local_rank = rank % num_gpus
+     torch.cuda.set_device(local_rank)
+-    dist.init_process_group(backend="nccl", timeout=datetime.timedelta(seconds=3600*24))
++    _backend = "nccl" if dist.is_nccl_available() else "gloo"  # на Windows NCCL нет
++    dist.init_process_group(backend=_backend, timeout=datetime.timedelta(seconds=3600*24))
+     global_rank    = dist.get_rank()
+     num_processes  = dist.get_world_size()
+ 
+diff --git a/run_demo_text_to_video.py b/run_demo_text_to_video.py
+index 4fe8a28..fa99d91 100644
+--- a/run_demo_text_to_video.py
++++ b/run_demo_text_to_video.py
+@@ -39,7 +39,8 @@ def generate(args):
+     num_gpus = torch.cuda.device_count()
+     local_rank = rank % num_gpus
+     torch.cuda.set_device(local_rank)
+-    dist.init_process_group(backend="nccl", timeout=datetime.timedelta(seconds=3600*24))
++    _backend = "nccl" if dist.is_nccl_available() else "gloo"  # на Windows NCCL нет
++    dist.init_process_group(backend=_backend, timeout=datetime.timedelta(seconds=3600*24))
+     global_rank    = dist.get_rank()
+     num_processes  = dist.get_world_size()
+ 
+diff --git a/run_demo_video_continuation.py b/run_demo_video_continuation.py
+index 937e1c4..e116825 100644
+--- a/run_demo_video_continuation.py
++++ b/run_demo_video_continuation.py
+@@ -53,7 +53,8 @@ def generate(args):
+     num_gpus = torch.cuda.device_count()
+     local_rank = rank % num_gpus
+     torch.cuda.set_device(local_rank)
+-    dist.init_process_group(backend="nccl", timeout=datetime.timedelta(seconds=3600*24))
++    _backend = "nccl" if dist.is_nccl_available() else "gloo"  # на Windows NCCL нет
++    dist.init_process_group(backend=_backend, timeout=datetime.timedelta(seconds=3600*24))
+     global_rank    = dist.get_rank()
+     num_processes  = dist.get_world_size()
+ 

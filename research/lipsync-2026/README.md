@@ -82,6 +82,9 @@
 Вывод по рискам: практический контур — **Linux или WSL2 + ≥40 GB VRAM** (или проверенный
 INT8/FP8-режим на 24 GB), но не Windows-нативно и не «поставил и поехало».
 
+Блокеры 1, 2 и 4 сняты патчем `kit/longcat-compat.patch` (см. следующий раздел).
+flash-attn остаётся опциональным: без него работает ветка xformers/обычного attention.
+
 ## Альтернатива, если нужен именно lip-sync, а не генерация видео
 
 **HighSync** (`github.com/saeed5959/high_sync`, MIT, последний коммит 16.08.2026) — правка рта
@@ -94,20 +97,37 @@ whisper-tiny как аудиокодер, база — SD-image-variations + sd-
 ## Как проверить локально за один прогон (runbook для D:\AI_CONTENT\Sofia)
 
 Выполнять в изолированном окружении, вне production-контура, `local-only / no-publish`.
+Всё нужное собрано в `kit/` — клон, патч совместимости и замер с вердиктом.
 
 ```bash
 # 0. Преконтроль: nvidia-smi, свободная VRAM, отсутствие активного gpu_render
-# 1. Только Linux/WSL2
-git clone --single-branch --branch main https://github.com/meituan-longcat/LongCat-Video
-# 2. Веса (≈ десятки ГБ; нужен и базовый LongCat-Video, и avatar-1.5)
-huggingface-cli download meituan-longcat/LongCat-Video-Avatar-1.5 --local-dir ./weights/LongCat-Video-Avatar-1.5
-# 3. Минимальный прогон: 1 сегмент (3.72 c), 480p, INT8 + дистилляция
-torchrun run_demo_avatar_single_audio_to_video.py \
-  --checkpoint_dir=./weights/LongCat-Video-Avatar-1.5 \
-  --stage_1=ai2v --input_json=assets/avatar/single_example_1.json \
-  --use_distill --model_type avatar-v1.5 --use_int8
-# (если одна карта — context_parallel_size оставить 1; NCCL-инициализация всё равно требуется)
+# 1. Клон + патч + проверка импорта (без весов)
+bash kit/setup.sh --dir ./LongCat-Video
+# 2. Веса (≈ десятки ГБ)
+bash kit/setup.sh --dir ./LongCat-Video --weights
+# 3. Минимальный замер: 1 сегмент (3.72 c), 480p, INT8 + дистилляция
+python3 kit/bench_longcat.py --repo ./LongCat-Video \
+  --checkpoint_dir ./LongCat-Video/weights/LongCat-Video-Avatar-1.5 \
+  --segments 1 --resolution 480p --vram_budget_gb 24
+# вертикаль 9:16 -> --vertical ; полный Reel ~32 c -> --segments 10
 ```
+
+`bench_longcat.py` сам считает пиковую VRAM (опрос `nvidia-smi` раз в секунду),
+время на 1 с видео и пишет `report.json` с `PASS` / `FAIL` / `NOT_MEASURED`
+по критериям ниже.
+
+### Что чинит `kit/longcat-compat.patch`
+
+| Правка | Зачем |
+| --- | --- |
+| ленивый импорт `flash_attn_bsa_3d` в обоих `attention.py` | `import triton` перестаёт быть обязательным при импорте — нужен только при `enable_bsa` |
+| `backend="nccl"` → `nccl if dist.is_nccl_available() else gloo` (7 демо-скриптов) | запуск на хосте без NCCL (Windows); на одной карте коллективов нет |
+| флаги `--height/--width` в аватарных демо + проверка кратности 16 | вертикаль 9:16 (`--height 832 --width 480`) без правки кода |
+
+Проверено: на чистом клоне импорт падает с `ModuleNotFoundError: triton`,
+после патча все три модуля (включая аватарный DiT) импортируются —
+`checks/import_check.py` эмулирует хост без triton/flash-attn через хук `__import__`,
+блокируя их только для файлов самого LongCat-Video.
 
 Критерии приёмки, прежде чем пускать технологию в пайплайн Sofia:
 
@@ -127,7 +147,9 @@ torchrun run_demo_avatar_single_audio_to_video.py \
 
 ```bash
 python3 checks/segment_math.py LongCat-Video/run_demo_avatar_single_audio_to_video.py
-python3 checks/int8_check.py   # требует torch (CPU достаточно) и клон LongCat-Video рядом
+python3 checks/int8_check.py       # требует torch (CPU достаточно) и клон LongCat-Video рядом
+python3 checks/import_check.py LongCat-Video   # до патча: FAIL triton, после: OK
+python3 kit/bench_longcat.py --dry_run --segments 10 --vertical  # показать план прогона
 ```
 
 ## Источники
