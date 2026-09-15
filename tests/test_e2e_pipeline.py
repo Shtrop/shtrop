@@ -80,6 +80,23 @@ def _studio(tmp_path, devkit=True):
     return studio
 
 
+@pytest.fixture(scope="module")
+def devkit_run(tmp_path_factory):
+    """One full devkit pipeline run, shared by the assertions that only read it.
+
+    Producing a Reel costs six renders, an encode and a mix. Tests that merely
+    inspect the result of a standard run share this one; tests that need their
+    own pipeline state (resume, a lost session, supplied perceptual samples)
+    still build their own.
+    """
+    if _ffmpeg() is None:
+        pytest.skip("no ffmpeg available")
+    workdir = tmp_path_factory.mktemp("devkit-run")
+    studio = _studio(workdir)
+    result = studio.director.produce("reel-shared", _growth(), diagnostic=True)
+    return studio, result, workdir
+
+
 # ---- wiring --------------------------------------------------------------
 def test_every_registered_role_is_executable(tmp_path):
     audit = _studio(tmp_path, devkit=False).audit()
@@ -126,10 +143,8 @@ def test_run_without_backends_blocks_and_never_passes(tmp_path):
 
 
 # ---- devkit end to end ---------------------------------------------------
-@needs_ffmpeg
-def test_full_pipeline_produces_real_artifacts(tmp_path):
-    studio = _studio(tmp_path)
-    result = studio.director.produce("reel-e2e", _growth(), diagnostic=True)
+def test_full_pipeline_produces_real_artifacts(devkit_run):
+    _studio_, result, _ = devkit_run
 
     final = Path(result.assets.final)
     assert final.exists() and final.stat().st_size > 100_000
@@ -146,19 +161,15 @@ def test_full_pipeline_produces_real_artifacts(tmp_path):
     assert 15.0 <= decode.measurement.value <= 30.0
 
 
-@needs_ffmpeg
-def test_a_diagnostic_run_can_never_approve_a_reel(tmp_path):
-    result = _studio(tmp_path).director.produce(
-        "reel-diag", _growth(), diagnostic=True
-    )
+def test_a_diagnostic_run_can_never_approve_a_reel(devkit_run):
+    _studio_, result, _ = devkit_run
     assert result.verdict is not Verdict.PASS
     assert not result.ready_for_owner_review
     assert result.report.by_name("reel.production").verdict is Verdict.HOLD
 
 
-@needs_ffmpeg
-def test_identity_and_lipsync_cannot_pass_without_sofia(tmp_path):
-    result = _studio(tmp_path).director.produce("reel-id", _growth(), diagnostic=True)
+def test_identity_and_lipsync_cannot_pass_without_sofia(devkit_run):
+    _studio_, result, _ = devkit_run
     assert result.report.by_name("reel.video").verdict is Verdict.NOT_MEASURED
     assert result.report.by_name("reel.lipsync").verdict is Verdict.NOT_MEASURED
     assert result.report.by_name("reel.voice").verdict is Verdict.FAIL
@@ -168,10 +179,8 @@ def test_identity_and_lipsync_cannot_pass_without_sofia(tmp_path):
     assert result.scores["OVERALL"] is None
 
 
-@needs_ffmpeg
-def test_roles_really_execute_through_the_runner(tmp_path):
-    studio = _studio(tmp_path)
-    studio.director.produce("reel-exec", _growth(), diagnostic=True)
+def test_roles_really_execute_through_the_runner(devkit_run):
+    studio, _result, tmp_path = devkit_run
     executed = set(studio.runner.executed_agents())
     for role in (
         "sofia.reel.trend",
@@ -191,18 +200,15 @@ def test_roles_really_execute_through_the_runner(tmp_path):
     assert all(r["owner"] == studio.director.name for r in records)
 
 
-@needs_ffmpeg
-def test_subtitles_are_burned_in_above_the_safe_zone(tmp_path):
-    studio = _studio(tmp_path)
-    studio.director.produce("reel-subs", _growth(), diagnostic=True)
+def test_subtitles_are_burned_in_above_the_safe_zone(devkit_run):
+    studio, _result, _ = devkit_run
     top, bottom = studio.director._subtitle_extent
     assert bottom <= 0.80
     assert top >= 0.14
 
 
-@needs_ffmpeg
-def test_ducking_is_verified_on_the_real_stems(tmp_path):
-    result = _studio(tmp_path).director.produce("reel-mix", _growth(), diagnostic=True)
+def test_ducking_is_verified_on_the_real_stems(devkit_run):
+    _studio_, result, _ = devkit_run
     mix = result.report.by_name("reel.audio_mix")
     assert mix.verdict is Verdict.PASS
     assert mix.measurement.value >= 9.0
@@ -248,11 +254,8 @@ def test_checkpoint_survives_a_lost_session(tmp_path):
     assert revived.director.checkpoints.journal("reel-crash")
 
 
-@needs_ffmpeg
-def test_repair_is_routed_to_components_not_a_full_rebuild(tmp_path):
-    result = _studio(tmp_path).director.produce(
-        "reel-repair", _growth(), diagnostic=True
-    )
+def test_repair_is_routed_to_components_not_a_full_rebuild(devkit_run):
+    _studio_, result, _ = devkit_run
     assert result.repairs
     decision = result.repairs[0]
     assert decision["components"]
