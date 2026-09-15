@@ -25,6 +25,7 @@ param(
     [string]$Dir = ".\LongCat-Video",
     [switch]$Weights,
     [switch]$InstallDeps,
+    [switch]$FixTorch,
     [switch]$Wsl
 )
 
@@ -129,6 +130,12 @@ finally {
     Remove-Item $patchLf -ErrorAction SilentlyContinue
 }
 
+if ($FixTorch) {
+    Write-Host "==> installing a torch build that matches the GPU"
+    & $pyExe @pyPre (Join-Path $kit "install_torch.py")
+    if ($LASTEXITCODE -ne 0) { throw "torch install failed with code $LASTEXITCODE" }
+}
+
 if ($InstallDeps) {
     Write-Host "==> installing requirements without flash-attn"
     # flash-attn 2.7.4.post1 builds from source and fails on Windows; after the
@@ -137,9 +144,17 @@ if ($InstallDeps) {
         $src = Join-Path $Dir $req
         if (-not (Test-Path $src)) { continue }
         $dst = Join-Path $Dir ($req -replace '\.txt$', '-nofa.txt')
-        Get-Content $src | Where-Object { $_ -notmatch '^\s*flash[-_]attn' } | Set-Content $dst -Encoding ascii
+        # drop flash-attn (does not build on Windows) and the torch pins: otherwise pip
+        # replaces the working CUDA build with a PyPI wheel, which on Windows has no CUDA
+        Get-Content $src |
+            Where-Object { $_ -notmatch '^\s*(flash[-_]attn|torch|torchvision|torchaudio)([=<>!~\s]|$)' } |
+            Set-Content $dst -Encoding ascii
+        $constraints = Join-Path $Dir "constraints-torch.txt"
+        & $pyExe @pyPre (Join-Path $kit "torch_constraints.py") | Set-Content $constraints -Encoding ascii
+        $pipC = @()
+        if ((Test-Path $constraints) -and (Get-Content $constraints)) { $pipC = @("-c", $constraints) }
         Write-Host "    pip install -r $dst"
-        & $pyExe @pyPre -m pip install -r $dst
+        & $pyExe @pyPre -m pip install -r $dst @pipC
         if ($LASTEXITCODE -ne 0) {
             # pip install -r is all-or-nothing: one bad pin blocks the whole file,
             # so retry line by line and report only what actually failed
@@ -148,7 +163,7 @@ if ($InstallDeps) {
             foreach ($line in (Get-Content $dst)) {
                 $pkg = $line.Trim()
                 if (-not $pkg -or $pkg.StartsWith("#")) { continue }
-                & $pyExe @pyPre -m pip install $pkg
+                & $pyExe @pyPre -m pip install $pkg @pipC
                 if ($LASTEXITCODE -ne 0) { $failed += $pkg }
             }
             if ($failed.Count -gt 0) {
@@ -192,4 +207,5 @@ Write-Host ""
 Write-Host "Vertical 9:16 -> add --vertical. Full ~32 s reel -> --segments 10."
 Write-Host "If torchrun fails on process group init or flash-attn, rerun in WSL2: .\setup.ps1 -Wsl"
 Write-Host "Dependencies (without flash-attn): .\setup.ps1 -Dir <dir> -InstallDeps"
+Write-Host "Torch build for your GPU (RTX 50xx needs cu128+): .\setup.ps1 -Dir <dir> -FixTorch"
 Write-Host "bench_longcat.py runs preflight and adjusts the attention backend automatically."

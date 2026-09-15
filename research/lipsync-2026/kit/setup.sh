@@ -51,8 +51,15 @@ if [[ "$DEPS" == "1" ]]; then
   for req in requirements.txt requirements_avatar.txt; do
     [[ -f "$DIR/$req" ]] || continue
     nofa="$DIR/${req%.txt}-nofa.txt"
-    grep -v -E '^[[:space:]]*flash[-_]attn' "$DIR/$req" > "$nofa"
-    if ! python3 -m pip install -r "$nofa"; then
+    # выкидываем flash-attn (не собирается на Windows) и torch-пины: иначе pip
+    # подменит рабочую CUDA-сборку колесом с PyPI, которое под Windows без CUDA
+    grep -v -E '^[[:space:]]*(flash[-_]attn|torch|torchvision|torchaudio)([=<>!~[:space:]]|$)' \
+      "$DIR/$req" > "$nofa"
+    CONSTRAINTS="$DIR/constraints-torch.txt"
+    python3 "$KIT/torch_constraints.py" > "$CONSTRAINTS" 2>/dev/null || true
+    PIP_C=()
+    [[ -s "$CONSTRAINTS" ]] && PIP_C=(-c "$CONSTRAINTS")
+    if ! python3 -m pip install -r "$nofa" "${PIP_C[@]}"; then
       # pip install -r ставит всё или ничего: один плохой пин блокирует файл,
       # поэтому добиваем по одному и сообщаем только про реально упавшие
       echo "    массовая установка $req не прошла, ставлю по одному" >&2
@@ -60,7 +67,7 @@ if [[ "$DEPS" == "1" ]]; then
       while IFS= read -r line; do
         pkg="$(echo "$line" | tr -d '[:space:]')"
         [[ -z "$pkg" || "$pkg" == \#* ]] && continue
-        python3 -m pip install "$pkg" || failed+=("$pkg")
+        python3 -m pip install "$pkg" "${PIP_C[@]}" || failed+=("$pkg")
       done < "$nofa"
       [[ ${#failed[@]} -gt 0 ]] && echo "    не установлено из $req: ${failed[*]}" >&2
     fi

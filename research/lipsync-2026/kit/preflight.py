@@ -37,13 +37,38 @@ def check_torch() -> None:
         add("FAIL", "torch", f"не установлен в {sys.executable}")
         return
     import torch
-    add("PASS", "torch", torch.__version__)
+    if torch.version.cuda is None:
+        add("FAIL", "torch", f"{torch.__version__} — CPU-сборка без CUDA; "
+                             f"переустановите: python kit/install_torch.py")
+    else:
+        add("PASS", "torch", f"{torch.__version__} (CUDA {torch.version.cuda})")
+
     if torch.cuda.is_available():
         n = torch.cuda.device_count()
         names = ", ".join(torch.cuda.get_device_name(i) for i in range(n))
         add("PASS", "cuda", f"{n} GPU: {names}")
+        check_arch(torch)
     else:
         add("FAIL", "cuda", "torch.cuda.is_available() == False — прогон невозможен")
+
+
+def check_arch(torch) -> None:
+    """Собран ли этот torch под архитектуру карты: sm_120 (RTX 50xx) есть только в cu128+."""
+    try:
+        archs = torch.cuda.get_arch_list()
+    except Exception as e:
+        add("NOT_MEASURED", "sm", f"не получить arch_list: {e}")
+        return
+    for i in range(torch.cuda.device_count()):
+        major, minor = torch.cuda.get_device_capability(i)
+        sm = f"sm_{major}{minor}"
+        name = torch.cuda.get_device_name(i)
+        if sm in archs:
+            add("PASS", "sm", f"{name}: {sm} есть в сборке torch")
+        else:
+            add("FAIL", "sm", f"{name}: {sm} не поддержан этой сборкой torch "
+                              f"({', '.join(archs) or 'список пуст'}) — нужен канал новее, "
+                              f"см. kit/install_torch.py")
 
 
 def check_vram(budget_gb: float) -> None:
@@ -58,12 +83,35 @@ def check_vram(budget_gb: float) -> None:
     except (subprocess.SubprocessError, OSError) as e:
         add("NOT_MEASURED", "vram", f"nvidia-smi не отработал: {e}")
         return
+    tight = False
     for line in (l for l in out.splitlines() if l.strip()):
         total, used, name = [x.strip() for x in line.split(",", 2)]
         free_gb = (int(total) - int(used)) / 1024
         lvl = "PASS" if free_gb >= budget_gb else "WARN"
+        tight = tight or lvl == "WARN"
         add(lvl, "vram", f"{name}: свободно {free_gb:.1f} GB из {int(total)/1024:.1f} "
                          f"(бюджет {budget_gb} GB)")
+    if tight:
+        add(*who_holds_vram())
+
+
+def who_holds_vram() -> tuple:
+    """Кто занял память: при нехватке важно знать, что гасить (напр. свой gpu_render)."""
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-compute-apps=pid,used_memory,process_name",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=15, check=True).stdout
+    except (subprocess.SubprocessError, OSError) as e:
+        return ("NOT_MEASURED", "держат vram", f"nvidia-smi не отработал: {e}")
+    procs = []
+    for line in (l.strip() for l in out.splitlines() if l.strip()):
+        parts = [x.strip() for x in line.split(",")]
+        if len(parts) >= 3:
+            procs.append(f"{os.path.basename(parts[2])} (pid {parts[0]}, {int(parts[1])/1024:.1f} GB)")
+    if not procs:
+        return ("NOT_MEASURED", "держат vram", "список процессов пуст")
+    return ("WARN", "держат vram", "; ".join(procs))
 
 
 def check_disk(repo: str) -> None:
