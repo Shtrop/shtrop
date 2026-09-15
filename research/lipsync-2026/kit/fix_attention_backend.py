@@ -2,16 +2,17 @@
 """Приводит выбор attention-бэкенда в конфигах весов LongCat к тому, что реально
 установлено в окружении.
 
-В репозитории FlashAttention-2 включён в конфиге DiT по умолчанию. На хосте без
-flash-attn (обычно Windows) прогон падает уже внутри forward, хотя импорт после
-kit/longcat-compat.patch проходит. Скрипт находит config.json моделей, смотрит,
-какие бэкенды импортируются, и переключает флаги. Старый файл сохраняется рядом
-как .bak-<timestamp>, запись атомарная.
+В репозитории FlashAttention-2 включён в конфиге DiT по умолчанию, и на хосте без
+flash-attn прогон падает внутри forward, хотя импорт проходит. Скрипт находит
+config.json моделей, смотрит, какие бэкенды импортируются, и переключает флаги.
+Если не установлено ничего, все флаги ставятся в False — это SDPA-ветка, которую
+добавляет kit/longcat-compat.patch. Старый файл сохраняется рядом как
+.bak-<timestamp>, запись атомарная.
 
     python fix_attention_backend.py ./weights/LongCat-Video-Avatar-1.5
     python fix_attention_backend.py ./weights/... --dry-run
 """
-import argparse, importlib.util, json, os, shutil, sys, tempfile, time
+import argparse, importlib.util, json, os, shutil, subprocess, sys, tempfile, time
 
 FLAGS = ("enable_flashattn3", "enable_flashattn2", "enable_xformers")
 
@@ -23,14 +24,26 @@ def have(mod: str) -> bool:
         return False
 
 
+def usable(mod: str) -> bool:
+    """Модуль не просто найден, а импортируется. find_spec врёт про xformers,
+    собранный под другую версию torch: файл на месте, импорт падает по ABI."""
+    if not have(mod):
+        return False
+    try:
+        return subprocess.run([sys.executable, "-c", f"import {mod}"],
+                              capture_output=True, timeout=120).returncode == 0
+    except (subprocess.SubprocessError, OSError):
+        return False
+
+
 def pick_backend() -> str:
-    """Лучший доступный: fa3 -> fa2 -> xformers. Запасной ветки в LongCat нет —
-    при всех флагах False Attention кидает RuntimeError('Unsupported attention operations.')."""
-    if have("flash_attn_interface"):
+    """Лучший доступный: fa3 -> fa2 -> xformers. Пусто — значит SDPA-ветка из патча
+    (в апстриме на её месте raise RuntimeError('Unsupported attention operations.'))."""
+    if usable("flash_attn_interface"):
         return "enable_flashattn3"
-    if have("flash_attn"):
+    if usable("flash_attn"):
         return "enable_flashattn2"
-    if have("xformers"):
+    if usable("xformers"):
         return "enable_xformers"
     return ""
 
@@ -85,7 +98,7 @@ def main() -> int:
         return 2
 
     backend = a.backend or pick_backend()
-    installed = [m for m in ("flash_attn_interface", "flash_attn", "xformers") if have(m)]
+    installed = [m for m in ("flash_attn_interface", "flash_attn", "xformers") if usable(m)]
     print(f"установлено: {', '.join(installed) if installed else 'ничего из fa3/fa2/xformers'}")
     if not backend:
         print("выбран бэкенд: SDPA-ветка из longcat-compat.patch (все флаги в False)")

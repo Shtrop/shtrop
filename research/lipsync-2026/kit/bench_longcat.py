@@ -22,6 +22,15 @@ def gpu_indices() -> str:
     return os.environ.get("CUDA_VISIBLE_DEVICES", "")
 
 
+def visible_gpu_indices():
+    """Индексы видимых карт или None, если ограничения нет. Иначе пик VRAM
+    считался бы по всем физическим GPU, включая чужие."""
+    raw = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if raw is None or not raw.strip():
+        return None
+    return {p.strip() for p in raw.split(",") if p.strip().isdigit()}
+
+
 class VramSampler(threading.Thread):
     """Пик memory.used по всем видимым GPU, опрос раз в interval секунд."""
 
@@ -36,11 +45,17 @@ class VramSampler(threading.Thread):
     def run(self):
         if not self.available:
             return
-        cmd = ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"]
+        cmd = ["nvidia-smi", "--query-gpu=index,memory.used", "--format=csv,noheader,nounits"]
+        visible = visible_gpu_indices()
         while not self._stop_event.is_set():
             try:
                 out = subprocess.run(cmd, capture_output=True, text=True, timeout=10).stdout
-                used = sum(int(v.strip()) for v in out.split("\n") if v.strip())
+                used = 0
+                for line in (l for l in out.splitlines() if l.strip()):
+                    idx, mem = [x.strip() for x in line.split(",", 1)]
+                    if visible is not None and idx not in visible:
+                        continue
+                    used += int(mem)
                 self.peak_mib = max(self.peak_mib, used)
                 self.samples += 1
             except Exception:
@@ -51,6 +66,14 @@ class VramSampler(threading.Thread):
         self._stop_event.set()
 
 
+def nccl_available() -> bool:
+    try:
+        import torch.distributed as dist
+        return bool(dist.is_available() and dist.is_nccl_available())
+    except Exception:
+        return False
+
+
 def torchrun_prefix() -> list:
     """torchrun из PATH, иначе python -m torch.distributed.run (Windows без Scripts в PATH)."""
     exe = shutil.which("torchrun")
@@ -59,13 +82,13 @@ def torchrun_prefix() -> list:
     return [sys.executable, "-m", "torch.distributed.run"]
 
 
-def build_cmd(a) -> list:
+def build_cmd(a, ckpt: str) -> list:
     cmd = torchrun_prefix()
     if a.nproc > 1:
         cmd += [f"--nproc_per_node={a.nproc}"]
     cmd += [
         "run_demo_avatar_single_audio_to_video.py",
-        f"--checkpoint_dir={a.checkpoint_dir}",
+        f"--checkpoint_dir={ckpt}",
         f"--stage_1={a.stage_1}",
         f"--input_json={a.input_json}",
         f"--resolution={a.resolution}",
@@ -81,6 +104,26 @@ def build_cmd(a) -> list:
         h, w = (832, 480) if a.resolution == "480p" else (1280, 768)
         cmd += [f"--height={h}", f"--width={w}"]
     return cmd
+
+
+def run_preflight(here: str, repo: str, budget: float) -> tuple:
+    """Печатает преконтроль человеку и возвращает (код, множество имён FAIL-пунктов)."""
+    out = subprocess.run(
+        [sys.executable, os.path.join(here, "preflight.py"), "--repo", repo,
+         "--vram_budget_gb", str(budget), "--json"],
+        capture_output=True, text=True)
+    try:
+        data = json.loads(out.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        print(out.stdout or "", out.stderr or "", file=sys.stderr)
+        return (out.returncode, set())
+    width = max(len(c["name"]) for c in data["checks"])
+    print("--- преконтроль ---")
+    for c in data["checks"]:
+        print(f"  {c['level']:<13} {c['name']:<{width}}  {c['detail']}")
+    fails = {c["name"] for c in data["checks"] if c["level"] == "FAIL"}
+    print(f"итог: {data['verdict']}")
+    return (out.returncode, fails)
 
 
 def main():
@@ -105,6 +148,8 @@ def main():
     p.add_argument("--no_fix_backend", action="store_true",
                    help="не подгонять attention-бэкенд в конфигах весов")
     p.add_argument("--force", action="store_true", help="запускать даже при FAIL в preflight")
+    p.add_argument("--auto_fix", action="store_true",
+                   help="при FAIL по torch/cuda/sm переставить torch и повторить преконтроль")
     a = p.parse_args()
 
     repo = os.path.abspath(a.repo)
@@ -126,9 +171,13 @@ def main():
 
     here = os.path.dirname(os.path.abspath(__file__))
     if not a.dry_run and not a.skip_preflight:
-        rc_pf = subprocess.run(
-            [sys.executable, os.path.join(here, "preflight.py"),
-             "--repo", repo, "--vram_budget_gb", str(a.vram_budget_gb)]).returncode
+        rc_pf, fails = run_preflight(here, repo, a.vram_budget_gb)
+        fixable = {"torch", "cuda", "sm"} & fails
+        if rc_pf != 0 and fixable and a.auto_fix:
+            print(f"\n--auto_fix: чиню {', '.join(sorted(fixable))} через install_torch.py")
+            subprocess.run([sys.executable, os.path.join(here, "install_torch.py")])
+            print("--auto_fix: повторяю преконтроль")
+            rc_pf, fails = run_preflight(here, repo, a.vram_budget_gb)
         if rc_pf != 0 and not a.force:
             print("preflight нашёл блокирующие пункты — исправьте их или запустите с --force",
                   file=sys.stderr)
@@ -136,7 +185,13 @@ def main():
     if not a.dry_run and not a.no_fix_backend:
         subprocess.run([sys.executable, os.path.join(here, "fix_attention_backend.py"), ckpt])
 
-    cmd = build_cmd(a)
+    if a.nproc > 1 and not nccl_available():
+        print("ОШИБКА: --nproc > 1 без NCCL. Контекст-параллелизм LongCat построен на "
+              "dist.all_to_all_single, которого нет в gloo — прогон упадёт после загрузки "
+              "весов. Запускайте на одной карте или в WSL2/Linux.", file=sys.stderr)
+        return 2
+
+    cmd = build_cmd(a, ckpt)
     vid_s = video_seconds(a.segments)
     print("repo        :", a.repo)
     print("команда     :", " ".join(cmd))
@@ -187,7 +242,8 @@ def main():
         "verdict": "PASS" if all(v for v in checks.values() if v is not None) else "FAIL",
     }
     if peak_gb is None:
-        report["verdict"] = "NOT_MEASURED" if rc == 0 else "FAIL"
+        measured_ok = all(v for v in checks.values() if v is not None)
+        report["verdict"] = "NOT_MEASURED" if measured_ok else "FAIL"
         report["note"] = "nvidia-smi недоступен — VRAM не измерена"
 
     with open(a.report, "w", encoding="utf-8") as f:

@@ -36,7 +36,7 @@ def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
 builtins.__import__ = guarded_import
 sys.path.insert(0, REPO)
 
-rc, missing_deps = 0, set()
+blocked, missing_deps = False, set()
 for t in ("longcat_video.modules.attention",
           "longcat_video.modules.avatar.attention",
           "longcat_video.modules.avatar.longcat_video_dit_avatar"):
@@ -47,16 +47,18 @@ for t in ("longcat_video.modules.attention",
         root = (e.name or "").split(".")[0]
         if root in PATCH_BLOCKERS:
             print(f"FAIL {t}: нет '{root}' — патч не наложен или снят")
-            rc = 1
+            blocked = True
         else:
             print(f"SKIP {t}: не установлена зависимость '{root}'")
             missing_deps.add(root)
-            rc = max(rc, 3)
     except Exception as e:
         print(f"FAIL {t}: {type(e).__name__}: {e}")
-        rc = 1
+        blocked = True
 
-if missing_deps and rc == 3:
+# блокер важнее отсутствующих зависимостей: иначе setup продолжит на непропатченном клоне
+rc = 1 if blocked else (3 if missing_deps else 0)
+
+if missing_deps and not blocked:
     print("зависимости не установлены: " + ", ".join(sorted(missing_deps)))
     print("это не блокер патча — повторите проверку после установки requirements")
 sys.exit(rc)

@@ -16,7 +16,7 @@
 .EXAMPLE
     .\setup.ps1 -Dir D:\AI_CONTENT\_lipsync_test\LongCat-Video
 .EXAMPLE
-    .\setup.ps1 -Dir .\LongCat-Video -Weights
+    .\setup.ps1 -Dir D:\AI_CONTENT\_lipsync_test\LongCat-Video -All
 .EXAMPLE
     .\setup.ps1 -Wsl -Dir D:\AI_CONTENT\_lipsync_test\LongCat-Video
 #>
@@ -26,8 +26,11 @@ param(
     [switch]$Weights,
     [switch]$InstallDeps,
     [switch]$FixTorch,
+    [switch]$All,
     [switch]$Wsl
 )
+
+if ($All) { $FixTorch = $true; $InstallDeps = $true; $Weights = $true }
 
 $ErrorActionPreference = "Stop"
 # native command exit codes are checked manually via $LASTEXITCODE
@@ -60,11 +63,8 @@ if ($Wsl) {
     $shPath = ConvertTo-WslPath (Join-Path $kit "setup.sh")
     $dirWsl = ConvertTo-WslPath $Dir
     $wslArgs = @("bash", $shPath, "--dir", $dirWsl)
-    Write-Host "==> environment preflight"
-& $pyExe @pyPre (Join-Path $kit "preflight.py") --repo $Dir
-# informational only: weights may still be missing at this point
-
-if ($Weights) { $wslArgs += "--weights" }
+    if ($InstallDeps) { $wslArgs += "--deps" }
+    if ($Weights) { $wslArgs += "--weights" }
     & wsl -- @wslArgs
     exit $LASTEXITCODE
 }
@@ -183,6 +183,10 @@ if ($importRc -eq 3) {
 elseif ($importRc -ne 0) {
     throw "import check failed, see output above"
 }
+
+Write-Host "==> environment preflight"
+& $pyExe @pyPre (Join-Path $kit "preflight.py") --repo $Dir
+# informational only: weights may still be missing at this point
 
 if ($Weights) {
     Write-Host "==> downloading weights (tens of GB, slow)"

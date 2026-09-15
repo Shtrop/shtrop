@@ -79,7 +79,7 @@ def main() -> int:
     p.add_argument("--with-vision", action="store_true",
                    help="поставить torchvision, даже если его сейчас нет")
     p.add_argument("--with-xformers", action="store_true",
-                   help="доставить xformers: без него LongCat падает, запасной ветки нет")
+                   help="доставить xformers: не обязателен (есть SDPA-ветка), но быстрее")
     p.add_argument("--dry-run", action="store_true")
     a = p.parse_args()
 
@@ -100,6 +100,10 @@ def main() -> int:
     # спутники обязаны быть из того же канала: torchvision, собранный под другой torch,
     # падает на импорте с "operator torchvision::nms does not exist"
     companions = [n for n in ("torchvision", "torchaudio") if installed_version(n)]
+    if installed_version("xformers") and not a.with_xformers:
+        print("  xformers установлен и будет переставлен: собранный под прежний torch,\n"
+              "  он импортируется с ошибкой ABI, но find_spec его всё равно находит")
+        a.with_xformers = True
     if a.with_vision and "torchvision" not in companions:
         companions.append("torchvision")
     if companions:
@@ -135,8 +139,9 @@ def main() -> int:
             rc = subprocess.run([sys.executable, "-m", "pip", "install", "xformers",
                                  "--no-deps"]).returncode
         if rc != 0:
-            print("xformers установить не удалось — без него прогон невозможен", file=sys.stderr)
-            return rc
+            print("xformers установить не удалось; прогон пойдёт через SDPA-ветку патча",
+                  file=sys.stderr)
+            rc = 0
 
     print("готово: перезапустите проверку — python preflight.py --repo <dir>")
     return 0

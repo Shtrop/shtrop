@@ -2,7 +2,7 @@
 # Готовит LongCat-Video-Avatar 1.5 к тестовому прогону: клон, патч совместимости,
 # проверка импорта без triton/flash-attn. Веса не качает (флаг --weights).
 #
-#   bash setup.sh [--dir DIR] [--deps] [--weights]
+#   bash setup.sh [--dir DIR] [--deps] [--weights] [--all]
 #
 # Требует: git, python3. Для --weights — huggingface-cli и десятки ГБ места.
 set -euo pipefail
@@ -17,6 +17,7 @@ while [[ $# -gt 0 ]]; do
     --dir) DIR="$2"; shift 2 ;;
     --weights) WEIGHTS=1; shift ;;
     --deps) DEPS=1; shift ;;
+    --all) DEPS=1; WEIGHTS=1; shift ;;
     *) echo "неизвестный аргумент: $1" >&2; exit 2 ;;
   esac
 done

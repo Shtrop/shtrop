@@ -7,7 +7,7 @@ VRAM, свободное место под веса, ffmpeg, attention-бэке�
     python preflight.py --repo ./LongCat-Video --vram_budget_gb 24
 Коды возврата: 0 — можно запускать, 1 — есть FAIL.
 """
-import argparse, importlib.util, os, shutil, subprocess, sys
+import argparse, importlib.util, json, os, shutil, subprocess, sys
 
 WEIGHTS_GB = 60          # грубая оценка места под базовую модель + avatar-1.5
 results = []
@@ -21,6 +21,18 @@ def have(mod: str) -> bool:
     try:
         return importlib.util.find_spec(mod) is not None
     except (ImportError, ValueError):
+        return False
+
+
+def usable(mod: str) -> bool:
+    """Модуль не просто найден, а импортируется. find_spec врёт про xformers,
+    собранный под другую версию torch: файл на месте, импорт падает по ABI."""
+    if not have(mod):
+        return False
+    try:
+        return subprocess.run([sys.executable, "-c", f"import {mod}"],
+                              capture_output=True, timeout=120).returncode == 0
+    except (subprocess.SubprocessError, OSError):
         return False
 
 
@@ -86,7 +98,11 @@ def check_vram(budget_gb: float) -> None:
     tight = False
     for line in (l for l in out.splitlines() if l.strip()):
         total, used, name = [x.strip() for x in line.split(",", 2)]
-        free_gb = (int(total) - int(used)) / 1024
+        try:
+            free_gb = (int(total) - int(used)) / 1024
+        except ValueError:            # драйвер отдаёт [N/A] — не повод падать
+            add("NOT_MEASURED", "vram", f"{name}: nvidia-smi вернул '{total}/{used}'")
+            continue
         lvl = "PASS" if free_gb >= budget_gb else "WARN"
         tight = tight or lvl == "WARN"
         add(lvl, "vram", f"{name}: свободно {free_gb:.1f} GB из {int(total)/1024:.1f} "
@@ -140,7 +156,7 @@ def check_ffmpeg() -> None:
 
 
 def check_backend(repo: str) -> None:
-    found = [m for m in ("flash_attn_interface", "flash_attn", "xformers") if have(m)]
+    found = [m for m in ("flash_attn_interface", "flash_attn", "xformers") if usable(m)]
     if found:
         add("PASS", "attention", ", ".join(found))
         return
@@ -185,6 +201,7 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--repo", default="./LongCat-Video")
     p.add_argument("--vram_budget_gb", type=float, default=24.0)
+    p.add_argument("--json", action="store_true", help="машиночитаемый вывод для bench_longcat")
     a = p.parse_args()
 
     check_python()
@@ -194,6 +211,14 @@ def main() -> int:
     check_ffmpeg()
     check_backend(a.repo)
     check_repo(a.repo)
+
+    fails_now = [r for r in results if r[0] == "FAIL"]
+    if a.json:
+        print(json.dumps({
+            "checks": [{"level": l, "name": n, "detail": d} for l, n, d in results],
+            "verdict": "FAIL" if fails_now else "PASS",
+        }, ensure_ascii=False))
+        return 1 if fails_now else 0
 
     width = max(len(n) for _, n, _ in results)
     print("--- преконтроль ---")
