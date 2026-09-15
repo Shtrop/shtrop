@@ -114,6 +114,12 @@ def main() -> int:
 
     rc = subprocess.run(cmd).returncode
     if rc != 0:
+        # частый случай на больших колёсах: битая докачка и несовпадение sha256
+        # ("THESE PACKAGES DO NOT MATCH THE HASHES") — повторяем мимо кеша
+        print("pip не отработал; повторяю без кеша (битая загрузка — обычная причина)",
+              file=sys.stderr)
+        rc = subprocess.run(cmd + ["--no-cache-dir", "--retries", "5", "--timeout", "60"]).returncode
+    if rc != 0:
         print(f"pip завершился с кодом {rc}", file=sys.stderr)
         return rc
 

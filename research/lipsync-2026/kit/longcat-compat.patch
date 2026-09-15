@@ -1,8 +1,8 @@
 diff --git a/longcat_video/modules/attention.py b/longcat_video/modules/attention.py
-index bb5630f..573340d 100644
+index bb5630f..d1e4f9f 100644
 --- a/longcat_video/modules/attention.py
 +++ b/longcat_video/modules/attention.py
-@@ -7,7 +7,6 @@ from einops import rearrange
+@@ -7,10 +7,19 @@ from einops import rearrange
  
  from .rope_3d import RotaryPositionalEmbedding
  from .blocks import RMSNorm_FP32
@@ -10,7 +10,20 @@ index bb5630f..573340d 100644
  from ..context_parallel.ulysses_wrapper import ulysses_wrapper
  
  
-@@ -64,6 +63,8 @@ class Attention(nn.Module):
++def sdpa_attention(q, k, v, scale=None):
++    """Запасная ветка внимания на встроенном torch SDPA.
++
++    Нужна, потому что без flash-attn и xformers остальные ветки недоступны, а
++    в апстриме на этот случай стоит raise RuntimeError. Layout: B H S D — тот же,
++    в котором тензоры приходят, поэтому перестановок не требуется.
++    """
++    return torch.nn.functional.scaled_dot_product_attention(q, k, v, scale=scale)
++
++
+ class Attention(nn.Module):
+     def __init__(
+         self,
+@@ -64,6 +73,8 @@ class Attention(nn.Module):
              Tk = SKV // (H * W)
              latent_shape_q = (Tq, H, W)
              latent_shape_k = (Tk, H, W)
@@ -19,8 +32,37 @@ index bb5630f..573340d 100644
              x = flash_attn_bsa_3d(q, k, v, latent_shape_q, latent_shape_k, **self.bsa_params)
          elif self.enable_flashattn3:
              from flash_attn_interface import flash_attn_func
+@@ -100,7 +111,7 @@ class Attention(nn.Module):
+             x = xformers.ops.memory_efficient_attention(q, k, v, attn_bias=None, op=None,)
+             x = rearrange(x, "B M H K -> B H M K")
+         else:
+-            raise RuntimeError("Unsupported attention operations.")
++            x = sdpa_attention(q, k, v, scale=self.scale)
+ 
+         return x
+ 
+@@ -245,7 +256,18 @@ class MultiHeadCrossAttention(nn.Module):
+             attn_bias = xformers.ops.fmha.attn_bias.BlockDiagonalMask.from_seqlens([N] * B, kv_seqlen)
+             x = xformers.ops.memory_efficient_attention(q, k, v, attn_bias=attn_bias)
+         else:
+-            raise RuntimeError("Unsupported attention operations.")
++            # SDPA не умеет varlen-упаковку: считаем по сэмплам и склеиваем обратно,
++            # как это делает flash_attn_varlen_func. Масштаб — по умолчанию, как выше.
++            outs = []
++            kv_offset = 0
++            for i, kv_len in enumerate(kv_seqlen):
++                q_i = q[0, i * N:(i + 1) * N].transpose(0, 1).unsqueeze(0)
++                k_i = k[0, kv_offset:kv_offset + kv_len].transpose(0, 1).unsqueeze(0)
++                v_i = v[0, kv_offset:kv_offset + kv_len].transpose(0, 1).unsqueeze(0)
++                kv_offset += kv_len
++                out_i = sdpa_attention(q_i, k_i, v_i)
++                outs.append(out_i.squeeze(0).transpose(0, 1))
++            x = torch.cat(outs, dim=0)
+ 
+ 
+         x = x.view(B, -1, C)
 diff --git a/longcat_video/modules/avatar/attention.py b/longcat_video/modules/avatar/attention.py
-index a169a7a..8a889ae 100644
+index a169a7a..9aab226 100644
 --- a/longcat_video/modules/avatar/attention.py
 +++ b/longcat_video/modules/avatar/attention.py
 @@ -7,7 +7,6 @@ from einops import rearrange
@@ -31,7 +73,24 @@ index a169a7a..8a889ae 100644
  from ...context_parallel.ulysses_wrapper import ulysses_wrapper
  from ...audio_process.torch_utils import get_attn_map_with_target
  from .rope_3d import RotaryPositionalEmbedding1D
-@@ -75,6 +74,8 @@ class Attention(nn.Module):
+@@ -22,6 +21,16 @@ def normalize_and_scale(column, source_range, target_range, epsilon=1e-8):
+     return scaled
+ 
+ 
++def sdpa_attention(q, k, v, scale=None):
++    """Запасная ветка внимания на встроенном torch SDPA.
++
++    Нужна, потому что без flash-attn и xformers остальные ветки недоступны, а
++    в апстриме на этот случай стоит raise RuntimeError. Layout: B H S D — тот же,
++    в котором тензоры приходят, поэтому перестановок не требуется.
++    """
++    return torch.nn.functional.scaled_dot_product_attention(q, k, v, scale=scale)
++
++
+ class Attention(nn.Module):
+     def __init__(
+         self,
+@@ -75,6 +84,8 @@ class Attention(nn.Module):
              Tk = SKV // (H * W)
              latent_shape_q = (Tq, H, W)
              latent_shape_k = (Tk, H, W)
@@ -40,6 +99,24 @@ index a169a7a..8a889ae 100644
              x = flash_attn_bsa_3d(q, k, v, latent_shape_q, latent_shape_k, **self.bsa_params)
          elif self.enable_flashattn3:
              from flash_attn_interface import flash_attn_func
+@@ -111,7 +122,7 @@ class Attention(nn.Module):
+             x = xformers.ops.memory_efficient_attention(q, k, v, attn_bias=None, op=None,)
+             x = rearrange(x, "B M H K -> B H M K")
+         else:
+-            raise RuntimeError("Unsupported attention operations.")
++            x = sdpa_attention(q, k, v, scale=self.scale)
+ 
+         return x
+ 
+@@ -426,6 +437,8 @@ class SingleStreamAttention(nn.Module):
+             encoder_v = rearrange(encoder_v, "B H M K -> B M H K")
+             x = xformers.ops.memory_efficient_attention(q, encoder_k, encoder_v, attn_bias=None, op=None,)
+             x = rearrange(x, "B M H K -> B H M K") 
++        else:
++            x = sdpa_attention(q, encoder_k, encoder_v, scale=self.scale)
+ 
+         # linear transform
+         x_output_shape = (B, N, C)
 diff --git a/run_demo_avatar_multi_audio_to_video.py b/run_demo_avatar_multi_audio_to_video.py
 index f867be5..641b499 100644
 --- a/run_demo_avatar_multi_audio_to_video.py

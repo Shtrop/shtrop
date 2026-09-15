@@ -88,13 +88,11 @@ def main() -> int:
     installed = [m for m in ("flash_attn_interface", "flash_attn", "xformers") if have(m)]
     print(f"установлено: {', '.join(installed) if installed else 'ничего из fa3/fa2/xformers'}")
     if not backend:
-        print("ОШИБКА: ни flash-attn, ни xformers не установлены. В LongCat нет запасной "
-              "ветки attention — прогон упадёт с RuntimeError('Unsupported attention "
-              "operations.'). Конфиги не тронуты.\n"
-              "        Поставьте xformers: python install_torch.py --with-xformers",
-              file=sys.stderr)
-        return 1
-    print(f"выбран бэкенд: {backend}")
+        print("выбран бэкенд: SDPA-ветка из longcat-compat.patch (все флаги в False)")
+        print("  без патча апстрим кидает RuntimeError('Unsupported attention operations.') — "
+              "проверьте, что патч наложен")
+    else:
+        print(f"выбран бэкенд: {backend}")
 
     configs = find_configs(root)
     if not configs:

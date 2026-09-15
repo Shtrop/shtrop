@@ -155,15 +155,23 @@ git с `core.autocrlf=true` переписывает `.patch` в CRLF, и тог
 
 Ручной шаг остался один: скачать веса (`-Weights`) и запустить замер.
 
-### Запасной ветки attention в LongCat нет
+### Запасной ветки attention в апстриме нет — патч её добавляет
 
-Поправка к более ранней формулировке в этом файле: «работает ветка xformers/обычного
-attention» — неверно. В `Attention._attn` ветки идут `bsa → fa3 → fa2 → xformers → else`,
-и `else` — это `raise RuntimeError("Unsupported attention operations.")`
-(`longcat_video/modules/attention.py:104` и `:249`, `modules/avatar/attention.py:115`).
-Значит **flash-attn или xformers обязателен**: при всех флагах `False` прогон падает
-в forward. Поэтому преконтроль считает их отсутствие блокером, а `fix_attention_backend.py`
-в этом случае отказывается править конфиги.
+В апстриме ветки внимания идут `bsa → fa3 → fa2 → xformers → else`, где `else` — это
+`raise RuntimeError("Unsupported attention operations.")` (`modules/attention.py`,
+два места, и `modules/avatar/attention.py`; в `SingleStreamAttention` ветки `else`
+нет вовсе, там переменная просто осталась бы неопределённой). То есть на машине без
+flash-attn и xformers апстрим не работает в принципе.
+
+Патч добавляет во все четыре места ветку на встроенном `torch.nn.functional.
+scaled_dot_product_attention`. Layout `B H S D` совпадает с тем, в котором тензоры
+приходят, перестановок не нужно; для упакованного varlen-кросс-внимания считаем
+по сэмплам и склеиваем, как это делает `flash_attn_varlen_func`.
+
+Проверено численно (`checks/sdpa_check.py`, CPU, float64): выход обеих веток совпадает
+с эталонным `softmax(QK^T·scale)V` с точностью `6.7e-16` и `2.2e-16`. Так снимается
+зависимость от xformers и flash-attn — они остаются опцией ради скорости, а не условием
+запуска.
 
 ### Ловушки, найденные на реальном железе студии (RTX 5090)
 

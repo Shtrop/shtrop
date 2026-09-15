@@ -116,7 +116,9 @@ def who_holds_vram() -> tuple:
             procs.append(f"{name} (pid {pid}, память не сообщается)")
     if not procs:
         return ("NOT_MEASURED", "держат vram", "список процессов пуст")
-    return ("WARN", "держат vram", "; ".join(procs))
+    shown, rest = procs[:5], len(procs) - 5
+    tail = f" и ещё {rest}" if rest > 0 else ""
+    return ("WARN", "держат vram", "; ".join(shown) + tail)
 
 
 def check_disk(repo: str) -> None:
@@ -137,15 +139,28 @@ def check_ffmpeg() -> None:
         add("WARN", "ffmpeg", "не найден в PATH — сохранение видео со звуком не отработает")
 
 
-def check_backend() -> None:
+def check_backend(repo: str) -> None:
     found = [m for m in ("flash_attn_interface", "flash_attn", "xformers") if have(m)]
     if found:
         add("PASS", "attention", ", ".join(found))
+        return
+    # без патча апстрим кидает RuntimeError; с патчем есть ветка на torch SDPA
+    if has_sdpa_fallback(repo):
+        add("WARN", "attention", "нет ни flash-attn, ни xformers — идём через SDPA-ветку "
+                                 "из патча; работает, но flash-attn/xformers быстрее")
     else:
-        # запасной ветки в коде нет: else в Attention кидает RuntimeError
-        add("FAIL", "attention", "нет ни flash-attn, ни xformers — в LongCat нет запасной "
-                                 "ветки, forward кидает RuntimeError('Unsupported attention "
-                                 "operations.'); поставьте xformers: install_torch.py --with-xformers")
+        add("FAIL", "attention", "нет ни flash-attn, ни xformers, а SDPA-ветки в коде нет — "
+                                 "forward упадёт с RuntimeError('Unsupported attention "
+                                 "operations.'); наложите longcat-compat.patch")
+
+
+def has_sdpa_fallback(repo: str) -> bool:
+    src = os.path.join(repo, "longcat_video", "modules", "attention.py")
+    try:
+        with open(src, encoding="utf-8") as f:
+            return "def sdpa_attention(" in f.read()
+    except OSError:
+        return False
 
 
 def check_repo(repo: str) -> None:
@@ -177,7 +192,7 @@ def main() -> int:
     check_vram(a.vram_budget_gb)
     check_disk(a.repo)
     check_ffmpeg()
-    check_backend()
+    check_backend(a.repo)
     check_repo(a.repo)
 
     width = max(len(n) for _, n, _ in results)
