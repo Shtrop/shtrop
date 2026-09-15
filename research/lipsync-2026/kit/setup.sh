@@ -2,19 +2,21 @@
 # Готовит LongCat-Video-Avatar 1.5 к тестовому прогону: клон, патч совместимости,
 # проверка импорта без triton/flash-attn. Веса не качает (флаг --weights).
 #
-#   bash setup.sh [--dir DIR] [--weights]
+#   bash setup.sh [--dir DIR] [--deps] [--weights]
 #
 # Требует: git, python3. Для --weights — huggingface-cli и десятки ГБ места.
 set -euo pipefail
 
 DIR="./LongCat-Video"
 WEIGHTS=0
+DEPS=0
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dir) DIR="$2"; shift 2 ;;
     --weights) WEIGHTS=1; shift ;;
+    --deps) DEPS=1; shift ;;
     *) echo "неизвестный аргумент: $1" >&2; exit 2 ;;
   esac
 done
@@ -43,9 +45,38 @@ else
 fi
 cd - >/dev/null
 
+if [[ "$DEPS" == "1" ]]; then
+  echo "==> ставлю зависимости без flash-attn"
+  # flash-attn собирается из исходников и на Windows не встаёт; после патча он не обязателен
+  for req in requirements.txt requirements_avatar.txt; do
+    [[ -f "$DIR/$req" ]] || continue
+    nofa="$DIR/${req%.txt}-nofa.txt"
+    grep -v -E '^[[:space:]]*flash[-_]attn' "$DIR/$req" > "$nofa"
+    if ! python3 -m pip install -r "$nofa"; then
+      # pip install -r ставит всё или ничего: один плохой пин блокирует файл,
+      # поэтому добиваем по одному и сообщаем только про реально упавшие
+      echo "    массовая установка $req не прошла, ставлю по одному" >&2
+      failed=()
+      while IFS= read -r line; do
+        pkg="$(echo "$line" | tr -d '[:space:]')"
+        [[ -z "$pkg" || "$pkg" == \#* ]] && continue
+        python3 -m pip install "$pkg" || failed+=("$pkg")
+      done < "$nofa"
+      [[ ${#failed[@]} -gt 0 ]] && echo "    не установлено из $req: ${failed[*]}" >&2
+    fi
+  done
+fi
+
 echo "==> проверяю импорт без triton/flash-attn"
-python3 "$KIT/../checks/import_check.py" "$DIR" || {
-  echo "    импорт не прошёл — смотрите вывод выше" >&2; exit 1; }
+set +e
+python3 "$KIT/../checks/import_check.py" "$DIR"
+IMPORT_RC=$?
+set -e
+if [[ "$IMPORT_RC" == "3" ]]; then
+  echo "    зависимости ещё не установлены — повторите после --deps" >&2
+elif [[ "$IMPORT_RC" != "0" ]]; then
+  echo "    импорт не прошёл — смотрите вывод выше" >&2; exit 1
+fi
 
 echo "==> преконтроль окружения"
 python3 "$KIT/preflight.py" --repo "$DIR" || true   # информативно, не обрывает подготовку

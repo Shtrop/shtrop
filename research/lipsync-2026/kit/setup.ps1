@@ -63,23 +63,6 @@ if ($Wsl) {
 & $pyExe @pyPre (Join-Path $kit "preflight.py") --repo $Dir
 # informational only: weights may still be missing at this point
 
-if ($InstallDeps) {
-    Write-Host "==> installing requirements without flash-attn"
-    # flash-attn 2.7.4.post1 builds from source and fails on Windows; after the
-    # compatibility patch it is optional, the xformers/plain attention path works.
-    foreach ($req in @("requirements.txt", "requirements_avatar.txt")) {
-        $src = Join-Path $Dir $req
-        if (-not (Test-Path $src)) { continue }
-        $dst = Join-Path $Dir ($req -replace '\.txt$', '-nofa.txt')
-        Get-Content $src | Where-Object { $_ -notmatch '^\s*flash[-_]attn' } | Set-Content $dst -Encoding ascii
-        Write-Host "    pip install -r $dst"
-        & $pyExe @pyPre -m pip install -r $dst
-        if ($LASTEXITCODE -ne 0) {
-            Write-Warning "pip failed on $req; install the remaining packages manually"
-        }
-    }
-}
-
 if ($Weights) { $wslArgs += "--weights" }
     & wsl -- @wslArgs
     exit $LASTEXITCODE
@@ -146,10 +129,45 @@ finally {
     Remove-Item $patchLf -ErrorAction SilentlyContinue
 }
 
+if ($InstallDeps) {
+    Write-Host "==> installing requirements without flash-attn"
+    # flash-attn 2.7.4.post1 builds from source and fails on Windows; after the
+    # compatibility patch it is optional, the xformers/plain attention path works.
+    foreach ($req in @("requirements.txt", "requirements_avatar.txt")) {
+        $src = Join-Path $Dir $req
+        if (-not (Test-Path $src)) { continue }
+        $dst = Join-Path $Dir ($req -replace '\.txt$', '-nofa.txt')
+        Get-Content $src | Where-Object { $_ -notmatch '^\s*flash[-_]attn' } | Set-Content $dst -Encoding ascii
+        Write-Host "    pip install -r $dst"
+        & $pyExe @pyPre -m pip install -r $dst
+        if ($LASTEXITCODE -ne 0) {
+            # pip install -r is all-or-nothing: one bad pin blocks the whole file,
+            # so retry line by line and report only what actually failed
+            Write-Warning "bulk install of $req failed, retrying package by package"
+            $failed = @()
+            foreach ($line in (Get-Content $dst)) {
+                $pkg = $line.Trim()
+                if (-not $pkg -or $pkg.StartsWith("#")) { continue }
+                & $pyExe @pyPre -m pip install $pkg
+                if ($LASTEXITCODE -ne 0) { $failed += $pkg }
+            }
+            if ($failed.Count -gt 0) {
+                Write-Warning ("not installed from ${req}: " + ($failed -join ", "))
+            }
+        }
+    }
+}
+
 Write-Host "==> checking imports without triton/flash-attn"
 $checker = Join-Path (Split-Path $kit -Parent) "checks\import_check.py"
 & $pyExe @pyPre $checker $Dir
-if ($LASTEXITCODE -ne 0) { throw "import check failed, see output above" }
+$importRc = $LASTEXITCODE
+if ($importRc -eq 3) {
+    Write-Warning "requirements are not installed yet; rerun with -InstallDeps and repeat the check"
+}
+elseif ($importRc -ne 0) {
+    throw "import check failed, see output above"
+}
 
 if ($Weights) {
     Write-Host "==> downloading weights (tens of GB, slow)"
