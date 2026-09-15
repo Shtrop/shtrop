@@ -207,3 +207,54 @@ def test_each_language_has_a_representative_corpus(language):
 def test_corpus_clip_ids_are_unique(language):
     ids = [c.clip_id for c in CORPUS[language]]
     assert len(ids) == len(set(ids))
+
+
+# ---- benchmark honesty ---------------------------------------------------
+def test_a_campaign_with_no_verifiers_reports_no_rates(tmp_path):
+    """A batch where nothing could be measured must not read as ``0%``."""
+    from sofia.voice.benchmark import CampaignReport, ClipOutcome
+    from sofia.voice.corpus import corpus_for
+
+    report = CampaignReport(language=Language.RU)
+    for clip in corpus_for(Language.RU):
+        report.outcomes.append(
+            ClipOutcome(
+                clip=clip,
+                verdict=Verdict.HOLD,
+                reason="identity and pronunciation unverifiable",
+                repairs=2,
+                audio_path=str(tmp_path / f"{clip.clip_id}.wav"),
+                wer=None,
+                identity=None,
+            )
+        )
+    assert report.produced >= 20
+    assert report.verified == 0
+    assert not report.measurable
+    assert report.first_pass_rate is None
+    assert report.final_pass_rate is None
+    assert report.verdict is Verdict.NOT_MEASURED
+
+
+def test_a_campaign_with_real_measurements_reports_rates(tmp_path):
+    from sofia.voice.benchmark import CampaignReport, ClipOutcome
+    from sofia.voice.corpus import corpus_for
+
+    report = CampaignReport(language=Language.RU)
+    for i, clip in enumerate(corpus_for(Language.RU)):
+        report.outcomes.append(
+            ClipOutcome(
+                clip=clip,
+                verdict=Verdict.PASS if i % 2 == 0 else Verdict.FAIL,
+                reason="",
+                repairs=0,
+                audio_path=str(tmp_path / f"{clip.clip_id}.wav"),
+                wer=0.03,
+                identity=0.9,
+            )
+        )
+    assert report.measurable
+    assert report.final_pass_rate == pytest.approx(
+        report.count(Verdict.PASS) / report.total
+    )
+    assert report.verdict is Verdict.FAIL

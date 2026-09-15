@@ -395,3 +395,79 @@ def test_growth_input_is_labelled_while_publishing_is_on_hold():
     )
     assert gi.shadow_planning
     assert "HOLD" in gi.evidence
+
+
+# ---- batch benchmark honesty ---------------------------------------------
+def _run(verdict, *, repairs=0, unmeasured=(), arm="controlled"):
+    from sofia.reel.benchmark import ReelRun
+
+    return ReelRun(
+        reel_id="r",
+        arm=arm,
+        plan_name="p",
+        verdict=verdict,
+        reason="",
+        wall_s=10.0,
+        repairs=repairs,
+        unmeasured=tuple(unmeasured),
+        estimated_gpu_s=700.0,
+        peak_vram_gb=24.0,
+    )
+
+
+def test_a_batch_where_nothing_was_measured_reports_no_rates():
+    from sofia.reel.benchmark import BatchReport
+
+    report = BatchReport(runs=[_run(Verdict.HOLD, unmeasured=("reel.video",))] * 10)
+    assert report.verified == 0
+    assert not report.measurable
+    assert report.first_pass_rate is None
+    assert report.final_pass_rate is None
+    assert report.manual_intervention_rate is None
+    assert report.verdict is Verdict.NOT_MEASURED
+
+
+def test_a_small_batch_says_nothing_about_repeatability():
+    from sofia.reel.benchmark import MIN_BATCH, BatchReport
+
+    report = BatchReport(runs=[_run(Verdict.PASS) for _ in range(MIN_BATCH - 1)])
+    assert not report.measurable
+    assert report.final_pass_rate is None
+
+
+def test_a_measured_batch_reports_real_rates():
+    from sofia.reel.benchmark import BatchReport
+
+    runs = [_run(Verdict.PASS) for _ in range(6)] + [
+        _run(Verdict.PASS, repairs=2),
+        _run(Verdict.FAIL),
+    ]
+    report = BatchReport(runs=runs)
+    assert report.measurable
+    assert report.final_pass_rate == pytest.approx(7 / 8)
+    assert report.first_pass_rate == pytest.approx(6 / 8)
+    assert report.repair_rate == pytest.approx(1 / 8)
+    assert report.manual_intervention_rate == pytest.approx(1 / 8)
+    assert report.verdict is Verdict.FAIL
+
+
+def test_manual_intervention_counts_anything_the_pipeline_could_not_settle():
+    from sofia.reel.benchmark import BatchReport
+
+    report = BatchReport(runs=[_run(Verdict.PASS)] * 5 + [_run(Verdict.HOLD)] * 5)
+    assert report.manual_intervention_rate == pytest.approx(0.5)
+
+
+def test_blocking_histogram_ranks_the_worst_offender_first():
+    from sofia.reel.benchmark import BatchReport, ReelRun
+
+    runs = [
+        ReelRun("a", "controlled", "p", Verdict.HOLD, "", 1.0, 0,
+                blocking=("reel.voice", "reel.video")),
+        ReelRun("b", "controlled", "p", Verdict.HOLD, "", 1.0, 0,
+                blocking=("reel.voice",)),
+    ]
+    assert list(BatchReport(runs=runs).blocking_histogram()) == [
+        "reel.voice",
+        "reel.video",
+    ]

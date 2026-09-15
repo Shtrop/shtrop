@@ -18,96 +18,16 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from sofia.reel.contracts import ShotType, StoryBeat
 from sofia.reel.critics import PerceptualSample
-from sofia.reel.stages import AuthoredPlan, ContentPlan, ScriptLine
+from sofia.reel.stages import AuthoredPlan
 from sofia.studio import build_studio
-from sofia.voice.contracts import Emotion, Language
+from sofia.voice.contracts import Language
 
-# --------------------------------------------------------------------------
-# The authored content plan. This is genuine creative work, not a template:
-# one idea, one hook, a real SETUP -> DEVELOPMENT -> PAYOFF arc, and a stated
-# function for every scene.
-# --------------------------------------------------------------------------
-PLAN_RU = ContentPlan(
-    idea=(
-        "Признание вместо совета: не техника вытянула съёмку, а решение "
-        "остановиться и послушать себя."
-    ),
-    purpose=(
-        "Удержание через честный процесс: показать зрителю-создателю, что "
-        "проблема не в оборудовании, и дать ему разрешение переснимать."
-    ),
-    hook="Ты правда думаешь, что дело в камере?",
-    story_arc=(
-        "SETUP: остывший капучино и четвёртый дубль. "
-        "DEVELOPMENT: свет и камера те же, менялась только она. "
-        "PAYOFF: помогла тишина, а не свет."
-    ),
-    cta="Сохрани, если ты тоже переснимаешь.",
-    caption=(
-        "Дело было не в камере. Четыре дубля, остывший капучино и тишина — "
-        "вот что реально помогло переснять."
-    ),
-    cover_concept=(
-        "Крупный тёплый кадр с изумрудным акцентом, текст хука в верхней "
-        "трети, вне зоны интерфейса."
-    ),
-    music_brief="Тёплый минорный пад, 96 BPM, без ударных в хуке.",
-    sfx_brief="Один мягкий акцент на переходе к payoff.",
-    author="authored-by-model (AI ANALYSIS), reviewed against Sofia persona canon",
-    lines=[
-        ScriptLine(
-            beat=StoryBeat.HOOK,
-            text="Ты правда думаешь, что дело в камере?",
-            emotion=Emotion.EXCITED,
-            on_screen="Крупный план: Sofia смотрит прямо в камеру, вопрос в лоб",
-            duration_s=2.8,
-            shot_type=ShotType.TALKING,
-        ),
-        ScriptLine(
-            beat=StoryBeat.SETUP,
-            text="Этот дубль я переснимала четыре раза.",
-            emotion=Emotion.CONFIDING,
-            on_screen="Деталь: остывший капучино, пенка осела, рядом наушники",
-            duration_s=3.0,
-            shot_type=ShotType.DETAIL,
-        ),
-        ScriptLine(
-            beat=StoryBeat.DEVELOPMENT,
-            text="Свет был тот же. Камера та же. Менялась только я.",
-            emotion=Emotion.SERIOUS,
-            on_screen="B-roll: рабочий стол, свет не двигается, время идёт",
-            duration_s=4.5,
-            shot_type=ShotType.B_ROLL,
-        ),
-        ScriptLine(
-            beat=StoryBeat.DEVELOPMENT,
-            text="Я перестала себя слышать и записала ещё восемь дублей.",
-            emotion=Emotion.CONFIDING,
-            on_screen="Средний план: Sofia снимает наушники с шеи, пауза",
-            duration_s=4.0,
-            shot_type=ShotType.MEDIUM,
-        ),
-        ScriptLine(
-            beat=StoryBeat.PAYOFF,
-            text="Помог не свет. Помогла тишина.",
-            emotion=Emotion.WARM,
-            on_screen="Payoff: Sofia выдыхает, лёгкая улыбка, изумрудный акцент",
-            duration_s=4.2,
-            shot_type=ShotType.PAYOFF,
-        ),
-        ScriptLine(
-            beat=StoryBeat.CTA,
-            text="Сохрани, если ты тоже переснимаешь.",
-            emotion=Emotion.PLAYFUL,
-            on_screen="Деталь: рука тянется к чашке, текст призыва в кадре",
-            duration_s=3.0,
-            shot_type=ShotType.DETAIL,
-        ),
-    ],
-)
+# The authored content plan lives in content_plans.py so the batch benchmark
+# and this script use the same creative work.
+from content_plans import PLAN_RU  # noqa: E402  (after sys.path setup)
 
 
 def main() -> int:
@@ -118,6 +38,11 @@ def main() -> int:
         "--devkit",
         action="store_true",
         help="run on procedural media; nothing produced is Sofia",
+    )
+    ap.add_argument(
+        "--config",
+        default="",
+        help="studio config (see config/studio.example.json)",
     )
     ap.add_argument("--report", default="")
     args = ap.parse_args()
@@ -143,6 +68,11 @@ def main() -> int:
         # Explicitly not a Sofia reference. Recorded as such on every shot.
         references = {"default": NOT_SOFIA}
 
+    config = args.config or None
+    if config and not args.devkit:
+        cfg = json.loads(Path(config).read_text(encoding="utf-8"))
+        references = dict(cfg.get("sofia_references", {}))
+
     studio = build_studio(
         workdir,
         language=Language.RU,
@@ -150,6 +80,13 @@ def main() -> int:
         sofia_references=references,
         voice_backends=voice_backends,
         reel_backends=reel_backends,
+        voice_config=config,
+        reel_config=config,
+        lock_dir=(
+            json.loads(Path(config).read_text(encoding="utf-8")).get("lock_dir")
+            if config
+            else None
+        ),
     )
     studio.director.music_backend = music
     if args.devkit:

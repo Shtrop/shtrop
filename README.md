@@ -49,13 +49,40 @@ tests/        unit · integration · end-to-end · fault/resume
 ```bash
 python -m pytest tests/ -q             # full suite
 python scripts/export_registries.py    # regenerate the registries
+python scripts/preflight.py --config config/studio.json
 ```
+
+`preflight.py` answers the only question that matters before a production pass:
+*what can this machine actually measure?* Anything it reports as missing is a
+gate that will block, not a warning to note and move past. It exits non-zero
+when the machine is not ready.
+
+### Benchmarks
+
+```bash
+python scripts/run_voice_benchmark.py --workdir <dir> --config config/studio.json
+python scripts/run_reel_batch.py      --workdir <dir> --controlled 5 --random 5
+```
+
+The voice campaign runs 22 clips per language; the Reel batch runs a controlled
+arm (one plan repeated, measuring variance) and a random arm (sampled from the
+plan pool, measuring behaviour across content).
+
+Both refuse to report a rate unless the critical verifiers actually ran. A
+campaign where nothing could be measured is `NOT_MEASURED`, never `0%` — so a
+missing instrument is never mistaken for a bad voice.
 
 End-to-end, on the studio machine with real backends wired:
 
 ```bash
-python scripts/run_e2e_reel.py --workdir <dir>
+python scripts/run_e2e_reel.py --workdir <dir> --config config/studio.json
 ```
+
+Copy [`config/studio.example.json`](config/studio.example.json) to
+`config/studio.json` and fill in the real paths: XTTS endpoint, Sofia reference
+clips per language, ASR and speaker-embedding models, ComfyUI workflows and the
+lip-sync runner. Every field left empty makes the matching verifier report
+`NOT_MEASURED`, which blocks.
 
 Without those backends the same command blocks fail-closed, which is the
 intended behaviour. To exercise the pipeline anyway on procedural media:

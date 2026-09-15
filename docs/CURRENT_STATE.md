@@ -48,6 +48,10 @@ not a defect.
 | GPU priority arbiter | `PASS` | light work proceeds, heavy work waits |
 | Repair router | `PASS` | every defect maps to a component + resume point |
 | Publishing HOLD | `PASS` | no publish path exists; asserted by test |
+| Voice campaign harness | `PASS` | 66 clips (22 × RU/UA/EN) ran end to end in 30 s |
+| Reel batch harness | `PASS` | 5 controlled + 5 random ran in 160 s |
+| Readiness preflight | `PASS` | `scripts/preflight.py` names 10 blockers here |
+| CI | `PASS` | `.github/workflows/tests.yml` runs suite + registry drift check |
 
 ## What is NOT proven
 
@@ -60,7 +64,8 @@ not a defect.
 | Video identity / face drift | `NOT_MEASURED` | no ComfyUI, no Sofia LoRA |
 | Lip-sync quality | `NOT_MEASURED` | no champion runner on this machine |
 | Cover face / brand QA | `NOT_MEASURED` | no face detector |
-| Reel benchmark (5 controlled + 5 random) | `BLOCKED` | requires the studio machine |
+| Reel benchmark *quality* (5 controlled + 5 random) | `NOT_MEASURED` | harness ran; 0/10 runs had every critical category measured |
+| Voice campaign *quality* (66 clips) | `NOT_MEASURED` | harness ran; 0/66 clips had WER and identity measured |
 | Any platform metric | `NOT_MEASURED` | publishing is on HOLD; no publication occurred |
 
 These are recorded as `NOT_MEASURED`, never as `0` and never as a pass.
@@ -93,6 +98,39 @@ the pipeline.
 10 roles executed through `AgentRunner` with per-invocation records in
 `logs/agent_execution.jsonl`.
 
+## Benchmark harnesses (run, but nothing measurable here)
+
+Both harnesses were executed at full scale on this machine to prove the
+machinery, not to claim quality.
+
+**Voice campaign** — 22 clips × RU/UA/EN = 66 clips, 30 s wall.
+Verdict `NOT_MEASURED` for every language: 0/22 clips had both WER and identity
+measured, because there is no ASR and no voiceprint. `mean_wer` and
+`mean_identity` are `null`. Prosody *was* genuinely measured on all 66 clips
+(durations 0.55 s – 12.72 s), and the repair loop ran its two rounds per clip.
+
+**Reel batch** — 5 controlled (one plan repeated) + 5 random (sampled from a
+3-plan pool), 160 s wall, mean 16.0 s per Reel, wall-time spread 15.4–17.5 s on
+identical input. All 10 produced a real final file. Verdict `NOT_MEASURED`:
+0/10 runs had every critical category measured. Blocker histogram — `reel.video`,
+`reel.voice`, `reel.lipsync`, `reel.subtitles`, `reel.cover` and
+`reel.perceptual` blocked on all 10. Estimated GPU cost 739 s/Reel, peak VRAM
+24 GB (both `PREDICTED` from the shot plan, not observed — there is no GPU here).
+
+A late honesty fix matters here: both harnesses originally reported
+`first_pass_rate: 0%` when *nothing had been measured*, which reads as "the
+voice is bad" rather than "there was no instrument". A rate is now reported
+only when the critical verifiers actually ran on enough clips or runs;
+otherwise the verdict is `NOT_MEASURED` and every rate is `null`.
+
+## Running this on the studio machine
+
+1. `cp config/studio.example.json config/studio.json` and fill in real paths.
+2. `python scripts/preflight.py --config config/studio.json` — exits non-zero
+   until every verifier is present. On this container it names 10 blockers.
+3. `python scripts/run_voice_benchmark.py --workdir <dir> --config config/studio.json`
+4. `python scripts/run_reel_batch.py --workdir <dir> --config config/studio.json`
+
 ## Defects found and fixed during this session
 
 1. **Clipping detector missed full-scale audio.** At 16-bit, a sample written
@@ -105,6 +143,12 @@ the pipeline.
    and never rehydrated from the checkpoint. Fixed.
 4. **CPU renderers queued behind the GPU.** Work was gated twice, once by the
    runner and once by the director. Fixed.
+5. **Benchmarks reported `0%` for unmeasured runs.** A pass rate was computed
+   whenever enough clips existed, even if no verifier had run — so an absent
+   instrument read as a quality result. Rates now require the verifiers to have
+   produced numbers; otherwise `NOT_MEASURED` and `null`.
+6. **The editor reported ffmpeg missing when a usable binary existed.** It only
+   consulted `PATH`, ignoring an installed `imageio-ffmpeg`. Fixed.
 
 ## Safety posture (unchanged by this session)
 

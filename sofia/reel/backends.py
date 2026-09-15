@@ -23,11 +23,32 @@ from sofia.reel.shots import GeneratorProfile
 
 
 def _resolve_binary(binary: str) -> str:
-    """Resolve a tool on PATH, or accept an absolute path that is executable."""
+    """Resolve a tool on PATH, or accept an absolute path that is executable.
+
+    ``ffmpeg`` additionally falls back to an ``imageio-ffmpeg`` bundled binary
+    when one is installed, so a machine with the wheel but no system ffmpeg is
+    reported as capable rather than missing.
+    """
     found = shutil.which(binary)
     if found:
         return found
+    if Path(binary).name.startswith("ffmpeg"):
+        bundled = _imageio_ffmpeg()
+        if bundled:
+            return bundled
     return binary
+
+
+def _imageio_ffmpeg() -> Optional[str]:
+    try:
+        import imageio_ffmpeg
+    except Exception:  # noqa: BLE001 - optional dependency
+        return None
+    try:
+        path = imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:  # noqa: BLE001
+        return None
+    return path if path and os.path.isfile(path) else None
 
 
 def _executable(path: str) -> bool:

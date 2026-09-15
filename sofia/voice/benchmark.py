@@ -73,10 +73,29 @@ class CampaignReport:
         return sum(1 for o in self.outcomes if o.audio_path)
 
     @property
+    def verified(self) -> int:
+        """Clips whose critical verifiers actually produced a number.
+
+        A clip that was synthesised but could not be transcribed or compared to
+        a voiceprint is *not* verified, however good its audio looks.
+        """
+        return sum(
+            1 for o in self.outcomes if o.wer is not None and o.identity is not None
+        )
+
+    @property
     def measurable(self) -> bool:
+        """Whether a pass rate from this campaign would mean anything.
+
+        Requires enough clips, none blocked, *and* that the critical verifiers
+        actually ran. Without that last condition a campaign where nothing
+        could be measured would report ``0%`` and read as a quality result
+        rather than as an absent measurement.
+        """
         return (
             self.produced >= MIN_CLIPS_PER_LANGUAGE
             and self.count(Verdict.BLOCKED) == 0
+            and self.verified >= MIN_CLIPS_PER_LANGUAGE
         )
 
     @property
@@ -107,7 +126,10 @@ class CampaignReport:
             return Verdict.NOT_MEASURED
         if self.count(Verdict.BLOCKED):
             return Verdict.BLOCKED
-        if self.produced < MIN_CLIPS_PER_LANGUAGE:
+        if not self.measurable:
+            # Either too few clips reached verification, or the critical
+            # verifiers never ran. Reporting FAIL here would blame the voice for
+            # a missing instrument.
             return Verdict.NOT_MEASURED
         if self.count(Verdict.FAIL):
             return Verdict.FAIL
@@ -128,7 +150,16 @@ class CampaignReport:
             "coverage": coverage(self.language),
             "clips_total": self.total,
             "clips_produced": self.produced,
+            "clips_verified": self.verified,
             "measurable": self.measurable,
+            "unmeasurable_reason": (
+                None
+                if self.measurable
+                else (
+                    f"only {self.verified}/{self.total} clip(s) had both WER and "
+                    f"identity measured; rates would not mean anything"
+                )
+            ),
             "tally": {
                 v.value: self.count(v)
                 for v in (
