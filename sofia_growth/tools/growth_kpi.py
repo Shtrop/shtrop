@@ -31,6 +31,12 @@ PROFILE_CONVERSION_WEAK = 0.10
 FOLLOWS_PER_1K_REACH_WEAK = 5.0
 TARGET_MILESTONES = (1000, 10000, 50000)
 
+# Минимальные объёмы, ниже которых доля — шум, а не показатель.
+# При одной-двух пересылках «0.068%» не измеряет ничего, кроме размера выборки.
+MIN_EVENTS_FOR_RATIO = 10
+# Охват на публикацию, ниже которого узкое место не в контенте, а в дистрибуции.
+LOW_REACH_PER_POST = 200
+
 # KPI, которые движок обязан либо посчитать, либо назвать NOT_MEASURED.
 KPI_REGISTRY = (
     "followers_baseline", "growth_7d", "growth_30d", "growth_per_day",
@@ -84,6 +90,26 @@ def window(items: list[dict], days: int) -> list[dict]:
     return [item for item in items if item["_date"] >= cutoff]
 
 
+def media_mix(posts: list[dict]) -> list[dict]:
+    """Распределение публикаций и охвата по типу контента.
+
+    Тип решает дистрибуцию сильнее любого хука: у Reels и статичного FEED
+    принципиально разный доступ к рекомендациям.
+    """
+    groups: dict[str, dict] = {}
+    for post in posts:
+        media = str(post.get("media_type") or "").upper()
+        surface = str(post.get("media_product_type") or "").upper()
+        kind = "/".join(part for part in (media, surface) if part) or "UNKNOWN"
+        entry = groups.setdefault(kind, {"media_type": kind, "posts": 0, "reach": 0.0})
+        entry["posts"] += 1
+        if isinstance(post.get("reach"), (int, float)):
+            entry["reach"] += post["reach"]
+    for entry in groups.values():
+        entry["reach_per_post"] = entry["reach"] / entry["posts"] if entry["posts"] else None
+    return sorted(groups.values(), key=lambda item: -item["posts"])
+
+
 def with_metrics(posts: list[dict]) -> list[dict]:
     """Публикации, у которых есть охват: только они участвуют в KPI."""
     return [post for post in posts if isinstance(post.get("reach"), (int, float))]
@@ -132,8 +158,14 @@ def fmt(value: float | None, digits: int = 2, suffix: str = "") -> str:
     return NOT_MEASURED if value is None else f"{round(value, digits):g}{suffix}"
 
 
-def pct(value: float | None) -> str:
-    return NOT_MEASURED if value is None else f"{round(value * 100, 3):g}%"
+def pct(value: float | None, events: float | None = None) -> str:
+    """Доля в процентах. При ничтожном объёме событий доля не показатель."""
+    if value is None:
+        return NOT_MEASURED
+    text = f"{round(value * 100, 3):g}%"
+    if events is not None and events < MIN_EVENTS_FOR_RATIO:
+        return f"{text} (LOW_VOLUME: событий {fmt(events, 0)}, доля недостоверна)"
+    return text
 
 
 def follower_delta(items: list[dict]) -> tuple[float | None, float | None]:
@@ -194,6 +226,10 @@ def compute(snapshots: list[dict], posts: list[dict], days: int) -> dict:
     # выглядит как провал охвата, хотя это всего лишь узкое окно.
     measurable = with_metrics(posts)
     in_window = with_metrics(window(posts, days))
+    metrics["reach_per_post"] = (ratio(reach, len(in_window)) if in_window else None)
+    metrics["sends_total"] = sends
+    metrics["saves_total"] = saves
+    metrics["media_mix"] = media_mix(in_window)
     metrics["data_span"] = (snapshots[0]["date"], snapshots[-1]["date"]) if snapshots else None
     metrics["data_span_days"] = ((snapshots[-1]["_date"] - snapshots[0]["_date"]).days
                                  if len(snapshots) > 1 else 0)
@@ -302,6 +338,30 @@ def bottleneck(metrics: dict) -> str:
     per_1k = metrics["follows_per_1k_reach"]
     if metrics["reach"] is None and per_1k is None:
         return f"{NOT_MEASURED}: без охвата и конверсии узкое место не определяется."
+
+    # Доли вторичны, если показывать нечего: при мизерном охвате проблема
+    # не в том, как контент воспринимают, а в том, что его почти не видят.
+    per_post = metrics.get("reach_per_post")
+    if per_post is not None and per_post < LOW_REACH_PER_POST:
+        mix = metrics.get("media_mix") or []
+        reels = sum(item["posts"] for item in mix
+                    if "REEL" in item["media_type"] or "VIDEO" in item["media_type"])
+        total_posts = sum(item["posts"] for item in mix)
+        detail = (f"Охват на публикацию — {round(per_post, 1)}. Это стадия нулевой дистрибуции: "
+                  "доли вроде sends per reach при таком объёме ничего не измеряют. "
+                  "Узкое место не в хуках и не в частоте, а в том, что контент почти "
+                  "не попадает в рекомендации.")
+        if total_posts and reels == 0:
+            kinds = ", ".join(f"{item['media_type']}×{item['posts']}" for item in mix)
+            detail += (f" Ни одной публикации в формате Reels: {kinds}. Статичная лента "
+                       "не получает нефолловерского охвата, на котором строится весь рост.")
+        return detail
+
+    if sends is not None and metrics.get("sends_total") is not None \
+            and metrics["sends_total"] < MIN_EVENTS_FOR_RATIO:
+        return (f"Объём событий слишком мал: пересылок всего {fmt(metrics['sends_total'], 0)}. "
+                "Пока не набрано хотя бы десяти событий, доли считать нельзя — "
+                "любой вывод будет о размере выборки, а не о контенте.")
     if sends is not None and sends < SENDS_PER_REACH_STRONG:
         return ("Дистрибуция: sends per reach ниже 1%. Охват вне подписчиков ограничен на входе — "
                 "работать над «переслать другу», а не над частотой постинга.")
@@ -319,6 +379,10 @@ def next_action(metrics: dict) -> str:
     attribution = [row for row in metrics["trend_attribution"] if row["repeatable"]]
     best = metrics["best_posts"][0] if metrics["best_posts"] else None
     parts = [bottleneck(metrics)]
+    # Ранжировать публикации бессмысленно, когда у всех событий почти нет.
+    sends_total = metrics.get("sends_total")
+    if sends_total is not None and sends_total < MIN_EVENTS_FOR_RATIO:
+        best = None
     if attribution:
         top = attribution[0]
         parts.append(
@@ -376,7 +440,9 @@ def render(payload: dict, metrics: dict) -> str:
         f"| Охват за окно | {fmt(metrics['reach'], 0)} | {label(metrics['reach'], evidence)} |",
         f"| Follows на 1k охвата | {fmt(metrics['follows_per_1k_reach'])} | {label(metrics['follows_per_1k_reach'], evidence)} |",
         f"| Профиль → подписка | {pct(metrics['profile_to_follow_conversion'])} | {label(metrics['profile_to_follow_conversion'], evidence)} |",
-        f"| Sends per reach | {pct(metrics['sends_per_reach'])} | "
+        f"| Охват на публикацию | {fmt(metrics['reach_per_post'], 1)} | "
+        f"{label(metrics['reach_per_post'], evidence)} | ключевой индикатор дистрибуции |",
+        f"| Sends per reach | {pct(metrics['sends_per_reach'], metrics['sends_total'])} | "
         f"{label(metrics['sends_per_reach'], evidence)}"
         + (f" (из поля `{metrics['sends_field']}`)" if metrics.get("sends_field") else "") + " |",
         f"| Saves per reach | {pct(metrics['saves_per_reach'])} | {label(metrics['saves_per_reach'], evidence)} |",
@@ -411,6 +477,15 @@ def render(payload: dict, metrics: dict) -> str:
                          f"{pct(post['sends_per_reach'])} | {fmt(post['reach'], 0)} | {fmt(post['follows'], 0)} |")
     else:
         lines.append(f"{NOT_MEASURED}: в данных нет публикаций с охватом и пересылками.")
+
+    lines += ["", "## Распределение по типу контента", ""]
+    if metrics["media_mix"]:
+        lines += ["| Тип | Публикаций | Охват | Охват на публикацию |", "|---|---|---|---|"]
+        for item in metrics["media_mix"]:
+            lines.append(f"| {item['media_type']} | {item['posts']} | {fmt(item['reach'], 0)} | "
+                         f"{fmt(item['reach_per_post'], 1)} |")
+    else:
+        lines.append(f"{NOT_MEASURED}: тип контента в данных не указан.")
 
     lines += ["", "## Атрибуция тренд/формат → рост", ""]
     if metrics["trend_attribution"]:
@@ -473,8 +548,9 @@ def summary_block(payload: dict, metrics: dict) -> str:
         f"REACH: {fmt(metrics['reach'], 0)}",
         f"FOLLOWS PER REACH: {fmt(metrics['follows_per_1k_reach'])} на 1k охвата",
         f"PROFILE→FOLLOW CONVERSION: {pct(metrics['profile_to_follow_conversion'])}",
-        f"SENDS PER REACH: {pct(metrics['sends_per_reach'])}",
-        f"SAVES PER REACH: {pct(metrics['saves_per_reach'])}",
+        f"SENDS PER REACH: {pct(metrics['sends_per_reach'], metrics['sends_total'])}",
+        f"SAVES PER REACH: {pct(metrics['saves_per_reach'], metrics['saves_total'])}",
+        f"REACH PER POST: {fmt(metrics['reach_per_post'], 1)}",
         "",
         f"MEASURED KPI: {', '.join(measured) or '—'}",
         f"NOT MEASURED KPI: {', '.join(missing) or '—'}",

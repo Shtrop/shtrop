@@ -75,7 +75,10 @@ ALIASES: dict[str, tuple[str, ...]] = {
                  "instagram_media_id", "remote_post_id"),
     "total_interactions": ("total_interactions", "interactions", "engagements"),
     "permalink": ("permalink", "url", "link", "permalink_url"),
-    "media_type": ("media_type", "type", "format", "content_type", "media_product_type"),
+    "media_type": ("media_type", "type", "format", "content_type"),
+    # Поверхность дистрибуции (REELS / FEED / STORY) решает охват сильнее,
+    # чем тип медиа, поэтому хранится отдельным полем, а не затирает его.
+    "media_product_type": ("media_product_type", "product_type", "surface"),
     "caption": ("caption", "text", "title"),
     "trend_id": ("trend_id", "trend", "signal_id", "radar_id"),
     "format_id": ("format_id", "format", "template", "content_format"),
@@ -90,8 +93,8 @@ MEDIA_ID_PRIORITY = {"id": 0, "content_id": 1, "post_id": 2, "ig_id": 3,
                      "media_id": 4, "remote_post_id": 5, "instagram_media_id": 6}
 
 # Поля, по которым строится lineage публикации (без метрик).
-LINEAGE_FIELDS = ("media_id", "permalink", "media_type", "format_id",
-                  "trend_id", "experiment_id")
+LINEAGE_FIELDS = ("media_id", "permalink", "media_type", "media_product_type",
+                  "format_id", "trend_id", "experiment_id")
 
 # Признаки теневого/симулированного контура в пути или имени файла.
 # Политика студии: не выдавать shadow, synthetic и predicted за метрики Instagram.
@@ -165,8 +168,8 @@ def normalize_record(raw: dict) -> dict:
             parsed = parse_date(value)
             if parsed:
                 record["date"] = parsed
-        elif canon in ("media_id", "permalink", "media_type", "caption",
-                       "trend_id", "format_id", "experiment_id"):
+        elif canon in ("media_id", "permalink", "media_type", "media_product_type",
+                       "caption", "trend_id", "format_id", "experiment_id"):
             text = str(value).strip() if value is not None else ""
             if not text or text.lower() in NULLISH:
                 continue

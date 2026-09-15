@@ -418,7 +418,40 @@ def main() -> int:
         check("WINDOW", "весь диапазон" in result.stdout,
               "--days 0 считает по всему доступному диапазону")
 
-        print(f"\n=== 13. Изоляция: репозиторий не загрязнён ===")
+        print(f"\n=== 13. Мизерный объём не выдаётся за показатель ===")
+        tiny_dir = work / "tiny"
+        tiny_dir.mkdir()
+        tiny_csv = tiny_dir / "post_insights.csv"
+        with tiny_csv.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv_module.DictWriter(handle, fieldnames=[
+                "id", "media_type", "media_product_type", "timestamp", "permalink",
+                "reach", "saved", "shares"])
+            writer.writeheader()
+            for index in range(30):
+                writer.writerow({"id": f"1787477115356{index:04d}", "media_type": "IMAGE",
+                                 "media_product_type": "FEED",
+                                 "timestamp": f"2026-08-{(index % 28) + 1:02d}T04:30:46+0000",
+                                 "permalink": f"https://example.invalid/p/{index}",
+                                 "reach": 49, "saved": 1 if index == 3 else 0,
+                                 "shares": 1 if index == 12 else 0})
+        tiny_out = work / "tiny_snapshots.json"
+        run([str(TOOLS / "ingest_insights.py"), "--source", str(tiny_csv),
+             "--out", str(tiny_out)], expect=(0,))
+        result = run([str(TOOLS / "growth_kpi.py"), "--snapshots", str(tiny_out),
+                      "--days", "0", "--summary"], expect=(0, 1))
+        check("VOLUME", "LOW_VOLUME" in result.stdout,
+              "доля при единичных событиях помечается как недостоверная")
+        check("VOLUME", "REACH PER POST: 49" in result.stdout,
+              "охват на публикацию выведен как ключевой индикатор дистрибуции")
+        check("VOLUME", "нулевой дистрибуции" in result.stdout,
+              "узкое место названо как дистрибуция, а не как качество хуков")
+        check("VOLUME", "Ни одной публикации в формате Reels" in result.stdout
+              and "IMAGE/FEED" in result.stdout,
+              "отсутствие Reels названо прямо, с разбивкой по типу контента")
+        check("VOLUME", "Лучший пост" not in result.stdout,
+              "ранжирование публикаций не предлагается при отсутствии событий")
+
+        print(f"\n=== 14. Изоляция: репозиторий не загрязнён ===")
         real_snapshots = BASE / "data" / "followers_snapshots.json"
         check("ISOLATION", not real_snapshots.exists() or "SYNTHETIC" not in
               real_snapshots.read_text(encoding="utf-8"),
