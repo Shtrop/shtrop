@@ -98,6 +98,10 @@ def main():
                    help="бюджет GPU-секунд на 1 с видео")
     p.add_argument("--report", default="report.json")
     p.add_argument("--dry_run", action="store_true", help="только показать команду и план")
+    p.add_argument("--skip_preflight", action="store_true", help="не запускать preflight.py")
+    p.add_argument("--no_fix_backend", action="store_true",
+                   help="не подгонять attention-бэкенд в конфигах весов")
+    p.add_argument("--force", action="store_true", help="запускать даже при FAIL в preflight")
     a = p.parse_args()
 
     repo = os.path.abspath(a.repo)
@@ -116,6 +120,18 @@ def main():
         print(f"ОШИБКА: каталог весов не найден: {ckpt}\n"
               f"Скачайте их: setup.ps1 -Weights (или setup.sh --weights).", file=sys.stderr)
         return 2
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    if not a.dry_run and not a.skip_preflight:
+        rc_pf = subprocess.run(
+            [sys.executable, os.path.join(here, "preflight.py"),
+             "--repo", repo, "--vram_budget_gb", str(a.vram_budget_gb)]).returncode
+        if rc_pf != 0 and not a.force:
+            print("preflight нашёл блокирующие пункты — исправьте их или запустите с --force",
+                  file=sys.stderr)
+            return 2
+    if not a.dry_run and not a.no_fix_backend:
+        subprocess.run([sys.executable, os.path.join(here, "fix_attention_backend.py"), ckpt])
 
     cmd = build_cmd(a)
     vid_s = video_seconds(a.segments)

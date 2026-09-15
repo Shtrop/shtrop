@@ -59,7 +59,11 @@ if ($Wsl) {
     $shPath = ConvertTo-WslPath (Join-Path $kit "setup.sh")
     $dirWsl = ConvertTo-WslPath $Dir
     $wslArgs = @("bash", $shPath, "--dir", $dirWsl)
-    if ($InstallDeps) {
+    Write-Host "==> environment preflight"
+& $pyExe @pyPre (Join-Path $kit "preflight.py") --repo $Dir
+# informational only: weights may still be missing at this point
+
+if ($InstallDeps) {
     Write-Host "==> installing requirements without flash-attn"
     # flash-attn 2.7.4.post1 builds from source and fails on Windows; after the
     # compatibility patch it is optional, the xformers/plain attention path works.
@@ -170,3 +174,4 @@ Write-Host ""
 Write-Host "Vertical 9:16 -> add --vertical. Full ~32 s reel -> --segments 10."
 Write-Host "If torchrun fails on process group init or flash-attn, rerun in WSL2: .\setup.ps1 -Wsl"
 Write-Host "Dependencies (without flash-attn): .\setup.ps1 -Dir <dir> -InstallDeps"
+Write-Host "bench_longcat.py runs preflight and adjusts the attention backend automatically."

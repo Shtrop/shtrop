@@ -47,6 +47,9 @@ echo "==> проверяю импорт без triton/flash-attn"
 python3 "$KIT/../checks/import_check.py" "$DIR" || {
   echo "    импорт не прошёл — смотрите вывод выше" >&2; exit 1; }
 
+echo "==> преконтроль окружения"
+python3 "$KIT/preflight.py" --repo "$DIR" || true   # информативно, не обрывает подготовку
+
 if [[ "$WEIGHTS" == "1" ]]; then
   echo "==> качаю веса (долго, десятки ГБ)"
   huggingface-cli download meituan-longcat/LongCat-Video-Avatar-1.5 \
