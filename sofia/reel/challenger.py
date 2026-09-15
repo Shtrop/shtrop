@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Sequence
 
 from sofia.core.errors import BackendUnavailableError
+from sofia.core.paths import safe_component
 from sofia.core.verdict import Evidence, Measurement, Verdict
 from sofia.reel.contracts import Shot
 
@@ -240,7 +241,12 @@ def _run_arm(
         if not audio:
             arm.failures.append(f"shot {shot.index}: no voice clip")
             continue
-        out = Path(workdir) / "challenger" / label / f"shot{shot.index}.mp4"
+        out = (
+            Path(workdir)
+            / "challenger"
+            / safe_component(label, fallback="arm")
+            / f"shot{shot.index}.mp4"
+        )
         try:
             synced = backend.sync(Path(shot.video_path or ""), Path(audio), out)
             values = measure(Path(synced), shot)

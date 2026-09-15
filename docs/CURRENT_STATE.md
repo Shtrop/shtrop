@@ -182,6 +182,31 @@ tests:
     analytics sink look like a studio that produced nothing. They are recorded
     and surfaced in `director.status()`.
 
+## Security review
+
+An independent review pass over the whole branch found **no HIGH or MEDIUM
+vulnerabilities**. The pipeline adds no network listener, no auth surface, no
+crypto, and no unsafe deserialization: there is no `pickle`, `yaml`, `eval`,
+`exec` or `shell=True` anywhere, all state loading is `json.loads`, and every
+subprocess call passes an argv list.
+
+It did identify two latent gaps — not reachable from an untrusted input today,
+because every identifier comes from a CLI flag or the operator's own config,
+but live the moment anything else supplies one (a job queue, a watched folder,
+a web UI). Both are now fixed rather than deferred:
+
+- **`reel_id` reached nine filesystem paths unsanitised**, even though this
+  branch's own `checkpoint.py` and `ownership.py` already ran it through a
+  sanitiser. All three now share `sofia/core/paths.safe_component`, so
+  `--reel-id ../../escaped` writes `.._.._escaped.mp4` **inside** the workdir
+  instead of escaping it. Verified end to end.
+- **ffmpeg argument construction was under-escaped.** The concat list wrote
+  `file '<path>'` with no quote escaping — and a concat list is a script, so a
+  quote in a filename could rewrite it. Quotes now use the format's own
+  escape and a newline is refused outright. The filter escaper handled only
+  `:` and `'`, missing `,` `;` `[` `]`, which separate filters and delimit pad
+  labels in a filtergraph.
+
 ## Safety posture (unchanged by this session)
 
 - Publishing remains **HOLD**. No publisher, limit or canonical flag was touched.

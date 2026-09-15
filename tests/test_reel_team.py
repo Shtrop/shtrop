@@ -752,3 +752,38 @@ def test_an_explicit_hook_hypothesis_is_never_overridden():
     engine.record_outcome("r1", "PASS", {}, hook="old hook")
     brief = engine.brief_director(trend="t", audience="a", hook_hypothesis="new idea")
     assert brief.hook_hypothesis == "new idea"
+
+
+# ---- ffmpeg argument construction ----------------------------------------
+def test_concat_entries_escape_quotes_and_refuse_newlines():
+    """A concat list is a script, so a filename must not be able to rewrite it."""
+    from pathlib import Path
+
+    from sofia.core.errors import BackendUnavailableError
+    from sofia.reel.backends import _concat_entry
+
+    assert _concat_entry(Path("/a/b/reel.mp4")) == "file '/a/b/reel.mp4'"
+    # The format's own escape: close, escaped quote, reopen.
+    assert _concat_entry(Path("/a/it's/reel.mp4")) == "file '/a/it'\\''s/reel.mp4'"
+    with pytest.raises(BackendUnavailableError):
+        _concat_entry(Path("/a/b\nfile '/etc/passwd'\nc.mp4"))
+
+
+def test_filter_paths_escape_every_filtergraph_separator():
+    from sofia.reel.backends import _escape_filter_path
+
+    escaped = _escape_filter_path("/a/b,c;d[e]:f'g/subs.ass")
+    for special in ",;[]:'":
+        assert f"\\{special}" in escaped
+    # A comma must not be able to start a second filter.
+    assert ",subtitles" not in escaped.replace("\\,", "")
+
+
+def test_reel_artifact_paths_are_sanitised(tmp_path):
+    """reel_id reaches nine filesystem paths; checkpoints already sanitise it."""
+    from sofia.reel.director import ReelDirector
+
+    slug = ReelDirector._slug("../../../../etc/cron.d/x")
+    assert "/" not in slug
+    assert ReelDirector._slug("..") == "reel"
+    assert ReelDirector._slug("sofia-reel-001") == "sofia-reel-001"

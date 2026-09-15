@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from sofia.core.errors import OwnershipError
+from sofia.core.paths import safe_component
 
 
 @dataclass(frozen=True)
@@ -59,8 +60,7 @@ class OwnershipRegistry:
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _path(self, task_id: str) -> Path:
-        safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in task_id)
-        return self.root / f"{safe}.lease"
+        return self.root / f"{safe_component(task_id)}.lease"
 
     def current(self, task_id: str) -> Optional[Lease]:
         path = self._path(task_id)

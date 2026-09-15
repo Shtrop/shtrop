@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from sofia.core.errors import BackendUnavailableError
+from sofia.core.paths import safe_component
 from sofia.voice.backends import VoiceBackends
 from sofia.voice.contracts import VoiceArtifact, VoiceBrief
 
@@ -38,7 +39,7 @@ class VoiceGenerator:
             Path(self.workdir)
             / "voice"
             / brief.language.value
-            / f"{clip_id}.take{attempt}.wav"
+            / f"{safe_component(clip_id, fallback='clip')}.take{attempt}.wav"
         )
         started = time.monotonic()
         # Resume: an existing take is reused rather than re-synthesised, but it

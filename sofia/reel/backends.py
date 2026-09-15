@@ -333,7 +333,7 @@ class FfmpegEditor:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         list_file = out_path.parent / f"{out_path.stem}.concat.txt"
         list_file.write_text(
-            "\n".join(f"file '{Path(c).as_posix()}'" for c in clips) + "\n",
+            "\n".join(_concat_entry(Path(c)) for c in clips) + "\n",
             encoding="utf-8",
         )
         cmd = [self.binary, "-y", "-f", "concat", "-safe", "0", "-i", str(list_file)]
@@ -374,9 +374,38 @@ class FfmpegEditor:
         return out_path
 
 
+def _concat_entry(path: Path) -> str:
+    """One line of an ffmpeg concat list, safely quoted.
+
+    The concat demuxer reads a script, so an unescaped quote or newline in a
+    filename lets the filename rewrite that script. Single quotes are closed,
+    escaped and reopened (the format's own convention); a newline cannot be
+    represented at all and is refused rather than silently mangled.
+    """
+    text = path.as_posix()
+    if "\n" in text or "\r" in text:
+        raise BackendUnavailableError(
+            f"refusing to build a concat list for a path containing a newline: {text!r}"
+        )
+    escaped = text.replace("'", "'\\''")
+    return f"file '{escaped}'"
+
+
+#: Characters that end an argument, an option or a filter inside an ffmpeg
+#: filtergraph. All of them must be escaped in a path used as a filter value.
+_FILTER_SPECIALS = "\\'[],;:"
+
+
 def _escape_filter_path(path: str) -> str:
-    """Escape a path for use inside an ffmpeg filter argument."""
-    return path.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+    """Escape a path for use inside an ffmpeg filter argument.
+
+    Escaping only ``:`` and ``'`` is not enough: ``,`` and ``;`` separate
+    filters in a graph and ``[`` / ``]`` delimit pad labels, so a path
+    containing one of those would end the ``subtitles`` filter and begin
+    another.
+    """
+    normalised = path.replace("\\", "/")
+    return "".join("\\" + c if c in _FILTER_SPECIALS else c for c in normalised)
 
 
 def _subtitle_filter(

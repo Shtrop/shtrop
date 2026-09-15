@@ -99,3 +99,33 @@ def test_measurement_rejects_value_without_evidence():
 def test_worst_verdict_ordering():
     assert worst([Verdict.PASS, Verdict.FAIL, Verdict.HOLD]) is Verdict.FAIL
     assert worst([Verdict.FAIL, Verdict.ERROR]) is Verdict.ERROR
+
+
+# ---- path component sanitisation -----------------------------------------
+def test_a_path_component_can_never_escape_its_directory():
+    from pathlib import Path
+
+    from sofia.core.paths import safe_component
+
+    for hostile in (
+        "../../../../etc/cron.d/x",
+        "..",
+        ".",
+        "",
+        "reel/../../x",
+        "a\\b",
+        "a\x00b",
+    ):
+        component = safe_component(hostile)
+        assert "/" not in component and "\\" not in component
+        assert set(component) != {"."}
+        assert component
+        # Joining it can only ever stay inside the parent.
+        joined = (Path("/work") / component).resolve()
+        assert str(joined).startswith("/work/")
+
+
+def test_safe_component_preserves_ordinary_names():
+    from sofia.core.paths import safe_component
+
+    assert safe_component("sofia-reel-001.v2") == "sofia-reel-001.v2"

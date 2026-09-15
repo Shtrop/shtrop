@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Iterator, Mapping, Optional, Sequence
 
 from sofia.core.errors import CheckpointError
+from sofia.core.paths import safe_component as _safe
 
 
 class StageState(str, enum.Enum):
@@ -244,10 +245,6 @@ def remaining_stages(stage: StageState) -> Sequence[StageState]:
 
 
 # ---- io helpers ----------------------------------------------------------
-def _safe(name: str) -> str:
-    return "".join(c if c.isalnum() or c in "-_." else "_" for c in name)
-
-
 def _atomic_write_json(path: Path, data: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True)

@@ -24,6 +24,7 @@ from sofia.agents.runner import AgentRunner
 from sofia.core.checkpoint import CheckpointStore, StageState
 from sofia.core.errors import BackendUnavailableError, OwnershipError
 from sofia.core.gates import GateResult, evaluate_gates
+from sofia.core.paths import safe_component
 from sofia.core.verdict import Evidence, Measurement, Verdict
 from sofia.reel.backends import ReelBackends
 from sofia.reel.contracts import (
@@ -155,6 +156,15 @@ class ReelDirector:
         self.perceptual_gate = PerceptualReviewGate()
 
     # ---- lifecycle -------------------------------------------------------
+    @staticmethod
+    def _slug(reel_id: str) -> str:
+        """The on-disk form of a reel id.
+
+        Checkpoints and leases already sanitise their own filenames; artifact
+        paths must do the same or a crafted id would write outside workdir.
+        """
+        return safe_component(reel_id, fallback="reel")
+
     def claim(self, reel_id: str) -> None:
         """Take exclusive ownership. A second director is rejected."""
         self.ownership.acquire(reel_id, self.name, ttl_s=6 * 3600)
@@ -500,7 +510,7 @@ class ReelDirector:
 
     def _render_shots(self, reel_id: str, shots: Sequence[Shot]) -> None:
         for shot in shots:
-            out = self.workdir / "shots" / f"{reel_id}.shot{shot.index}.mp4"
+            out = self.workdir / "shots" / f"{self._slug(reel_id)}.shot{shot.index}.mp4"
             if shot.video_path and Path(shot.video_path).exists():
                 continue  # resumed: this shot is already rendered
             if out.exists() and out.stat().st_size > 0:
@@ -524,7 +534,7 @@ class ReelDirector:
         for shot in shots:
             if not shot.shot_type.needs_lipsync:
                 continue
-            synced = self.workdir / "lipsync" / f"{reel_id}.shot{shot.index}.mp4"
+            synced = self.workdir / "lipsync" / f"{self._slug(reel_id)}.shot{shot.index}.mp4"
             if shot.lipsync_path and Path(shot.lipsync_path).exists():
                 continue
             if synced.exists() and synced.stat().st_size > 0:
@@ -592,13 +602,13 @@ class ReelDirector:
         # --- subtitles ------------------------------------------------------
         cues = build_cues(segments)
         assets.subtitles = str(
-            write_srt(cues, self.workdir / "subtitles" / f"{reel_id}.srt")
+            write_srt(cues, self.workdir / "subtitles" / f"{self._slug(reel_id)}.srt")
         )
         # The burn-in copy carries explicit PlayRes/margins so what is rendered
         # matches what the subtitle critic verified.
         burn_in = write_ass(
             cues,
-            self.workdir / "subtitles" / f"{reel_id}.ass",
+            self.workdir / "subtitles" / f"{self._slug(reel_id)}.ass",
             width=self.config.frame_width,
             height=self.config.frame_height,
             safe_bottom=self.config.subtitle_text_bottom,
@@ -614,16 +624,16 @@ class ReelDirector:
         audio_track: Optional[str] = None
         if placed:
             voice_track = build_voice_track(
-                placed, self.workdir / "audio" / f"{reel_id}.voice.wav", total_s=total
+                placed, self.workdir / "audio" / f"{self._slug(reel_id)}.voice.wav", total_s=total
             )
             assets.voice_clips["_track"] = str(voice_track)
             if self.music_backend is not None:
                 music = self.music_backend.generate(
-                    self.workdir / "audio" / f"{reel_id}.music.wav", total
+                    self.workdir / "audio" / f"{self._slug(reel_id)}.music.wav", total
                 )
                 assets.music = str(music)
                 mixer = getattr(self.backends.editor, "mix_audio", None)
-                out = self.workdir / "audio" / f"{reel_id}.mix.wav"
+                out = self.workdir / "audio" / f"{self._slug(reel_id)}.mix.wav"
                 if callable(mixer):
                     audio_track = str(
                         mixer(
@@ -662,7 +672,7 @@ class ReelDirector:
                 "bottom": self.config.subtitle_text_bottom,
             },
         }
-        out = self.workdir / "edit" / f"{reel_id}.mp4"
+        out = self.workdir / "edit" / f"{self._slug(reel_id)}.mp4"
         assets.edit = str(self.backends.editor.assemble(spec, out))
         assets.final = assets.edit
 
@@ -670,7 +680,7 @@ class ReelDirector:
         cover_at = min(1.0, max(0.2, shots[0].duration_s * 0.5)) if shots else 0.5
         assets.cover = str(
             self.backends.editor.extract_frame(
-                Path(assets.final), cover_at, self.workdir / "cover" / f"{reel_id}.jpg"
+                Path(assets.final), cover_at, self.workdir / "cover" / f"{self._slug(reel_id)}.jpg"
             )
         )
 
