@@ -25,11 +25,17 @@ if [[ ! -d "$DIR/.git" ]]; then
 fi
 
 echo "==> применяю патч совместимости"
+# нормализуем в LF: при клоне на Windows git мог переписать патч в CRLF,
+# и тогда git apply не сойдётся по контексту с LF-исходниками
+PATCH_LF="$(mktemp)"
+trap 'rm -f "$PATCH_LF"' EXIT
+sed 's/\r$//' "$KIT/longcat-compat.patch" > "$PATCH_LF"
+
 cd "$DIR"
-if git apply --check "$KIT/longcat-compat.patch" 2>/dev/null; then
-  git apply "$KIT/longcat-compat.patch"
+if git apply --check "$PATCH_LF" 2>/dev/null; then
+  git apply "$PATCH_LF"
   echo "    патч применён"
-elif git apply --reverse --check "$KIT/longcat-compat.patch" 2>/dev/null; then
+elif git apply --reverse --check "$PATCH_LF" 2>/dev/null; then
   echo "    патч уже применён, пропускаю"
 else
   echo "    ОШИБКА: патч не накладывается — upstream изменился, сверьте вручную" >&2

@@ -24,6 +24,7 @@
 param(
     [string]$Dir = ".\LongCat-Video",
     [switch]$Weights,
+    [switch]$InstallDeps,
     [switch]$Wsl
 )
 
@@ -32,6 +33,18 @@ $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $false
 $kit = $PSScriptRoot
 $patch = Join-Path $kit "longcat-compat.patch"
+
+function Invoke-Native {
+    # native stderr must not become a terminating error under -ErrorAction Stop
+    param([string]$File, [string[]]$Arguments)
+    $old = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $File @Arguments 2>&1 | ForEach-Object { $_.ToString() } | Out-Null
+        return $LASTEXITCODE
+    }
+    finally { $ErrorActionPreference = $old }
+}
 
 function ConvertTo-WslPath([string]$p) {
     if ($p -match '^[A-Za-z]:\\' -or $p -like '*\*') {
@@ -46,7 +59,24 @@ if ($Wsl) {
     $shPath = ConvertTo-WslPath (Join-Path $kit "setup.sh")
     $dirWsl = ConvertTo-WslPath $Dir
     $wslArgs = @("bash", $shPath, "--dir", $dirWsl)
-    if ($Weights) { $wslArgs += "--weights" }
+    if ($InstallDeps) {
+    Write-Host "==> installing requirements without flash-attn"
+    # flash-attn 2.7.4.post1 builds from source and fails on Windows; after the
+    # compatibility patch it is optional, the xformers/plain attention path works.
+    foreach ($req in @("requirements.txt", "requirements_avatar.txt")) {
+        $src = Join-Path $Dir $req
+        if (-not (Test-Path $src)) { continue }
+        $dst = Join-Path $Dir ($req -replace '\.txt$', '-nofa.txt')
+        Get-Content $src | Where-Object { $_ -notmatch '^\s*flash[-_]attn' } | Set-Content $dst -Encoding ascii
+        Write-Host "    pip install -r $dst"
+        & $pyExe @pyPre -m pip install -r $dst
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "pip failed on $req; install the remaining packages manually"
+        }
+    }
+}
+
+if ($Weights) { $wslArgs += "--weights" }
     & wsl -- @wslArgs
     exit $LASTEXITCODE
 }
@@ -85,31 +115,32 @@ if (-not (Test-Path (Join-Path $Dir ".git"))) {
 if (-not (Test-Path (Join-Path $Dir ".git"))) { throw "clone directory $Dir is missing" }
 
 Write-Host "==> applying compatibility patch"
+# Normalize to LF. Cloning this repo on Windows may rewrite the patch to CRLF,
+# and then git apply cannot match the context of the LF sources.
+$patchLf = Join-Path ([IO.Path]::GetTempPath()) "longcat-compat.lf.patch"
+$text = [IO.File]::ReadAllText($patch)
+[IO.File]::WriteAllText($patchLf, ($text -replace "`r`n", "`n"))
+
 Push-Location $Dir
 try {
-    & git apply --check $patch 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        & git apply $patch
-        if ($LASTEXITCODE -ne 0) { throw "git apply failed with code $LASTEXITCODE" }
+    if ((Invoke-Native "git" @("apply", "--check", $patchLf)) -eq 0) {
+        if ((Invoke-Native "git" @("apply", $patchLf)) -ne 0) { throw "git apply failed" }
         Write-Host "    patch applied"
     }
+    elseif ((Invoke-Native "git" @("apply", "--reverse", "--check", $patchLf)) -eq 0) {
+        Write-Host "    patch already applied, skipping"
+    }
+    elseif ((Invoke-Native "git" @("apply", "--ignore-whitespace", $patchLf)) -eq 0) {
+        Write-Host "    patch applied (--ignore-whitespace)"
+    }
     else {
-        & git apply --reverse --check $patch 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "    patch already applied, skipping"
-        }
-        else {
-            & git apply --ignore-whitespace $patch 2>$null
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "    patch applied (--ignore-whitespace)"
-            }
-            else {
-                throw "patch does not apply: upstream changed, or CRLF in worktree"
-            }
-        }
+        throw "patch does not apply: upstream changed, or the worktree was checked out with CRLF"
     }
 }
-finally { Pop-Location }
+finally {
+    Pop-Location
+    Remove-Item $patchLf -ErrorAction SilentlyContinue
+}
 
 Write-Host "==> checking imports without triton/flash-attn"
 $checker = Join-Path (Split-Path $kit -Parent) "checks\import_check.py"
@@ -138,3 +169,4 @@ Write-Host "  python `"$bench`" --repo `"$Dir`" --checkpoint_dir `"$weightsDir`"
 Write-Host ""
 Write-Host "Vertical 9:16 -> add --vertical. Full ~32 s reel -> --segments 10."
 Write-Host "If torchrun fails on process group init or flash-attn, rerun in WSL2: .\setup.ps1 -Wsl"
+Write-Host "Dependencies (without flash-attn): .\setup.ps1 -Dir <dir> -InstallDeps"
