@@ -82,6 +82,14 @@ ALIASES: dict[str, tuple[str, ...]] = {
 
 REVERSE_ALIAS = {alias: canon for canon, names in ALIASES.items() for alias in names}
 
+# Признаки теневого/симулированного контура в пути или имени файла.
+# Политика студии: не выдавать shadow, synthetic и predicted за метрики Instagram.
+SHADOW_MARKERS = (
+    "shadow", "synthetic", "simulat", "sim_", "mock", "sandbox", "fixture",
+    "dry_run", "dryrun", "no_publish", "nopublish", "sample", "example",
+    "learning_", "training", "backtest", "replay", "what_if",
+)
+
 # Значения, которые означают «данных нет». В 0 они НЕ превращаются.
 NULLISH = {"", "none", "null", "n/a", "na", "nan", "-", "unknown", "undefined"}
 
@@ -317,6 +325,19 @@ def read_source(path: Path) -> list[dict]:
     return []
 
 
+def classify_source(path: Path) -> tuple[str, list[str]]:
+    """Определяет, реальные это метрики платформы или теневой контур.
+
+    Теневые/обучающие выгрузки выглядят как настоящие, но метриками Instagram
+    не являются. Пометить их REAL — значит построить весь план роста на
+    выдуманных числах, поэтому классификация делается по пути, а решение
+    остаётся консервативным: при любом совпадении источник считается SHADOW.
+    """
+    haystack = str(path).lower().replace("\\", "/")
+    hits = [marker for marker in SHADOW_MARKERS if marker in haystack]
+    return ("SHADOW" if hits else "REAL"), hits
+
+
 def file_fingerprint(path: Path) -> dict:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -461,9 +482,13 @@ def main() -> int:
         post_records.extend(posts)
         account_records.extend(accounts)
         meta = file_fingerprint(path)
-        meta.update({"rows": len(rows), "post_rows": len(posts), "account_rows": len(accounts)})
+        evidence, hits = classify_source(path)
+        meta.update({"rows": len(rows), "post_rows": len(posts), "account_rows": len(accounts),
+                     "evidence_label": evidence, "shadow_markers": hits})
         source_meta.append(meta)
+        flag = f"  [{evidence}]" + (f" маркеры: {', '.join(hits)}" if hits else "")
         print(f"  {path} — строк: {len(rows)} (публикаций: {len(posts)}, дневных: {len(accounts)})")
+        print(flag)
 
     # Дедупликация до агрегации: иначе пост из двух источников удвоит охват.
     unique_posts = merge_posts([p for p in post_records if p.get("date")])
@@ -479,13 +504,29 @@ def main() -> int:
         print("BLOCKED: источники прочитаны, но ни одной датированной записи с метриками нет.")
         return 2
 
+    labels = {meta["evidence_label"] for meta in source_meta if meta.get("rows")}
+    if not labels:
+        overall = "NOT_MEASURED"
+    elif labels == {"REAL"}:
+        overall = "REAL"
+    elif labels == {"SHADOW"}:
+        overall = "SHADOW"
+    else:
+        overall = "MIXED"  # смесь нельзя считать реальной: считаем по слабейшему звену
+
+    note = ("Собрано из локальных выгрузок студии. Отсутствующие поля опущены, "
+            "а не заполнены нулями. NULL/UNKNOWN != 0.")
+    if overall != "REAL":
+        note += (" ВНИМАНИЕ: часть или все источники относятся к теневому/обучающему "
+                 "контуру. Это НЕ метрики Instagram и не могут служить основанием "
+                 "для выводов о реальном росте.")
+
     payload = {
         "schema_version": "2.0",
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "account": args.account or "UNKNOWN",
-        "evidence_label": "REAL",
-        "note": "Собрано из локальных выгрузок студии. Отсутствующие поля опущены, "
-                "а не заполнены нулями. NULL/UNKNOWN != 0.",
+        "evidence_label": overall,
+        "note": note,
         "sources": source_meta,
         "coverage": coverage(snapshots, posts),
         "snapshots": snapshots,
@@ -493,8 +534,17 @@ def main() -> int:
     }
 
     text = json.dumps(payload, ensure_ascii=False, indent=2)
+    if overall != "REAL":
+        shadow_paths = [m["path"] for m in source_meta if m["evidence_label"] == "SHADOW"]
+        print(f"\nВНИМАНИЕ — доказательность источников: {overall}")
+        for item in shadow_paths:
+            print(f"  теневой контур: {item}")
+        print("  Эти данные НЕ являются метриками Instagram. Движок пометит все KPI как")
+        print("  SHADOW и не будет менять по ним контент-план.")
+
     if args.dry_run:
         print(f"\nDRY-RUN: снимков {len(snapshots)}, публикаций {len(posts)}. Файл не записан.")
+        print(f"Доказательность: {overall}")
         return 0
 
     atomic_write(args.out, text)
@@ -503,7 +553,8 @@ def main() -> int:
     print(f"  снимков: {len(snapshots)} ({snapshots[0]['date']} — {snapshots[-1]['date']})")
     print(f"  публикаций: {len(posts)}")
     print(f"  измеренных полей: {len(measured)} из {len(payload['coverage'])}")
-    return 0
+    print(f"  доказательность: {overall}")
+    return 0 if overall == "REAL" else 3
 
 
 if __name__ == "__main__":

@@ -297,34 +297,41 @@ def next_action(metrics: dict) -> str:
 def render(payload: dict, metrics: dict) -> str:
     measured, missing = split_measured(metrics)
     sources = payload.get("sources", [])
+    evidence = payload.get("evidence_label", "REAL")
     lines = [
         "# KPI роста Sofia",
         "",
         f"Окно: {metrics['window_days']} дн. | последний снимок: {metrics['latest_date']} | "
         f"точек в окне: {metrics['window_points']}",
-        f"Источники данных: {len(sources) or NOT_MEASURED}",
+        f"Источники данных: {len(sources) or NOT_MEASURED} | доказательность: {evidence}",
     ]
     for source in sources:
-        lines.append(f"  - `{source['path']}` (строк: {source.get('rows', '?')}, "
-                     f"sha256:{source.get('sha256', '?')})")
+        lines.append(f"  - [{source.get('evidence_label', 'REAL')}] `{source['path']}` "
+                     f"(строк: {source.get('rows', '?')}, sha256:{source.get('sha256', '?')})")
+    if evidence != "REAL":
+        lines += ["",
+                  f"> **ВНИМАНИЕ: доказательность {evidence}.** Данные получены из теневого или "
+                  "обучающего контура и НЕ являются метриками Instagram. Все значения ниже "
+                  "помечены соответственно и не могут служить основанием для выводов о "
+                  "реальном росте подписчиков."]
     lines += [
         "",
         "| Метрика | Значение | Метка |",
         "|---|---|---|",
-        f"| Подписчиков (baseline) | {fmt(metrics['followers_baseline'], 0)} | {label(metrics['followers_baseline'])} |",
-        f"| Прирост за 7 дн. | {fmt(metrics['growth_7d'], 0)} | {label(metrics['growth_7d'])} |",
-        f"| Прирост за 30 дн. | {fmt(metrics['growth_30d'], 0)} | {label(metrics['growth_30d'])} |",
-        f"| Прирост в день | {fmt(metrics['growth_per_day'])} | {label(metrics['growth_per_day'])} |",
-        f"| Охват за окно | {fmt(metrics['reach'], 0)} | {label(metrics['reach'])} |",
-        f"| Follows на 1k охвата | {fmt(metrics['follows_per_1k_reach'])} | {label(metrics['follows_per_1k_reach'])} |",
-        f"| Профиль → подписка | {pct(metrics['profile_to_follow_conversion'])} | {label(metrics['profile_to_follow_conversion'])} |",
-        f"| Sends per reach | {pct(metrics['sends_per_reach'])} | {label(metrics['sends_per_reach'])} |",
-        f"| Saves per reach | {pct(metrics['saves_per_reach'])} | {label(metrics['saves_per_reach'])} |",
-        f"| Просмотры | {fmt(metrics['views'], 0)} | {label(metrics['views'])} |",
-        f"| Watch time | {fmt(metrics['watch_time'], 0)} | {label(metrics['watch_time'])} |",
-        f"| Средний watch time | {fmt(metrics['average_watch_time'])} | {label(metrics['average_watch_time'])} |",
-        f"| Retention | {fmt(metrics['retention'])} | {label(metrics['retention'])} |",
-        f"| Отписки | {fmt(metrics['unfollows'], 0)} | {label(metrics['unfollows'])} |",
+        f"| Подписчиков (baseline) | {fmt(metrics['followers_baseline'], 0)} | {label(metrics['followers_baseline'], evidence)} |",
+        f"| Прирост за 7 дн. | {fmt(metrics['growth_7d'], 0)} | {label(metrics['growth_7d'], evidence)} |",
+        f"| Прирост за 30 дн. | {fmt(metrics['growth_30d'], 0)} | {label(metrics['growth_30d'], evidence)} |",
+        f"| Прирост в день | {fmt(metrics['growth_per_day'])} | {label(metrics['growth_per_day'], evidence)} |",
+        f"| Охват за окно | {fmt(metrics['reach'], 0)} | {label(metrics['reach'], evidence)} |",
+        f"| Follows на 1k охвата | {fmt(metrics['follows_per_1k_reach'])} | {label(metrics['follows_per_1k_reach'], evidence)} |",
+        f"| Профиль → подписка | {pct(metrics['profile_to_follow_conversion'])} | {label(metrics['profile_to_follow_conversion'], evidence)} |",
+        f"| Sends per reach | {pct(metrics['sends_per_reach'])} | {label(metrics['sends_per_reach'], evidence)} |",
+        f"| Saves per reach | {pct(metrics['saves_per_reach'])} | {label(metrics['saves_per_reach'], evidence)} |",
+        f"| Просмотры | {fmt(metrics['views'], 0)} | {label(metrics['views'], evidence)} |",
+        f"| Watch time | {fmt(metrics['watch_time'], 0)} | {label(metrics['watch_time'], evidence)} |",
+        f"| Средний watch time | {fmt(metrics['average_watch_time'])} | {label(metrics['average_watch_time'], evidence)} |",
+        f"| Retention | {fmt(metrics['retention'])} | {label(metrics['retention'], evidence)} |",
+        f"| Отписки | {fmt(metrics['unfollows'], 0)} | {label(metrics['unfollows'], evidence)} |",
         "",
         "## Rolling",
         "",
@@ -382,16 +389,25 @@ def render(payload: dict, metrics: dict) -> str:
     return "\n".join(lines)
 
 
-def label(value) -> str:
-    return "REAL" if value is not None else NOT_MEASURED
+def label(value, evidence: str = "REAL") -> str:
+    """Метка значения. Теневой источник никогда не становится REAL."""
+    if value is None:
+        return NOT_MEASURED
+    return evidence if evidence in ("SHADOW", "MIXED") else "REAL"
 
 
 def summary_block(payload: dict, metrics: dict) -> str:
     measured, missing = split_measured(metrics)
-    loop = "VERIFIED" if (metrics["trend_attribution"] and metrics["followers_baseline"] is not None
-                          and metrics["sends_per_reach"] is not None) else "PARTIAL"
+    evidence = payload.get("evidence_label", "REAL")
+    complete = (metrics["trend_attribution"] and metrics["followers_baseline"] is not None
+                and metrics["sends_per_reach"] is not None)
+    # Теневые данные не могут подтвердить цикл: механика работает, рост — нет.
+    loop = "VERIFIED" if (complete and evidence == "REAL") else "PARTIAL"
     sources = payload.get("sources", [])
     lines = [
+        f"EVIDENCE: {evidence}" + ("" if evidence == "REAL"
+                                   else "  ← НЕ метрики Instagram, теневой/обучающий контур"),
+        "",
         f"FOLLOWERS BASELINE: {fmt(metrics['followers_baseline'], 0)}",
         f"30D GROWTH: {fmt(metrics['growth_30d'], 0)}",
         f"REACH: {fmt(metrics['reach'], 0)}",
@@ -407,14 +423,25 @@ def summary_block(payload: dict, metrics: dict) -> str:
         "",
         "REAL DATA SOURCE:",
     ]
-    lines += [f"  {s['path']}" for s in sources] or [f"  {NOT_MEASURED}"]
-    lines += ["", "NEXT GROWTH ACTION:", f"  {next_action(metrics)}"]
+    lines += [f"  [{s.get('evidence_label', 'REAL')}] {s['path']}" for s in sources] \
+        or [f"  {NOT_MEASURED}"]
+    action = next_action(metrics)
+    if evidence != "REAL":
+        action = ("Реальных метрик Instagram нет — контент-план по этим данным не меняется. "
+                  "Разбор теневых чисел приведён только как проверка механики: " + action)
+    lines += ["", "NEXT GROWTH ACTION:", f"  {action}"]
     return "\n".join(lines)
 
 
 def build_memory(payload: dict, metrics: dict, previous: dict | None) -> dict:
-    """Growth memory: накапливает только измеренные исходы форматов/трендов."""
-    memory = previous or {"schema_version": "1.0", "evidence_label": "REAL", "entries": {}}
+    """Growth memory: накапливает измеренные исходы форматов/трендов.
+
+    Доказательность источника переносится в каждую запись: по теневым данным
+    движок не станет менять приоритет форматов в реальном плане.
+    """
+    evidence = payload.get("evidence_label", "REAL")
+    memory = previous or {"schema_version": "1.1", "entries": {}}
+    memory["evidence_label"] = evidence
     memory.setdefault("entries", {})
     for row in metrics["trend_attribution"]:
         key = f"{row['lineage']}:{row['key']}"
@@ -426,6 +453,7 @@ def build_memory(payload: dict, metrics: dict, previous: dict | None) -> dict:
         entry["follows_per_1k_reach"] = row["follows_per_1k_reach"]
         entry["repeatable"] = row["repeatable"]
         entry["verdict"] = verdict_for(row)
+        entry["evidence_label"] = evidence
         entry["observations"].append({
             "measured_at": payload.get("generated_at") or dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
             "window_days": metrics["window_days"],
@@ -435,6 +463,7 @@ def build_memory(payload: dict, metrics: dict, previous: dict | None) -> dict:
         entry["observations"] = entry["observations"][-12:]  # история не растёт бесконечно
     memory["updated_at"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     memory["baseline"] = {
+        "evidence_label": evidence,
         "followers": metrics["followers_baseline"],
         "sends_per_reach": metrics["sends_per_reach"],
         "saves_per_reach": metrics["saves_per_reach"],

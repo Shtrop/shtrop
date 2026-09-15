@@ -64,11 +64,14 @@ def pick_formats(backlog: list[dict], slots: int) -> tuple[list[dict], list[dict
     DROP-форматы исключаются полностью: память измерила, что они не работают.
     Карусельный слот выведен из обоих списков — у него отдельный слот в неделе.
     """
+    def trusted(item: dict) -> bool:
+        return bool(item.get("measured")) and item.get("evidence_label") == "REAL"
+
     usable = [item for item in backlog
               if item["status"] != "BLOCKED_BRAND_SAFETY"
               and item["id"] != CAROUSEL_FORMAT
-              and (item.get("measured") or {}).get("verdict") != "DROP"]
-    core = [item for item in usable if item.get("measured")] or usable[:2]
+              and not (trusted(item) and item["measured"].get("verdict") == "DROP")]
+    core = [item for item in usable if trusted(item)] or usable[:2]
     core_ids = {item["id"] for item in core}
     experiments = [item for item in usable if item["id"] not in core_ids]
     experiment_slots = max(1, round(slots * EXPERIMENT_SHARE)) if experiments else 0
@@ -85,7 +88,9 @@ def hook_for(hooks: dict, format_id: str, index: int) -> dict:
 
 def success_criterion(item: dict, baseline: dict | None) -> str:
     lever = item["levers"][0]
-    measured = item.get("measured")
+    measured = item.get("measured") if item.get("evidence_label") == "REAL" else None
+    if baseline and baseline.get("evidence_label", "REAL") != "REAL":
+        baseline = None
     if measured and measured.get("sends_per_reach") is not None:
         current = measured["sends_per_reach"]
         return (f"удержать sends per reach не ниже {round(current * 100, 2)}% "
@@ -130,8 +135,11 @@ def build(args) -> str:
         rows.append({"date": date, "slot": slot, "item": item,
                      **hook_for(hooks, item["id"], index)})
 
-    measured_count = sum(1 for row in rows if row["item"].get("measured"))
-    dropped = [item for item in backlog if (item.get("measured") or {}).get("verdict") == "DROP"]
+    measured_count = sum(1 for row in rows if row["item"].get("evidence_label") == "REAL")
+    dropped = [item for item in backlog
+               if item.get("evidence_label") == "REAL"
+               and (item.get("measured") or {}).get("verdict") == "DROP"]
+    shadow = [item for item in backlog if item.get("evidence_label") == "SHADOW"]
 
     lines = [
         f"# Контент-план Sofia: {dates[0].isoformat()} — {dates[-1].isoformat()}",
@@ -143,11 +151,15 @@ def build(args) -> str:
     ]
     if stale:
         lines.append("> WARN: трендовый радар устарел (>14 дн.) — обновить до постановки в работу.")
-    if baseline and baseline.get("followers") is not None:
+    if baseline and baseline.get("followers") is not None \
+            and baseline.get("evidence_label", "REAL") == "REAL":
         lines.append(
             f"> Baseline аккаунта (REAL, {baseline.get('measured_at')}): "
             f"{baseline['followers']} подписчиков, sends per reach "
             f"{round((baseline.get('sends_per_reach') or 0) * 100, 2)}%.")
+    elif baseline and baseline.get("evidence_label") in ("SHADOW", "MIXED"):
+        lines.append(f"> Baseline аккаунта: `{baseline['evidence_label']}` — числа из теневого "
+                     "контура, критериями успеха служить не могут.")
     else:
         lines.append("> Baseline аккаунта: `NOT_MEASURED` — критерии успеха задать после первого замера.")
 
@@ -161,7 +173,8 @@ def build(args) -> str:
     for row in rows:
         item = row["item"]
         measured = item.get("measured")
-        evidence = (f"REAL · {measured['verdict']}" if measured else "PREDICTED")
+        evidence = (f"{item['evidence_label']} · {measured['verdict']}"
+                    if measured else "PREDICTED")
         lines.append(
             f"| {row['date'].isoformat()} | {WEEKDAY_RU[row['date'].weekday()]} | {row['slot']} | "
             f"{item['title']} | {row['hook']} | {row['sendability']} | {evidence} |")
@@ -177,12 +190,25 @@ def build(args) -> str:
         lines += [
             f"### {item['title']}",
             f"- Рычаг: `{item['levers'][0]}` → метрика решения: {item['kpi'][0]}",
-            (f"- Статус: REAL, вердикт `{measured['verdict']}` на {measured['posts']} публикациях."
+            (f"- Статус: {item['evidence_label']}, вердикт `{measured['verdict']}` "
+             f"на {measured['posts']} публикациях."
+             + ("" if item["evidence_label"] == "REAL"
+                else " Теневой контур — на план не влияет.")
              if measured else "- Статус: PREDICTED, формат ещё не измерен на аккаунте."),
             f"- Критерий: {success_criterion(item, baseline)}",
             f"- Стоимость производства: {item['production_cost']}",
             "",
         ]
+
+    if shadow:
+        lines += ["## Теневые замеры (на план не влияют)", "",
+                  "Данные по этим форматам получены из обучающего/теневого контура и не "
+                  "являются метриками Instagram, поэтому приоритет по ним не меняется:", ""]
+        for item in shadow:
+            measured = item["measured"]
+            lines.append(f"- {item['title']} — `{measured['verdict']}` по теневым данным "
+                         f"({measured['posts']} публикаций). Требует подтверждения реальными Insights.")
+        lines.append("")
 
     if dropped:
         lines += ["## Исключено по данным", ""]

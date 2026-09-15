@@ -135,7 +135,9 @@ def build_backlog(radar: dict, guardrails: dict, memory: dict) -> list[dict]:
     for signal in radar.get("format_signals", []):
         flags = brand_safety_flags(signal, blocked)
         entry = memory_entry(memory, signal["id"])
-        score, levers, prior = score_signal(signal, entry)
+        # Теневые замеры не меняют приоритет реального плана.
+        trusted = entry if (entry or {}).get("evidence_label", "REAL") == "REAL" else None
+        score, levers, prior = score_signal(signal, trusted)
         backlog.append(
             {
                 "id": signal["id"],
@@ -147,13 +149,14 @@ def build_backlog(radar: dict, guardrails: dict, memory: dict) -> list[dict]:
                 "production_cost": signal.get("production_cost", "medium"),
                 "confidence": signal.get("confidence", "medium"),
                 "prior_score": prior,
-                "evidence_priority": (EVIDENCE_PRIORITY.get(entry.get("verdict"), 1)
-                                      if entry else UNMEASURED_PRIORITY),
+                "evidence_priority": (EVIDENCE_PRIORITY.get(trusted.get("verdict"), 1)
+                                      if trusted else UNMEASURED_PRIORITY),
                 "status": "BLOCKED_BRAND_SAFETY" if flags else "PROPOSED",
                 "brand_safety_flags": flags,
                 "source": signal.get("source", ""),
-                # Метка повышается до REAL только там, где формат действительно измерен.
-                "evidence_label": "REAL" if entry else "PREDICTED",
+                # REAL — только по реальным метрикам платформы; теневые помечаются SHADOW.
+                "evidence_label": ("REAL" if trusted else
+                                   ("SHADOW" if entry else "PREDICTED")),
                 "measured": {
                     "verdict": entry.get("verdict"),
                     "posts": entry.get("posts"),

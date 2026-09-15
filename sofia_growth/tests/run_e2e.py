@@ -160,7 +160,50 @@ def main() -> int:
         check("NO-DATA", "GROWTH LOOP: PARTIAL" in result.stdout,
               "цикл без данных объявлен PARTIAL, а не VERIFIED")
 
-        print(f"\n=== 8. Изоляция: репозиторий не загрязнён ===")
+        print(f"\n=== 8. Теневой контур не выдаётся за реальные метрики ===")
+        shadow_dir = work / "evidence" / "learning_shadow" / "analytics"
+        build_fixtures(shadow_dir)
+        shadow_snapshots = work / "shadow_snapshots.json"
+        shadow_memory = work / "shadow_memory.json"
+        result = run([str(TOOLS / "ingest_insights.py"), "--studio", str(shadow_dir),
+                      "--out", str(shadow_snapshots)], expect=(3,))
+        check("SHADOW", "ВНИМАНИЕ" in result.stdout and "SHADOW" in result.stdout,
+              "теневой источник распознан по пути и помечен")
+        shadow_payload = json.loads(shadow_snapshots.read_text(encoding="utf-8"))
+        check("SHADOW", shadow_payload["evidence_label"] == "SHADOW",
+              "снимок помечен SHADOW, а не REAL")
+
+        result = run([str(TOOLS / "growth_kpi.py"), "--snapshots", str(shadow_snapshots),
+                      "--days", "30", "--summary", "--write-memory", str(shadow_memory)],
+                     expect=(0, 1))
+        check("SHADOW", "EVIDENCE: SHADOW" in result.stdout,
+              "отчёт владельцу открывается меткой EVIDENCE: SHADOW")
+        check("SHADOW", "GROWTH LOOP: PARTIAL" in result.stdout,
+              "цикл на теневых данных не объявляется VERIFIED")
+        check("SHADOW", "REAL DATA SOURCE:\n  [SHADOW]" in result.stdout,
+              "источник в отчёте помечен как теневой")
+
+        result = run([str(TOOLS / "trend_radar.py"), "--json", "--memory", str(shadow_memory)],
+                     expect=(0, 2))
+        shadow_backlog = json.loads(result.stdout)["backlog"]
+        check("SHADOW", all(item["evidence_label"] != "REAL" for item in shadow_backlog),
+              "теневые замеры не дают метку REAL в бэклоге")
+        shadow_rank = [item["id"] for item in shadow_backlog]
+        check("SHADOW", shadow_rank == prior_rank,
+              "порядок бэклога не изменился: теневые данные не двигают приоритет")
+
+        shadow_plan = work / "shadow_plan.md"
+        run([str(TOOLS / "plan_builder.py"), "--memory", str(shadow_memory),
+             "--days", "14", "--start", "2026-09-16", "--out", str(shadow_plan)])
+        shadow_text = shadow_plan.read_text(encoding="utf-8")
+        check("SHADOW", "REAL · SCALE" not in shadow_text,
+              "теневой вердикт не попал в план как подтверждённый")
+        check("SHADOW", "Теневые замеры (на план не влияют)" in shadow_text,
+              "план явно перечисляет теневые замеры отдельным разделом")
+        check("SHADOW", "1325 подписчиков" not in shadow_text,
+              "теневой baseline не выдаётся за реальный")
+
+        print(f"\n=== 9. Изоляция: репозиторий не загрязнён ===")
         real_snapshots = BASE / "data" / "followers_snapshots.json"
         check("ISOLATION", not real_snapshots.exists() or "SYNTHETIC" not in
               real_snapshots.read_text(encoding="utf-8"),
