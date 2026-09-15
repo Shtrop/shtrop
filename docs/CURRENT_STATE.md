@@ -51,6 +51,9 @@ not a defect.
 | Voice campaign harness | `PASS` | 66 clips (22 × RU/UA/EN) ran end to end in 30 s |
 | Reel batch harness | `PASS` | 5 controlled + 5 random ran in 160 s |
 | Readiness preflight | `PASS` | `scripts/preflight.py` names 10 blockers here |
+| Cross-language identity check | `PASS` (wiring) | RU↔UA, RU↔EN, UA↔EN run in the campaign |
+| Champion vs Challenger trial | `PASS` | identity regression sinks a challenger; nothing auto-promotes |
+| Growth feedback loop | `PASS` | director reports every Reel; shadow stays out of REAL |
 | CI | `PASS` | `.github/workflows/tests.yml` runs suite + registry drift check |
 
 ## What is NOT proven
@@ -149,6 +152,35 @@ otherwise the verdict is `NOT_MEASURED` and every rate is `null`.
    produced numbers; otherwise `NOT_MEASURED` and `null`.
 6. **The editor reported ffmpeg missing when a usable binary existed.** It only
    consulted `PATH`, ignoring an installed `imageio-ffmpeg`. Fixed.
+
+A review pass over the new code found nine more, all fixed with regression
+tests:
+
+7. **Challengers were indistinguishable.** Arms were named from the backend's
+   own `name`, which is the same hardcoded string for every challenger sharing
+   a runner class, so trial output could not be attributed. Arms are now named
+   by the key they were registered under.
+8. **A retried Reel counted as several Reels** in growth memory, skewing every
+   shadow statistic. One Reel is now one entry with an `attempts` count, and
+   diagnostic runs are flagged separately.
+9. **A crashed champion produced a cherry-picked baseline** that would unfairly
+   sink a genuinely better challenger. Now `NOT_MEASURED`.
+10. **Cross-language identity demanded reference audio** it never reads — the
+    comparison is against a voiceprint — turning comparable pairs into false
+    `NOT_MEASURED`.
+11. **`--languages ru` could never exit zero**, because the run was judged
+    against pairs that had no clips.
+12. **The per-pair summary printed the first clip's verdict**, so it could show
+    `RU-UA PASS` under a `FAIL` header. It now shows the worst per pair.
+13. **Shadow memory was write-only** — never saved, never reloaded, never read
+    by the next decision. Now persisted separately from REAL records and used
+    as a hook hypothesis.
+14. **The challenger trial's audio lookup used int keys** while `ReelAssets`
+    stores voice clips under string keys, which would have silently produced an
+    empty trial.
+15. **Growth bookkeeping failures were swallowed silently**, making a broken
+    analytics sink look like a studio that produced nothing. They are recorded
+    and surfaced in `director.status()`.
 
 ## Safety posture (unchanged by this session)
 

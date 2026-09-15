@@ -258,3 +258,82 @@ def test_a_campaign_with_real_measurements_reports_rates(tmp_path):
         report.count(Verdict.PASS) / report.total
     )
     assert report.verdict is Verdict.FAIL
+
+
+# ---- cross-language identity ---------------------------------------------
+def test_cross_language_pairs_cover_the_champion_comparisons():
+    from sofia.voice.benchmark import DEFAULT_PAIRS
+
+    pairs = {(a.label, b.label) for a, b in DEFAULT_PAIRS}
+    # RU is the champion, so RU<->UA and RU<->EN carry the acceptance decision.
+    assert ("RU", "UA") in pairs
+    assert ("RU", "EN") in pairs
+
+
+def test_cross_language_only_needs_audio_on_the_compared_side(tmp_path):
+    """The reference side contributes a voiceprint, not a clip.
+
+    Requiring reference audio would report NOT_MEASURED for a pair that is
+    perfectly comparable.
+    """
+    from sofia.voice.benchmark import CampaignReport, ClipOutcome, run_cross_language
+    from sofia.voice.corpus import corpus_for
+
+    team = VoiceTeam(VoiceBackends.unavailable("no models"), tmp_path)
+    reports = {lang: CampaignReport(language=lang) for lang in Language}
+    # Only UA has audio; RU has none.
+    for clip in corpus_for(Language.UA)[:1]:
+        path = tmp_path / f"{clip.clip_id}.wav"
+        _tone(path, duration=1.0)
+        reports[Language.UA].outcomes.append(
+            ClipOutcome(clip=clip, verdict=Verdict.HOLD, reason="", repairs=0,
+                        audio_path=str(path))
+        )
+    cross = run_cross_language(
+        team, reports, pairs=((Language.RU, Language.UA),), samples=1
+    )
+    # It was attempted, and blocked on the missing voiceprint rather than on a
+    # missing reference clip.
+    assert len(cross.results) == 1
+    assert "no produced" not in cross.results[0].reason
+
+
+def test_cross_language_blocks_without_a_reference_voiceprint(tmp_path):
+    """Three languages each matching their own reference can still be three
+    different people. Without a real voiceprint this is unmeasurable."""
+    from sofia.voice.benchmark import CampaignReport, ClipOutcome, run_cross_language
+    from sofia.voice.corpus import corpus_for
+
+    team = VoiceTeam(VoiceBackends.unavailable("no models"), tmp_path)
+    reports = {}
+    for language in Language:
+        rep = CampaignReport(language=language)
+        for clip in corpus_for(language)[:3]:
+            path = tmp_path / f"{clip.clip_id}.wav"
+            _tone(path, duration=1.0)
+            rep.outcomes.append(
+                ClipOutcome(
+                    clip=clip,
+                    verdict=Verdict.HOLD,
+                    reason="",
+                    repairs=0,
+                    audio_path=str(path),
+                )
+            )
+        reports[language] = rep
+
+    cross = run_cross_language(team, reports, samples=1)
+    assert cross.results
+    assert cross.verdict is Verdict.NOT_MEASURED
+    assert all(r.critical for r in cross.results)
+
+
+def test_cross_language_reports_not_measured_when_a_language_produced_nothing(tmp_path):
+    from sofia.voice.benchmark import CampaignReport, run_cross_language
+
+    team = VoiceTeam(VoiceBackends.unavailable("no models"), tmp_path)
+    reports = {language: CampaignReport(language=language) for language in Language}
+    cross = run_cross_language(team, reports, samples=1)
+    assert cross.verdict is Verdict.NOT_MEASURED
+    # The reason names which language had nothing to compare.
+    assert all("no produced" in r.reason and "clips" in r.reason for r in cross.results)

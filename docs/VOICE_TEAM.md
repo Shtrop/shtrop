@@ -78,9 +78,17 @@ any machine.
 | Identity floor | 0.82 | 0.82 (and RU↔UA cross-check ≥ 0.78) | 0.82 (and RU↔EN cross-check) |
 | Generic fallback acceptable | no | **no** | no |
 
-Cross-language identity is a first-class check:
-`VoiceIdentityCritic.cross_language` compares Sofia in one language against the
-reference voiceprint of another.
+### Cross-language identity
+
+Each language matching its *own* voiceprint is not enough — three languages can
+each match their own reference and still be three different people. So the
+campaign also compares clips of one language against the **reference voiceprint
+of another**, for RU↔UA, RU↔EN and UA↔EN.
+
+`run_cross_language` is part of the acceptance run, not an optional extra: the
+benchmark CLI reports its verdict alongside the per-language ones and only exits
+zero when both are clean (a single-language run has no pair, so it is not judged
+on one).
 
 ## Acceptance
 

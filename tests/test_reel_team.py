@@ -471,3 +471,284 @@ def test_blocking_histogram_ranks_the_worst_offender_first():
         "reel.voice",
         "reel.video",
     ]
+
+
+# ---- champion vs challenger ----------------------------------------------
+def _arm(name, champion=False, **overrides):
+    from sofia.reel.challenger import REQUIRED_METRICS, ArmResult
+
+    metrics = {m: 0.90 for m in REQUIRED_METRICS}
+    metrics["face_drift"] = 0.05
+    metrics.update(overrides)
+    return ArmResult(name=name, champion=champion, metrics=metrics)
+
+
+def test_a_clearly_better_challenger_is_recommended_not_promoted():
+    from sofia.reel.challenger import REQUIRED_METRICS, TrialReport
+
+    better = _arm("longcat", **{m: 0.95 for m in REQUIRED_METRICS})
+    better.metrics["face_drift"] = 0.02
+    report = TrialReport(champion=_arm("champion", champion=True), challengers=[better])
+    verdict, reason = report.recommendation(better)
+    assert verdict is Verdict.PASS
+    assert "not a promotion" in reason
+    # Nothing is promoted automatically.
+    assert report.to_dict()["promoted"] == []
+
+
+def test_identity_regression_sinks_a_challenger_however_good_the_mouth():
+    from sofia.reel.challenger import REQUIRED_METRICS, TrialReport
+
+    challenger = _arm("highsync", **{m: 0.99 for m in REQUIRED_METRICS})
+    challenger.metrics["identity"] = 0.80
+    challenger.metrics["face_drift"] = 0.01
+    report = TrialReport(champion=_arm("champion", champion=True))
+    verdict, reason = report.recommendation(challenger)
+    assert verdict is Verdict.FAIL
+    assert "identity regressed" in reason
+
+
+def test_a_challenger_that_only_ties_leaves_the_champion_standing():
+    from sofia.reel.challenger import TrialReport
+
+    report = TrialReport(champion=_arm("champion", champion=True))
+    verdict, reason = report.recommendation(_arm("tie"))
+    assert verdict is Verdict.HOLD
+    assert "champion stands" in reason
+
+
+def test_an_unmeasured_challenger_recommends_nothing():
+    from sofia.reel.challenger import TrialReport
+
+    challenger = _arm("unmeasured")
+    challenger.metrics["phoneme_accuracy"] = None
+    report = TrialReport(champion=_arm("champion", champion=True))
+    verdict, _ = report.recommendation(challenger)
+    assert verdict is Verdict.NOT_MEASURED
+
+
+def test_a_challenger_that_crashed_on_a_shot_fails():
+    from sofia.reel.challenger import TrialReport
+
+    challenger = _arm("crashy")
+    challenger.failures.append("shot 0: backend exploded")
+    report = TrialReport(champion=_arm("champion", champion=True))
+    assert report.recommendation(challenger)[0] is Verdict.FAIL
+
+
+def test_an_unmeasured_champion_means_there_is_nothing_to_compare():
+    from sofia.reel.challenger import TrialReport
+
+    champ = _arm("champion", champion=True)
+    champ.metrics["identity"] = None
+    report = TrialReport(champion=champ)
+    verdict, reason = report.recommendation(_arm("challenger"))
+    assert verdict is Verdict.NOT_MEASURED
+    assert "champion itself" in reason
+
+
+def test_worst_case_across_shots_is_used_not_the_average():
+    """One bad take must not be averaged away by good ones."""
+    from pathlib import Path
+
+    from sofia.reel.challenger import run_trial
+
+    shots = [s for s in _shots() if s.shot_type.needs_lipsync]
+    shots[0].video_path = "/dev/null"
+
+    class Backend:
+        name = "fake"
+
+        def sync(self, video, audio, out):
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(b"x")
+            return out
+
+    calls = {"n": 0}
+
+    def measure(path, shot):
+        calls["n"] += 1
+        # First shot good, second poor.
+        value = 0.95 if calls["n"] == 1 else 0.60
+        return {
+            "phoneme_accuracy": value, "mouth_quality": value,
+            "jaw_quality": value, "teeth_quality": value,
+            "eye_quality": value, "identity": value, "face_drift": 0.02,
+        }
+
+    import tempfile
+
+    workdir = Path(tempfile.mkdtemp())
+    doubled = shots + [shots[0]]
+    report = run_trial(
+        Backend(), {}, doubled, {s.index: "/dev/null" for s in doubled}, workdir, measure
+    )
+    assert report.champion.metrics["phoneme_accuracy"] == pytest.approx(0.60)
+
+
+# ---- growth feedback loop -------------------------------------------------
+def test_shadow_outcomes_never_contaminate_real_baselines():
+    engine = GrowthEngine()
+    for i in range(5):
+        engine.record_outcome(f"r{i}", "PASS", {"STORY": 8.0}, hook="hook")
+    learned = engine.learned()
+    assert learned["shadow_reels"] == 5
+    assert learned["real_publications"] == 0
+    assert learned["real_baselines"]["retention"]["value"] is None
+    assert learned["evidence"] == "PREDICTED"
+    assert "not any audience" in learned["caveat"]
+
+
+def test_growth_learns_which_blockers_recur():
+    engine = GrowthEngine()
+    engine.record_outcome("r1", "HOLD", {}, blockers=["reel.voice", "reel.lipsync"])
+    engine.record_outcome("r2", "HOLD", {}, blockers=["reel.voice"])
+    assert list(engine.learned()["most_common_blockers"])[0] == "reel.voice"
+
+
+def test_growth_observes_a_finished_reel():
+    from sofia.core.gates import evaluate_gates
+    from sofia.reel.contracts import ReelResult
+
+    engine = GrowthEngine()
+    brief = ReelBrief(
+        reel_id="r1", purpose="p", audience="a", language=Language.RU,
+        trend="honest process", hook="a hook", story_arc="arc", cta="cta",
+    )
+    result = ReelResult(
+        reel_id="r1",
+        verdict=Verdict.HOLD,
+        stage=None,
+        brief=brief,
+        report=evaluate_gates([GateResult("reel.voice", Verdict.FAIL, True)]),
+        scores={"STORY": 8.0, "IDENTITY": None},
+    )
+    entry = engine.observe(result)
+    assert entry["hook"] == "a hook"
+    assert entry["trend"] == "honest process"
+    assert entry["blockers"] == ["reel.voice"]
+    # Unmeasured scores are dropped, never recorded as 0.
+    assert entry["scores"] == {"STORY": 8.0}
+    assert engine.learned()["shadow_reels"] == 1
+
+
+def test_challengers_are_told_apart_by_their_registered_name():
+    """Challengers often share a runner class, so the backend's own name is
+    the same string for all of them and cannot identify an arm."""
+    from pathlib import Path
+    import tempfile
+
+    from sofia.reel.challenger import run_trial
+
+    class SharedRunner:
+        name = "latentsync-champion"  # every instance reports this
+
+        def sync(self, video, audio, out):
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(b"x")
+            return out
+
+    shots = [s for s in _shots() if s.shot_type.needs_lipsync]
+
+    def measure(path, shot):
+        return {m: 0.9 for m in
+                ("phoneme_accuracy", "mouth_quality", "jaw_quality",
+                 "teeth_quality", "eye_quality", "identity", "face_drift")}
+
+    report = run_trial(
+        SharedRunner(),
+        {"longcat": SharedRunner(), "highsync": SharedRunner()},
+        shots,
+        {s.index: "/dev/null" for s in shots},
+        Path(tempfile.mkdtemp()),
+        measure,
+    )
+    names = [c.name for c in report.challengers]
+    assert names == ["longcat", "highsync"]
+    assert all(c.backend == "latentsync-champion" for c in report.challengers)
+
+
+def test_challenger_accepts_voice_clips_keyed_by_string():
+    """ReelAssets.voice_clips is keyed by str(index); shots carry ints."""
+    from pathlib import Path
+    import tempfile
+
+    from sofia.reel.challenger import run_trial
+
+    class Backend:
+        name = "b"
+
+        def sync(self, video, audio, out):
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(b"x")
+            return out
+
+    shots = [s for s in _shots() if s.shot_type.needs_lipsync]
+    report = run_trial(
+        Backend(), {}, shots,
+        {str(s.index): "/dev/null" for s in shots},  # string keys
+        Path(tempfile.mkdtemp()),
+        lambda p, s: {m: 0.9 for m in
+                      ("phoneme_accuracy", "mouth_quality", "jaw_quality",
+                       "teeth_quality", "eye_quality", "identity", "face_drift")},
+    )
+    assert report.champion.failures == []
+    assert report.champion.measured
+
+
+def test_a_champion_that_crashed_on_shots_is_not_a_fair_baseline():
+    from sofia.reel.challenger import TrialReport
+
+    champ = _arm("champion", champion=True)
+    champ.failures.append("shot 0: runner died")
+    report = TrialReport(champion=champ)
+    verdict, reason = report.recommendation(_arm("challenger"))
+    assert verdict is Verdict.NOT_MEASURED
+    assert "cherry-picked" in reason
+
+
+def test_a_retried_reel_is_one_shadow_entry_not_several():
+    engine = GrowthEngine()
+    engine.record_outcome("r1", "HOLD", {}, blockers=["reel.voice"])
+    engine.record_outcome("r1", "HOLD", {}, blockers=["reel.voice"])
+    engine.record_outcome("r1", "PASS", {"STORY": 8.0}, hook="h")
+    assert len(engine.memory.shadow) == 1
+    assert engine.memory.shadow[0]["attempts"] == 3
+    assert engine.memory.shadow[0]["verdict"] == "PASS"
+
+
+def test_diagnostic_runs_are_separated_from_production_ones():
+    engine = GrowthEngine()
+    engine.record_outcome("r1", "PASS", {}, hook="real")
+    engine.record_outcome("r2", "HOLD", {}, diagnostic=True)
+    learned = engine.learned()
+    assert learned["shadow_production_reels"] == 1
+    assert learned["shadow_diagnostic_reels"] == 1
+    # A diagnostic run can never pass, so it never supplies a winning hook.
+    assert engine.hooks_that_reached_review() == ["real"]
+
+
+def test_shadow_memory_survives_a_reload_and_stays_separate(tmp_path):
+    engine = GrowthEngine()
+    engine.record_outcome("r1", "PASS", {"STORY": 8.0}, hook="h")
+    path = engine.memory.save(tmp_path / "history.json")
+
+    reloaded = GrowthMemory.load(path)
+    assert len(reloaded.shadow) == 1
+    assert reloaded.records == []
+    # A reload must never promote a shadow entry into a REAL baseline.
+    assert reloaded.baseline("retention").value is None
+
+
+def test_growth_offers_a_prior_winning_hook_when_none_is_supplied():
+    engine = GrowthEngine()
+    engine.record_outcome("r1", "PASS", {}, hook="Ты правда думаешь, что дело в камере?")
+    brief = engine.brief_director(trend="t", audience="a", hook_hypothesis="")
+    assert brief.hook_hypothesis == "Ты правда думаешь, что дело в камере?"
+
+
+def test_an_explicit_hook_hypothesis_is_never_overridden():
+    engine = GrowthEngine()
+    engine.record_outcome("r1", "PASS", {}, hook="old hook")
+    brief = engine.brief_director(trend="t", audience="a", hook_hypothesis="new idea")
+    assert brief.hook_hypothesis == "new idea"

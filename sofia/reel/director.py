@@ -112,6 +112,7 @@ class ReelDirector:
         gpu: Optional[GpuArbiter] = None,
         thresholds: Optional[ReelThresholds] = None,
         music_backend: Any = None,
+        growth: Any = None,
     ) -> None:
         self.config = config
         self.workdir = Path(config.workdir)
@@ -125,6 +126,14 @@ class ReelDirector:
         self.gpu = gpu or GpuArbiter()
         self.thresholds = thresholds or ReelThresholds()
         self.music_backend = music_backend
+        #: The Growth Engine, when one is attached. Every finished Reel is fed
+        #: back to it so the next decision sees what happened to this one.
+        self.growth = growth
+        #: Growth bookkeeping failures. Recorded rather than raised, because a
+        #: broken analytics sink must not change a Reel's verdict — but a
+        #: silently broken one looks exactly like a studio that made nothing,
+        #: so it surfaces in status().
+        self.growth_errors: list[str] = []
 
         # Logical roles carried by this director's team.
         self.trend_agent = TrendAgent()
@@ -350,7 +359,7 @@ class ReelDirector:
                 required_critical=("reel.production",) + FINAL_GATE_CATEGORIES,
             )
             self._checkpoint(reel_id, StageState.HELD, allow_regression=True)
-            return ReelResult(
+            return self._close_growth_loop(ReelResult(
                 reel_id=reel_id,
                 verdict=Verdict.BLOCKED,
                 stage=stage,
@@ -360,7 +369,7 @@ class ReelDirector:
                 diagnoses=diagnoses,
                 reason=f"production stopped at {stage.value}: {exc}",
                 owner=self.name,
-            )
+            ), diagnostic=diagnostic)
 
         # -- FINAL QA ------------------------------------------------------
         return self._final_qa(
@@ -759,7 +768,7 @@ class ReelDirector:
         if report.passed and not diagnostic:
             self._checkpoint(reel_id, StageState.FINAL_QA)
             self._checkpoint(reel_id, StageState.READY_FOR_OWNER_REVIEW)
-            return ReelResult(
+            return self._close_growth_loop(ReelResult(
                 reel_id=reel_id,
                 verdict=Verdict.PASS,
                 stage=StageState.READY_FOR_OWNER_REVIEW,
@@ -772,7 +781,7 @@ class ReelDirector:
                     f"state={TERMINAL_APPROVED_STATE} (publishing remains on HOLD)"
                 ),
                 owner=self.name,
-            )
+            ), diagnostic=diagnostic)
 
         decision: RepairDecision = self.repair_router.route(diagnoses)
         repairs.append(
@@ -784,7 +793,7 @@ class ReelDirector:
         verdict = _blocked_verdict(report)
         stage = StageState.HELD if verdict is Verdict.HOLD else StageState.FAILED
         self._checkpoint(reel_id, stage, allow_regression=True)
-        return ReelResult(
+        return self._close_growth_loop(ReelResult(
             reel_id=reel_id,
             verdict=verdict,
             stage=stage,
@@ -799,7 +808,26 @@ class ReelDirector:
                 + ", ".join(f"{r.name}={r.verdict.value}" for r in report.blocking)
             ),
             owner=self.name,
-        )
+        ), diagnostic=diagnostic)
+
+    def _close_growth_loop(
+        self, result: ReelResult, *, diagnostic: bool = False
+    ) -> ReelResult:
+        """Report the finished Reel to the Growth Engine, if one is attached.
+
+        A failure to record must never change the Reel's verdict, so the error
+        is captured instead of raised — and kept, so a permanently broken growth
+        engine is distinguishable from a studio that produced nothing.
+        """
+        if self.growth is None:
+            return result
+        try:
+            self.growth.observe(result, diagnostic=diagnostic)
+        except Exception as exc:  # noqa: BLE001 - bookkeeping never alters a verdict
+            self.growth_errors.append(
+                f"{result.reel_id}: {type(exc).__name__}: {exc}"
+            )
+        return result
 
     # ---- reporting -------------------------------------------------------
     def status(self, reel_id: str) -> dict:
@@ -811,6 +839,7 @@ class ReelDirector:
             "owner": lease.owner if lease else None,
             "journal": self.checkpoints.journal(reel_id),
             "publishing": "HOLD" if PUBLISHING_HOLD else "OPEN",
+            "growth_errors": list(self.growth_errors),
             "gpu": self.gpu.status(),
             "voice_backends": self.voice_team.backends.status(),
             "reel_backends": self.backends.status(),

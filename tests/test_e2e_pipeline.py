@@ -275,3 +275,37 @@ def test_perceptual_hold_even_when_structural_gates_pass(tmp_path):
     )
     assert result.report.by_name("reel.perceptual").verdict is Verdict.HOLD
     assert result.verdict is not Verdict.PASS
+
+
+@needs_ffmpeg
+def test_the_growth_loop_closes_through_the_director(devkit_run):
+    """A finished Reel reaches growth memory without being asked to."""
+    studio, result, _ = devkit_run
+    shadow = studio.growth.memory.shadow
+    assert shadow, "the director never reported the Reel to the Growth Engine"
+    entry = next(e for e in shadow if e["reel_id"] == result.reel_id)
+    assert entry["evidence"] == "PREDICTED"
+    assert entry["hook"] == result.brief.hook
+    assert entry["blockers"]
+    # Shadow data never becomes a platform metric.
+    assert studio.growth.learned()["real_publications"] == 0
+    assert studio.growth.learned()["real_baselines"]["retention"]["value"] is None
+
+
+@needs_ffmpeg
+def test_a_broken_growth_engine_never_changes_a_verdict(tmp_path):
+    """Bookkeeping must not turn a HOLD into a crash — but it must be visible."""
+
+    class BrokenGrowth:
+        def observe(self, result, *, diagnostic=False):
+            raise RuntimeError("analytics sink is down")
+
+    studio = _studio(tmp_path)
+    studio.director.growth = BrokenGrowth()
+    result = studio.director.produce("reel-broken-growth", _growth(), diagnostic=True)
+
+    assert result.verdict is Verdict.HOLD
+    # The failure is recorded rather than swallowed silently.
+    assert studio.director.growth_errors
+    assert "analytics sink is down" in studio.director.growth_errors[0]
+    assert studio.director.status("reel-broken-growth")["growth_errors"]

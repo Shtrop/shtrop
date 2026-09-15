@@ -13,8 +13,9 @@ import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence
 
+from sofia.core.gates import GateResult
 from sofia.core.verdict import Verdict
 from sofia.voice.contracts import Language, VoiceVerdict
 from sofia.voice.corpus import CorpusItem, corpus_for, coverage
@@ -247,10 +248,136 @@ def summarise(reports: dict[Language, CampaignReport]) -> dict:
             "verdict": rep.verdict.value,
             "clips": rep.total,
             "produced": rep.produced,
+            "verified": rep.verified,
+            "measurable": rep.measurable,
             "first_pass_rate": rep.first_pass_rate,
             "final_pass_rate": rep.final_pass_rate,
-            "mean_wer": rep.mean_wer if hasattr(rep, "mean_wer") else rep.mean("wer"),
+            "mean_wer": rep.mean("wer"),
             "mean_identity": rep.mean("identity"),
         }
         for lang, rep in reports.items()
     }
+
+
+# --------------------------------------------------------------------------
+# Cross-language identity
+#
+# One canonical Sofia must survive the language change. Measuring each language
+# against its own voiceprint is not enough: three separate voices can each
+# match their own reference and still be three different people. These checks
+# compare a clip in one language against the reference of another.
+# --------------------------------------------------------------------------
+#: The pairs that matter. RU is the champion, so RU↔UA and RU↔EN carry the
+#: acceptance decision; UA↔EN is reported for completeness.
+DEFAULT_PAIRS: tuple[tuple[Language, Language], ...] = (
+    (Language.RU, Language.UA),
+    (Language.RU, Language.EN),
+    (Language.UA, Language.EN),
+)
+
+
+@dataclass
+class CrossLanguageReport:
+    """Identity across languages, pair by pair."""
+
+    results: list[Any] = field(default_factory=list)  # list[GateResult]
+    samples_per_pair: int = 0
+
+    @property
+    def verdict(self) -> Verdict:
+        from sofia.core.gates import evaluate_gates
+
+        if not self.results:
+            return Verdict.NOT_MEASURED
+        return evaluate_gates(self.results).verdict
+
+    def by_pair(self) -> dict[str, str]:
+        return {r.name: r.verdict.value for r in self.results}
+
+    def to_dict(self) -> dict:
+        return {
+            "verdict": self.verdict.value,
+            "samples_per_pair": self.samples_per_pair,
+            "results": [r.to_dict() for r in self.results],
+        }
+
+
+def run_cross_language(
+    team: VoiceTeam,
+    reports: Mapping[Language, CampaignReport],
+    *,
+    pairs: Sequence[tuple[Language, Language]] = DEFAULT_PAIRS,
+    samples: int = 3,
+    report_dir: Optional[Path] = None,
+) -> CrossLanguageReport:
+    """Check that Sofia in one language is still Sofia in another.
+
+    For each ``(reference_language, other_language)`` pair this takes up to
+    ``samples`` produced clips of the other language and compares them against
+    the reference language's Sofia voiceprint.
+    """
+
+    from sofia.voice.contracts import VoiceArtifact, VoiceBrief
+
+    out = CrossLanguageReport(samples_per_pair=samples)
+
+    for reference_language, other_language in pairs:
+        # Only the other language needs audio: the comparison is against the
+        # reference language's *voiceprint*, not against one of its clips.
+        other_clips = _produced(reports.get(other_language))[:samples]
+
+        if not other_clips:
+            out.results.append(
+                GateResult(
+                    name=(
+                        f"voice.identity.cross."
+                        f"{reference_language.label}-{other_language.label}"
+                    ),
+                    verdict=Verdict.NOT_MEASURED,
+                    critical=True,
+                    reason=(
+                        f"no produced {other_language.label} clips; cross-language "
+                        "identity cannot be compared"
+                    ),
+                )
+            )
+            continue
+
+        # Carries the reference *language* only; cross_language resolves that
+        # to the canonical Sofia voiceprint and never reads this audio.
+        reference = VoiceArtifact(
+            brief=VoiceBrief(language=reference_language, text=""),
+            audio_path=None,
+            backend="voiceprint",
+        )
+        for outcome in other_clips:
+            other = VoiceArtifact(
+                brief=VoiceBrief(language=other_language, text=outcome.clip.text),
+                audio_path=outcome.audio_path,
+                backend="campaign",
+            )
+            result = team.identity.cross_language(reference, other)
+            # Name the clip so a failure points at a specific take.
+            out.results.append(
+                GateResult(
+                    name=f"{result.result.name}#{outcome.clip.clip_id}",
+                    verdict=result.result.verdict,
+                    critical=True,
+                    reason=result.result.reason,
+                    measurement=result.result.measurement,
+                    threshold=result.result.threshold,
+                )
+            )
+
+    if report_dir:
+        Path(report_dir).mkdir(parents=True, exist_ok=True)
+        (Path(report_dir) / "voice_cross_language.json").write_text(
+            json.dumps(out.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    return out
+
+
+def _produced(report: Optional[CampaignReport]) -> list[ClipOutcome]:
+    if report is None:
+        return []
+    return [o for o in report.outcomes if o.audio_path]

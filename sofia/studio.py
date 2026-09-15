@@ -123,6 +123,7 @@ def build_studio(
         ownership=factory.ownership,
         gpu=gpu,
         thresholds=ReelThresholds(),
+        growth=growth,
     )
 
     factory.add_team(build_voice_agents(voice_team))

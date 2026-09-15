@@ -83,6 +83,24 @@ numeric gates passed: the burned-in subtitles were rendering inside the bottom
 platform-UI safe zone, because the renderer invents its own script resolution
 when burning an `.srt`. Fixed by emitting ASS with explicit `PlayRes`.
 
+## Champion vs Challenger
+
+A newer lip-sync model does not become champion by being newer. It enters as a
+challenger, runs on the **same shots**, and is measured on the same required
+metrics (`sofia/reel/challenger.py`).
+
+A challenger is *recommended* only when it was measured on every required
+metric, regressed on none, and improved at least one beyond noise. Two rules
+have no exceptions:
+
+- **Identity may never regress.** No improvement to mouth, jaw or teeth buys
+  that back.
+- **Nothing is promoted automatically.** A `PASS` means the owner should look.
+
+Metrics aggregate **worst-case across shots**, not by average, so one bad take
+is not smoothed away. A champion that crashed on some shots is reported as
+`NOT_MEASURED` rather than being compared from a cherry-picked subset.
+
 ## Repair routing
 
 A defect never triggers a full rebuild. Each maps to the narrowest component
@@ -128,6 +146,23 @@ The director does not invent its trend. While publishing is on HOLD the Growth
 Engine works from historical analytics plus shadow planning, and everything it
 returns is labelled — a shadow outcome is `PREDICTED` and never enters the
 `REAL` metric stream.
+
+The loop is closed in code: every finished Reel is reported back by the
+director, so the next decision can see which hooks reached owner review and
+which gates keep blocking. Guard rails on that feedback:
+
+- `records` (REAL publications) and `shadow` (this pipeline's own outcomes) are
+  separate lists and stay separate across a save/reload. A shadow entry never
+  contributes to a baseline.
+- One Reel is one entry. A retried or resumed Reel updates its record and
+  increments `attempts` rather than counting as several Reels.
+- Diagnostic runs are flagged and excluded from "reached owner review", since
+  they can never pass.
+- A prior winning hook is offered as a *hypothesis* only when the caller
+  supplies none, and never overrides an explicit one.
+- If the growth sink throws, the Reel's verdict is unchanged, but the error is
+  recorded and surfaced in `director.status()` — a permanently broken analytics
+  sink must not look like a studio that produced nothing.
 
 ## Publishing safety
 
