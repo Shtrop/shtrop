@@ -671,6 +671,7 @@ class AudioMixCritic:
         voice_stem: Optional[str],
         music_stem: Optional[str],
         final_mix: Optional[str],
+        sfx: Sequence[str] = (),
     ) -> CriticOutcome:
         if not final_mix or not Path(final_mix).exists():
             return _blocked(
@@ -710,6 +711,45 @@ class AudioMixCritic:
                     critic=self.role,
                 )
             )
+
+        # SFX are optional by design — the brief asks for them only where they
+        # strengthen a scene. But a declared SFX must exist and must not fight
+        # the voice, so an empty list passes and a broken one does not.
+        for path in sfx:
+            if not Path(path).exists():
+                diagnoses.append(
+                    ReelDiagnosis(
+                        ReelDefect.MUSIC,
+                        locus=path,
+                        detail="declared SFX file does not exist",
+                        critic=self.role,
+                    )
+                )
+                continue
+            try:
+                cue = analyse_wav(path)
+            except Exception as exc:  # noqa: BLE001 - an unreadable cue blocks
+                diagnoses.append(
+                    ReelDiagnosis(
+                        ReelDefect.MUSIC,
+                        locus=path,
+                        detail=f"SFX could not be analysed: {exc}",
+                        critic=self.role,
+                    )
+                )
+                continue
+            if cue.true_peak_dbfs > self.thresholds.max_true_peak_dbfs:
+                diagnoses.append(
+                    ReelDiagnosis(
+                        ReelDefect.MUSIC,
+                        locus=path,
+                        detail=(
+                            f"SFX peaks at {cue.true_peak_dbfs:.1f} dBFS, above the "
+                            "programme ceiling"
+                        ),
+                        critic=self.role,
+                    )
+                )
 
         headroom: Optional[float] = None
         if voice_stem and music_stem and Path(voice_stem).exists() and Path(music_stem).exists():
@@ -773,67 +813,98 @@ class AudioMixCritic:
 
 # --------------------------------------------------------------------------
 class CoverCritic:
-    """Every reel needs its own cover candidate — face, hook, crop, brand."""
+    """Every reel needs its own cover candidate.
+
+    Composition is measured here; face, identity and brand need models and stay
+    ``NOT_MEASURED`` without them. A composition defect is reported as a FAIL
+    even when the model metrics are absent — a black or horizontal cover is a
+    known-bad answer, not an unknown one.
+    """
 
     name = "reel.cover"
     role = "CoverAgent:qa"
 
-    REQUIRED = ("face_present", "face_identity", "text_readability", "brand_consistency")
+    def __init__(self, thresholds=None) -> None:
+        from sofia.reel.cover_qa import CoverThresholds
+
+        self.thresholds = thresholds or CoverThresholds()
 
     def review(
-        self, cover_path: Optional[str], measurements: Mapping[str, Optional[float]]
+        self,
+        cover_path: Optional[str],
+        measurements: Mapping[str, Optional[float]],
+        *,
+        cover_ppm: Optional[str] = None,
     ) -> CriticOutcome:
+        from sofia.reel.cover_qa import analyse_cover
+
         if not cover_path or not Path(cover_path).exists():
             return _blocked(
                 self.name, "no cover candidate was produced", ReelDefect.COVER
             )
-        missing = [k for k in self.REQUIRED if measurements.get(k) is None]
-        if missing:
-            return _blocked(
-                self.name,
-                f"cover metrics not measured: {missing}",
-                ReelDefect.COVER,
-            )
-        diagnoses = []
-        for key, floor in (
-            ("face_present", 0.5),
-            ("face_identity", 0.70),
-            ("text_readability", 0.70),
-            ("brand_consistency", 0.70),
-        ):
-            value = float(measurements[key])  # type: ignore[arg-type]
-            if value < floor:
-                diagnoses.append(
-                    ReelDiagnosis(
-                        ReelDefect.COVER,
-                        locus=key,
-                        detail=f"{key}={value:.2f} below {floor:.2f}",
-                        critic=self.role,
-                    )
-                )
-        measurement = Measurement(
-            "cover_identity",
-            float(measurements["face_identity"]),  # type: ignore[arg-type]
-            Evidence.MEASURED_LOCAL,
-            source="cover-qa",
+
+        issues = analyse_cover(
+            cover_ppm or cover_path, measurements, thresholds=self.thresholds
         )
-        if diagnoses:
+        identity = issues.measurements.get("face_identity")
+        measurement = (
+            Measurement(
+                "cover_identity",
+                float(identity),
+                Evidence.MEASURED_LOCAL,
+                source="cover-qa",
+                detail=issues.to_dict(),
+            )
+            if identity is not None
+            else Measurement.not_measured(
+                "cover_identity", source="cover-qa", **issues.to_dict()
+            )
+        )
+
+        # A composition defect is a known-bad answer and outranks "unmeasured".
+        if issues.composition:
             return CriticOutcome(
                 GateResult(
                     name=self.name,
                     verdict=Verdict.FAIL,
                     critical=True,
-                    reason="; ".join(d.detail for d in diagnoses),
+                    reason="; ".join(issues.composition[:3]),
                     measurement=measurement,
                 ),
-                tuple(diagnoses),
+                tuple(
+                    ReelDiagnosis(ReelDefect.COVER, detail=msg, critic=self.role)
+                    for msg in issues.composition
+                ),
             )
+
+        if issues.not_measured:
+            return CriticOutcome(
+                GateResult(
+                    name=self.name,
+                    verdict=Verdict.NOT_MEASURED,
+                    critical=True,
+                    reason="; ".join(issues.not_measured[:3]),
+                    measurement=measurement,
+                ),
+                tuple(
+                    ReelDiagnosis(
+                        ReelDefect.NOT_MEASURED, detail=msg, critic=self.role
+                    )
+                    for msg in issues.not_measured
+                ),
+            )
+
+        m = issues.measurements
         return CriticOutcome(
             GateResult(
                 name=self.name,
                 verdict=Verdict.PASS,
                 critical=True,
-                reason="cover passes face, readability and brand checks",
+                reason=(
+                    f"composition ok (contrast {m.get('contrast', 0):.2f}, "
+                    f"aspect {m.get('aspect_ratio', 0):.2f}); face, identity and "
+                    "brand all measured and passing"
+                ),
                 measurement=measurement,
             )
         )

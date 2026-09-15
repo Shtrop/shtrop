@@ -75,20 +75,35 @@ def read_ppm(path: str | Path) -> tuple[bytearray, int, int]:
     return pixels, width, height
 
 
-def analyse_frame(path: str | Path, *, step: int = 2) -> FrameStats:
-    """Measure a frame.
+def analyse_frame(
+    path: str | Path,
+    *,
+    step: int = 2,
+    region: tuple[float, float] | None = None,
+) -> FrameStats:
+    """Measure a frame, or a horizontal band of one.
 
     ``step`` subsamples the grid; at 2 this reads a quarter of the pixels,
     which is plenty for frame-level statistics and keeps a 1080x1920 frame
     well under a second in pure Python.
+
+    ``region`` is ``(top, bottom)`` as fractions of height. Measuring just the
+    band where text will sit answers a question the whole-frame numbers cannot:
+    whether *that part* of the image is busy enough to swallow the text.
     """
 
     pixels, width, height = read_ppm(path)
 
+    y_start, y_end = 0, height
+    if region is not None:
+        top, bottom = region
+        y_start = max(0, min(height - 1, int(round(top * height))))
+        y_end = max(y_start + 1, min(height, int(round(bottom * height))))
+
     luma: list[float] = []
     chroma: list[float] = []
     dark = blown = 0
-    rows = range(0, height, step)
+    rows = range(y_start, y_end, step)
     cols = range(0, width, step)
 
     for y in rows:

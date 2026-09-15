@@ -108,6 +108,29 @@ not a correctness property — a reel with intentionally off-beat cuts is not
 broken — so it is reported and never fails the gate. Every other check here is
 hard, and a frame or mix that cannot be decoded is `NOT_MEASURED`, which blocks.
 
+## The cover is measured too
+
+A cover is checked in two halves, and the split is the point:
+
+- **Composition** — exposure, contrast, sharpness, crop and how busy the band
+  under the hook text is. Measured from the decoded image with the standard
+  library, so it works on any machine.
+- **Identity and brand** — is Sofia's face there, is it *her*, does it look like
+  her channel. No honest stdlib proxy exists, so without a face model and a
+  brand reference these stay `NOT_MEASURED`, which blocks.
+
+A composition defect outranks "not measured": a black, washed-out or horizontal
+cover is a **known-bad** answer and is reported as `FAIL`, not as an unknown.
+Checking only the model-dependent half — as this gate originally did — let a
+black cover sail through as merely unmeasured.
+
+## SFX
+
+SFX are optional by design; the brief asks for them only where they strengthen
+a scene, so an empty list passes. But a *declared* SFX is checked: the file must
+exist and must not peak above the programme ceiling. The field is either real or
+it is not there — a list nothing populates and nothing verifies is decoration.
+
 ## Champion vs Challenger
 
 A newer lip-sync model does not become champion by being newer. It enters as a

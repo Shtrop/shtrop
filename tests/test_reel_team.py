@@ -790,18 +790,25 @@ def test_reel_artifact_paths_are_sanitised(tmp_path):
 
 
 # ---- editing QA ----------------------------------------------------------
-def _ppm(path, width=54, height=96, fill=(120, 90, 60), noise=True):
-    """Write a small binary PPM for frame analysis."""
+def _ppm(path, width=54, height=96, fill=(190, 160, 130), noise=True):
+    """Write a small binary PPM standing in for a real frame.
+
+    A smooth vertical gradient with light grain, because real footage is not
+    per-pixel white noise: noise at that amplitude genuinely is a texture that
+    swallows overlaid text, and the cover gate is right to say so.
+    """
     import random
 
     rng = random.Random(3)
     rows = []
     for y in range(height):
+        # Gradient gives tonal range without per-pixel edges.
+        shade = 1.0 - 0.88 * (y / max(1, height - 1))
         row = bytearray()
-        for x in range(width):
-            r, g, b = fill
+        for _ in range(width):
+            r, g, b = (int(c * shade) for c in fill)
             if noise:
-                n = rng.randint(-40, 40)
+                n = rng.randint(-5, 5)
                 r, g, b = (max(0, min(255, c + n)) for c in (r, g, b))
             row += bytes((r, g, b))
         rows.append(bytes(row))
@@ -959,3 +966,156 @@ def test_cut_points_and_beat_grid_line_up():
     assert cuts[0] == pytest.approx(shots[0].duration_s)
     grid = beat_grid(120.0, 2.0)
     assert grid == [0.0, 0.5, 1.0, 1.5, 2.0]
+
+
+# ---- cover QA ------------------------------------------------------------
+def test_a_black_cover_fails_even_with_no_face_model(tmp_path):
+    """Composition is a known-bad answer, so it outranks 'not measured'."""
+    from sofia.reel.critics import CoverCritic
+
+    jpg = tmp_path / "cover.jpg"
+    jpg.write_bytes(b"x")
+    ppm = _ppm(tmp_path / "cover.ppm", fill=(0, 0, 0), noise=False)
+    outcome = CoverCritic().review(str(jpg), {}, cover_ppm=str(ppm))
+    assert outcome.result.verdict is Verdict.FAIL
+    assert "black" in outcome.result.reason
+
+
+def test_a_horizontal_cover_fails():
+    from sofia.reel.cover_qa import analyse_cover
+    import tempfile
+    from pathlib import Path as _P
+
+    tmp = _P(tempfile.mkdtemp())
+    issues = analyse_cover(str(_ppm(tmp / "wide.ppm", width=96, height=54)), {})
+    assert any("must be vertical" in m for m in issues.composition)
+
+
+def test_a_busy_text_band_is_flagged(tmp_path):
+    """Text over a noisy band will not read, whatever the face score says."""
+    import random
+
+    from sofia.reel.cover_qa import analyse_cover
+
+    # Calm top, violently noisy band where the hook text would sit.
+    rng = random.Random(1)
+    width, height = 54, 96
+    rows = []
+    for y in range(height):
+        row = bytearray()
+        busy = 0.60 <= y / height <= 0.82
+        for _ in range(width):
+            if busy:
+                v = rng.choice((0, 255))
+                row += bytes((v, v, v))
+            else:
+                row += bytes((120, 100, 80))
+        rows.append(bytes(row))
+    path = tmp_path / "busy.ppm"
+    path.write_bytes(f"P6\n{width} {height}\n255\n".encode() + b"".join(rows))
+
+    issues = analyse_cover(str(path), {})
+    assert any("will not read" in m for m in issues.composition)
+
+
+def test_cover_composition_passes_but_identity_still_blocks(tmp_path):
+    from sofia.reel.critics import CoverCritic
+
+    jpg = tmp_path / "c.jpg"
+    jpg.write_bytes(b"x")
+    ppm = _ppm(tmp_path / "c.ppm")
+    outcome = CoverCritic().review(str(jpg), {}, cover_ppm=str(ppm))
+    assert outcome.result.verdict is Verdict.NOT_MEASURED
+    assert outcome.result.blocking
+    detail = outcome.result.measurement.detail
+    # Composition really was measured, even though the gate blocks.
+    assert detail["measurements"]["contrast"] > 0
+    assert "aspect_ratio" in detail["measurements"]
+
+
+def test_a_cover_with_every_metric_supplied_can_pass(tmp_path):
+    from sofia.reel.critics import CoverCritic
+
+    jpg = tmp_path / "c.jpg"
+    jpg.write_bytes(b"x")
+    ppm = _ppm(tmp_path / "c.ppm")
+    outcome = CoverCritic().review(
+        str(jpg),
+        {"face_present": 1.0, "face_identity": 0.88, "brand_consistency": 0.82},
+        cover_ppm=str(ppm),
+    )
+    assert outcome.result.verdict is Verdict.PASS
+    assert outcome.result.measurement.value == pytest.approx(0.88)
+
+
+def test_a_weak_supplied_identity_fails_the_cover(tmp_path):
+    from sofia.reel.critics import CoverCritic
+
+    jpg = tmp_path / "c.jpg"
+    jpg.write_bytes(b"x")
+    ppm = _ppm(tmp_path / "c.ppm")
+    outcome = CoverCritic().review(
+        str(jpg),
+        {"face_present": 1.0, "face_identity": 0.40, "brand_consistency": 0.9},
+        cover_ppm=str(ppm),
+    )
+    assert outcome.result.verdict is Verdict.FAIL
+
+
+# ---- SFX -----------------------------------------------------------------
+def _quiet_wav(path, amp=0.05, seconds=0.5):
+    import math
+
+    from sofia.voice.audio import write_wav
+
+    rate = 22050
+    return write_wav(
+        path,
+        [amp * math.sin(2 * math.pi * 400 * i / rate) for i in range(int(rate * seconds))],
+        rate,
+    )
+
+
+def _mix_stems(tmp_path):
+    voice = _quiet_wav(tmp_path / "v.wav", amp=0.20)
+    music = _quiet_wav(tmp_path / "m.wav", amp=0.05)
+    mix = _quiet_wav(tmp_path / "mix.wav", amp=0.25)
+    return str(voice), str(music), str(mix)
+
+
+def test_no_sfx_is_not_a_gap(tmp_path):
+    """The brief asks for SFX only where they strengthen a scene."""
+    voice, music, mix = _mix_stems(tmp_path)
+    outcome = AudioMixCritic(ReelThresholds()).review(
+        voice_stem=voice, music_stem=music, final_mix=mix, sfx=()
+    )
+    assert outcome.result.verdict is Verdict.PASS
+
+
+def test_a_declared_sfx_that_does_not_exist_fails(tmp_path):
+    voice, music, mix = _mix_stems(tmp_path)
+    outcome = AudioMixCritic(ReelThresholds()).review(
+        voice_stem=voice, music_stem=music, final_mix=mix,
+        sfx=(str(tmp_path / "missing.wav"),),
+    )
+    assert outcome.result.verdict is Verdict.FAIL
+    assert "does not exist" in outcome.result.reason
+
+
+def test_an_sfx_louder_than_the_ceiling_fails(tmp_path):
+    voice, music, mix = _mix_stems(tmp_path)
+    loud = _quiet_wav(tmp_path / "bang.wav", amp=0.999)
+    outcome = AudioMixCritic(ReelThresholds()).review(
+        voice_stem=voice, music_stem=music, final_mix=mix, sfx=(str(loud),)
+    )
+    assert outcome.result.verdict is Verdict.FAIL
+    assert "SFX peaks" in outcome.result.reason
+
+
+def test_a_well_behaved_sfx_passes(tmp_path):
+    voice, music, mix = _mix_stems(tmp_path)
+    cue = _quiet_wav(tmp_path / "tick.wav", amp=0.10)
+    outcome = AudioMixCritic(ReelThresholds()).review(
+        voice_stem=voice, music_stem=music, final_mix=mix, sfx=(str(cue),)
+    )
+    assert outcome.result.verdict is Verdict.PASS

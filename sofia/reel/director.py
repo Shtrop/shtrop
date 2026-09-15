@@ -680,11 +680,22 @@ class ReelDirector:
 
         # --- cover ----------------------------------------------------------
         cover_at = min(1.0, max(0.2, shots[0].duration_s * 0.5)) if shots else 0.5
+        slug = self._slug(reel_id)
         assets.cover = str(
             self.backends.editor.extract_frame(
-                Path(assets.final), cover_at, self.workdir / "cover" / f"{self._slug(reel_id)}.jpg"
+                Path(assets.final), cover_at, self.workdir / "cover" / f"{slug}.jpg"
             )
         )
+        # A second copy in a format the stdlib can decode, so cover composition
+        # is measurable without an image library.
+        try:
+            self._cover_ppm = str(
+                self.backends.editor.extract_frame(
+                    Path(assets.final), cover_at, self.workdir / "qa" / f"{slug}.cover.ppm"
+                )
+            )
+        except BackendUnavailableError:
+            self._cover_ppm = None
 
     # ---- final QA --------------------------------------------------------
     def _final_qa(
@@ -762,9 +773,16 @@ class ReelDirector:
                 voice_stem=assets.voice_clips.get("_track"),
                 music_stem=assets.music,
                 final_mix=_audio_for_analysis(assets),
+                sfx=tuple(assets.sfx),
             )
         )
-        collect(self.cover_critic.review(assets.cover, cover_measurements))
+        collect(
+            self.cover_critic.review(
+                assets.cover,
+                cover_measurements,
+                cover_ppm=getattr(self, "_cover_ppm", None),
+            )
+        )
         collect(self.perceptual_gate.review(perceptual_samples))
 
         if diagnostic:

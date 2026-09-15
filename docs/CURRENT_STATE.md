@@ -55,6 +55,8 @@ not a defect.
 | Champion vs Challenger trial | `PASS` | identity regression sinks a challenger; nothing auto-promotes |
 | Growth feedback loop | `PASS` | director reports every Reel; shadow stays out of REAL |
 | Editing QA | `PASS` | 12 real measurements on the delivered file, not the plan |
+| Cover composition QA | `PASS` | 9 real measurements; a black or horizontal cover now FAILs |
+| SFX handling | `PASS` | optional by design, but a declared cue is verified |
 | CI | `PASS` | `.github/workflows/tests.yml` runs suite + registry drift check |
 
 ## What is NOT proven
