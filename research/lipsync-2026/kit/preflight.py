@@ -107,8 +107,13 @@ def who_holds_vram() -> tuple:
     procs = []
     for line in (l.strip() for l in out.splitlines() if l.strip()):
         parts = [x.strip() for x in line.split(",")]
-        if len(parts) >= 3:
-            procs.append(f"{os.path.basename(parts[2])} (pid {parts[0]}, {int(parts[1])/1024:.1f} GB)")
+        if len(parts) < 3:
+            continue
+        name, pid, mem = os.path.basename(parts[2]), parts[0], parts[1]
+        try:                                  # на Windows драйвер часто отдаёт [N/A]
+            procs.append(f"{name} (pid {pid}, {int(mem)/1024:.1f} GB)")
+        except ValueError:
+            procs.append(f"{name} (pid {pid}, память не сообщается)")
     if not procs:
         return ("NOT_MEASURED", "держат vram", "список процессов пуст")
     return ("WARN", "держат vram", "; ".join(procs))
@@ -137,8 +142,10 @@ def check_backend() -> None:
     if found:
         add("PASS", "attention", ", ".join(found))
     else:
-        add("WARN", "attention", "нет ни flash-attn, ни xformers — встроенная ветка, "
-                                 "медленнее и прожорливее по памяти")
+        # запасной ветки в коде нет: else в Attention кидает RuntimeError
+        add("FAIL", "attention", "нет ни flash-attn, ни xformers — в LongCat нет запасной "
+                                 "ветки, forward кидает RuntimeError('Unsupported attention "
+                                 "operations.'); поставьте xformers: install_torch.py --with-xformers")
 
 
 def check_repo(repo: str) -> None:

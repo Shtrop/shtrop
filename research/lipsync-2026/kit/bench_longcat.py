@@ -27,14 +27,17 @@ class VramSampler(threading.Thread):
 
     def __init__(self, interval=1.0):
         super().__init__(daemon=True)
-        self.interval, self.peak_mib, self.samples, self._stop = interval, 0, 0, threading.Event()
+        # ВАЖНО: не называть атрибут _stop — это затирает внутренний Thread._stop(),
+        # и join() падает с TypeError: 'Event' object is not callable
+        self.interval, self.peak_mib, self.samples = interval, 0, 0
+        self._stop_event = threading.Event()
         self.available = shutil.which("nvidia-smi") is not None
 
     def run(self):
         if not self.available:
             return
         cmd = ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"]
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             try:
                 out = subprocess.run(cmd, capture_output=True, text=True, timeout=10).stdout
                 used = sum(int(v.strip()) for v in out.split("\n") if v.strip())
@@ -42,10 +45,10 @@ class VramSampler(threading.Thread):
                 self.samples += 1
             except Exception:
                 pass
-            self._stop.wait(self.interval)
+            self._stop_event.wait(self.interval)
 
     def stop(self):
-        self._stop.set()
+        self._stop_event.set()
 
 
 def torchrun_prefix() -> list:
@@ -142,11 +145,17 @@ def main():
         print("dry-run: запуск не выполняется")
         return 0
 
+    env = os.environ.copy()
+    if os.name == "nt":
+        # torch на Windows собран без libuv, а torchrun по умолчанию просит его:
+        # DistStoreError: use_libuv was requested but PyTorch was built without libuv
+        env.setdefault("USE_LIBUV", "0")
+
     sampler = VramSampler()
     sampler.start()
     t0 = time.time()
     try:
-        rc = subprocess.run(cmd, cwd=repo).returncode
+        rc = subprocess.run(cmd, cwd=repo, env=env).returncode
     except (FileNotFoundError, NotADirectoryError, OSError) as e:
         sampler.stop()
         print(f"ОШИБКА запуска: {type(e).__name__}: {e}\n"

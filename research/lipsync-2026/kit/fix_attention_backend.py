@@ -24,7 +24,8 @@ def have(mod: str) -> bool:
 
 
 def pick_backend() -> str:
-    """Лучший доступный бэкенд: fa3 -> fa2 -> xformers -> sdpa (ветка по умолчанию)."""
+    """Лучший доступный: fa3 -> fa2 -> xformers. Запасной ветки в LongCat нет —
+    при всех флагах False Attention кидает RuntimeError('Unsupported attention operations.')."""
     if have("flash_attn_interface"):
         return "enable_flashattn3"
     if have("flash_attn"):
@@ -86,7 +87,14 @@ def main() -> int:
     backend = a.backend or pick_backend()
     installed = [m for m in ("flash_attn_interface", "flash_attn", "xformers") if have(m)]
     print(f"установлено: {', '.join(installed) if installed else 'ничего из fa3/fa2/xformers'}")
-    print(f"выбран бэкенд: {backend or 'встроенный (scaled_dot_product_attention)'}")
+    if not backend:
+        print("ОШИБКА: ни flash-attn, ни xformers не установлены. В LongCat нет запасной "
+              "ветки attention — прогон упадёт с RuntimeError('Unsupported attention "
+              "operations.'). Конфиги не тронуты.\n"
+              "        Поставьте xformers: python install_torch.py --with-xformers",
+              file=sys.stderr)
+        return 1
+    print(f"выбран бэкенд: {backend}")
 
     configs = find_configs(root)
     if not configs:
@@ -113,9 +121,6 @@ def main() -> int:
         print("dry-run: файлы не изменены")
     else:
         print(f"изменено файлов: {changed}")
-    if not backend:
-        print("ВНИМАНИЕ: ни flash-attn, ни xformers не установлены. Ветка по умолчанию "
-              "медленнее и требует больше памяти; поставьте xformers под вашу версию torch.")
     return 0
 
 
