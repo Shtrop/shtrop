@@ -250,7 +250,68 @@ def main() -> int:
         check("PUBLISH", "PUBLISH EVIDENCE: NOT_MEASURED" in result.stdout,
               "без удалённых публикаций вердикт NOT_MEASURED, а не ноль публикаций")
 
-        print(f"\n=== 10. Изоляция: репозиторий не загрязнён ===")
+        print(f"\n=== 10. Подлинность выгрузки решается сверкой ID, а не путём ===")
+        import csv as csv_module
+        vroot = work / "verify"
+        vshadow = vroot / "evidence" / "learning_shadow" / "analytics"
+        vshadow.mkdir(parents=True)
+        real_ids = [f"178747711535670{i:02d}" for i in range(12)]
+        vdb = vroot / "queue" / "content_queue.db"
+        vdb.parent.mkdir(parents=True)
+        connection = sqlite3.connect(vdb)
+        connection.execute("CREATE TABLE content_items (id INTEGER, created_at TEXT, "
+                           "published_at TEXT, permalink TEXT, type TEXT, status TEXT, "
+                           "instagram_media_id TEXT)")
+        connection.executemany("INSERT INTO content_items VALUES (?,?,?,?,?,?,?)", [
+            (i, "2026-09-01", f"2026-09-{i + 1:02d}", f"https://example.invalid/p/{i}",
+             "REELS", "published", media) for i, media in enumerate(real_ids)])
+        connection.commit()
+        connection.close()
+
+        genuine = vshadow / "post_insights.csv"
+        with genuine.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv_module.DictWriter(handle, fieldnames=[
+                "id", "media_type", "timestamp", "permalink", "reach", "saved", "shares"])
+            writer.writeheader()
+            for index, media in enumerate(real_ids):
+                writer.writerow({"id": media, "media_type": "REELS",
+                                 "timestamp": f"2026-09-{index + 1:02d}T04:30:46+0000",
+                                 "permalink": f"https://example.invalid/p/{index}",
+                                 "reach": 800 + index * 10, "saved": 9 + index,
+                                 "shares": 12 + index})
+        forged = vshadow / "fake_insights.csv"
+        with forged.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv_module.DictWriter(handle, fieldnames=["id", "timestamp", "reach", "shares"])
+            writer.writeheader()
+            for index in range(10):
+                writer.writerow({"id": f"9999{index:03d}",
+                                 "timestamp": f"2026-09-{index + 1:02d}", "reach": 100, "shares": 1})
+
+        result = run([str(TOOLS / "verify_insights.py"), "--studio", str(vroot)], expect=(0, 1))
+        genuine_block = result.stdout.split("post_insights.csv")[1].split("fake_insights.csv")[0]
+        check("VERIFY", "ID_MATCH_CONFIRMED" in genuine_block,
+              "выгрузка с реальными media_id подтверждена сверкой, несмотря на путь shadow")
+        forged_block = result.stdout.split("fake_insights.csv")[1]
+        check("VERIFY", "NO_MATCH" in forged_block,
+              "выгрузка с выдуманными id не проходит сверку")
+
+        vout = work / "verified_snapshots.json"
+        result = run([str(TOOLS / "ingest_insights.py"), "--source", str(genuine),
+                      "--out", str(vout)], expect=(3,))
+        check("TRUST", json.loads(vout.read_text(encoding="utf-8"))["evidence_label"] == "SHADOW",
+              "без явного доверия файл остаётся SHADOW")
+        result = run([str(TOOLS / "ingest_insights.py"), "--source", str(genuine),
+                      "--out", str(vout), "--trust", str(genuine)], expect=(0,))
+        verified = json.loads(vout.read_text(encoding="utf-8"))
+        check("TRUST", verified["evidence_label"] == "REAL" and verified["trusted_overrides"],
+              "явное доверие переводит проверенный файл в REAL и фиксирует это в файле")
+
+        result = run([str(TOOLS / "growth_kpi.py"), "--snapshots", str(vout),
+                      "--days", "30", "--summary"], expect=(0, 1))
+        check("SHARES", "SENDS PER REACH: NOT_MEASURED" not in result.stdout,
+              "sends per reach считается из поля shares, как его отдаёт Graph API")
+
+        print(f"\n=== 11. Изоляция: репозиторий не загрязнён ===")
         real_snapshots = BASE / "data" / "followers_snapshots.json"
         check("ISOLATION", not real_snapshots.exists() or "SYNTHETIC" not in
               real_snapshots.read_text(encoding="utf-8"),

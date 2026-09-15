@@ -488,11 +488,15 @@ def main() -> int:
                         help="явный источник (можно повторять)")
     parser.add_argument("--out", type=Path, default=base / "data" / "followers_snapshots.json")
     parser.add_argument("--account", default="", help="handle аккаунта для метаданных")
+    parser.add_argument("--trust", type=Path, action="append", default=[],
+                        help="считать источник реальным вопреки маркерам пути; "
+                             "применять только после сверки verify_insights.py")
     parser.add_argument("--dry-run", action="store_true", help="показать найденное, ничего не писать")
     args = parser.parse_args()
 
     sources = list(args.source) + [p for p in discover(args.studio) if p not in args.source]
     sources = [p for p in sources if p.exists()]
+    trusted = {path.resolve() for path in args.trust}
 
     if not sources:
         print("BLOCKED: реальных источников Instagram Insights не найдено.")
@@ -514,10 +518,19 @@ def main() -> int:
         account_records.extend(accounts)
         meta = file_fingerprint(path)
         evidence, hits = classify_source(path)
+        override = path.resolve() in trusted
+        if override:
+            # Явное решение владельца после сверки идентификаторов публикаций.
+            evidence = "REAL"
         meta.update({"rows": len(rows), "post_rows": len(posts), "account_rows": len(accounts),
-                     "evidence_label": evidence, "shadow_markers": hits})
+                     "evidence_label": evidence, "shadow_markers": hits,
+                     "trusted_override": override})
         source_meta.append(meta)
-        flag = f"  [{evidence}]" + (f" маркеры: {', '.join(hits)}" if hits else "")
+        flag = f"  [{evidence}]"
+        if override and hits:
+            flag += f" доверено явно, несмотря на маркеры: {', '.join(hits)}"
+        elif hits:
+            flag += f" маркеры: {', '.join(hits)}"
         print(f"  {path} — строк: {len(rows)} (публикаций: {len(posts)}, дневных: {len(accounts)})")
         print(flag)
 
@@ -545,8 +558,12 @@ def main() -> int:
     else:
         overall = "MIXED"  # смесь нельзя считать реальной: считаем по слабейшему звену
 
+    overrides = [meta["path"] for meta in source_meta if meta.get("trusted_override")]
     note = ("Собрано из локальных выгрузок студии. Отсутствующие поля опущены, "
             "а не заполнены нулями. NULL/UNKNOWN != 0.")
+    if overrides:
+        note += (" Часть источников помечена реальными по явному решению владельца "
+                 "(--trust) после сверки идентификаторов публикаций.")
     if overall != "REAL":
         note += (" ВНИМАНИЕ: часть или все источники относятся к теневому/обучающему "
                  "контуру. Это НЕ метрики Instagram и не могут служить основанием "
@@ -559,6 +576,7 @@ def main() -> int:
         "evidence_label": overall,
         "note": note,
         "sources": source_meta,
+        "trusted_overrides": overrides,
         "coverage": coverage(snapshots, posts),
         "snapshots": snapshots,
         "posts": posts,

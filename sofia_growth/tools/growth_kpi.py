@@ -87,6 +87,29 @@ def mean(items: list[dict], field: str) -> float | None:
     return sum(values) / len(values) if values else None
 
 
+def sends_value(item: dict) -> float | None:
+    """Пересылки публикации.
+
+    В media insights Graph API этот сигнал называется `shares`; отдельного
+    поля `sends` в выгрузке может не быть. Считать их разными метриками —
+    значит потерять главный ранжирующий сигнал там, где он есть.
+    """
+    for field in ("sends", "shares"):
+        value = item.get(field)
+        if isinstance(value, (int, float)):
+            return value
+    return None
+
+
+def total_sends(items: list[dict]) -> tuple[float | None, str | None]:
+    """Сумма пересылок за окно и имя поля, из которого она взята."""
+    for field in ("sends", "shares"):
+        value = total(items, field)
+        if value is not None:
+            return value, field
+    return None, None
+
+
 def ratio(numerator: float | None, denominator: float | None) -> float | None:
     if numerator is None or denominator in (None, 0):
         return None
@@ -123,13 +146,14 @@ def compute(snapshots: list[dict], posts: list[dict], days: int) -> dict:
     reach = total(recent, "reach")
     follows = total(recent, "follows")
     visits = total(recent, "profile_visits")
-    sends = total(recent, "sends")
+    sends, sends_field = total_sends(recent)
     saves = total(recent, "saves")
 
     follows_per_1k = ratio(follows, reach)
     metrics = {
         "window_days": days,
         "window_points": len(recent),
+        "sends_field": sends_field,
         "latest_date": latest.get("date"),
         "followers_baseline": followers,
         "growth_7d": net_7d,
@@ -164,7 +188,7 @@ def rolling_block(items: list[dict]) -> dict:
         "net_followers": net,
         "per_day": per_day,
         "reach": reach,
-        "sends_per_reach": ratio(total(items, "sends"), reach),
+        "sends_per_reach": ratio(total_sends(items)[0], reach),
         "saves_per_reach": ratio(total(items, "saves"), reach),
         "follows": total(items, "follows"),
     }
@@ -172,7 +196,7 @@ def rolling_block(items: list[dict]) -> dict:
 
 def post_score(post: dict) -> float | None:
     """Ранжирующая метрика публикации — sends per reach (главный сигнал 2026)."""
-    return ratio(post.get("sends"), post.get("reach"))
+    return ratio(sends_value(post), post.get("reach"))
 
 
 def rank_posts(posts: list[dict], days: int, snapshots: list[dict]) -> tuple[list, list]:
@@ -195,6 +219,7 @@ def rank_posts(posts: list[dict], days: int, snapshots: list[dict]) -> tuple[lis
             "trend_id": post.get("trend_id"),
             "sends_per_reach": score,
             "reach": post.get("reach"),
+            "views": post.get("views"),
             "follows": post.get("follows"),
             "saves_per_reach": ratio(post.get("saves"), post.get("reach")),
         })
@@ -228,7 +253,7 @@ def attribute(posts: list[dict], days: int, snapshots: list[dict]) -> list[dict]
             "key": key,
             "posts": len(items),
             "reach": reach,
-            "sends_per_reach": ratio(total(items, "sends"), reach),
+            "sends_per_reach": ratio(total_sends(items)[0], reach),
             "saves_per_reach": ratio(total(items, "saves"), reach),
             "follows": total(items, "follows"),
             "follows_per_1k_reach": (lambda r: r * 1000 if r is not None else None)(
@@ -325,7 +350,9 @@ def render(payload: dict, metrics: dict) -> str:
         f"| Охват за окно | {fmt(metrics['reach'], 0)} | {label(metrics['reach'], evidence)} |",
         f"| Follows на 1k охвата | {fmt(metrics['follows_per_1k_reach'])} | {label(metrics['follows_per_1k_reach'], evidence)} |",
         f"| Профиль → подписка | {pct(metrics['profile_to_follow_conversion'])} | {label(metrics['profile_to_follow_conversion'], evidence)} |",
-        f"| Sends per reach | {pct(metrics['sends_per_reach'])} | {label(metrics['sends_per_reach'], evidence)} |",
+        f"| Sends per reach | {pct(metrics['sends_per_reach'])} | "
+        f"{label(metrics['sends_per_reach'], evidence)}"
+        + (f" (из поля `{metrics['sends_field']}`)" if metrics.get("sends_field") else "") + " |",
         f"| Saves per reach | {pct(metrics['saves_per_reach'])} | {label(metrics['saves_per_reach'], evidence)} |",
         f"| Просмотры | {fmt(metrics['views'], 0)} | {label(metrics['views'], evidence)} |",
         f"| Watch time | {fmt(metrics['watch_time'], 0)} | {label(metrics['watch_time'], evidence)} |",

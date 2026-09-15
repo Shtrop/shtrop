@@ -170,3 +170,40 @@ python sofia_growth\tools\publish_evidence.py --studio "D:\AI_CONTENT\Sofia"
 (`instagram_media_id`, `remote_post_id`, `permalink`). Внутренний `id` таблицы
 идентификатором не считается — иначе в данных появились бы фантомные
 публикации, склеивающиеся с чужими записями.
+
+## Когда путь врёт: сверка подлинности
+
+Маркер в пути — эвристика, а не приговор. Реальная выгрузка Insights может
+лежать в каталоге `evidence\learning_shadow\` просто потому, что её туда
+положили для кросс-чека. Решает сверка идентификаторов:
+
+```powershell
+python sofia_growth\tools\verify_insights.py --studio "D:\AI_CONTENT\Sofia"
+```
+
+Скрипт собирает из журналов публикатора подтверждённые `instagram_media_id` /
+`remote_post_id` и смотрит, сколько media_id из выгрузки в них попадает.
+
+| Вердикт | Значение |
+|---|---|
+| `ID_MATCH_CONFIRMED` | Файл описывает реально опубликованный контент |
+| `NO_MATCH` | Идентификаторы не совпали — реальными метриками считать нельзя |
+| `NOT_MEASURED` | В файле нет идентификаторов публикаций |
+
+Подтверждённый файл учитывается как реальный по явному указанию:
+
+```powershell
+python sofia_growth\tools\ingest_insights.py --studio "D:\AI_CONTENT\Sofia" `
+    --trust "D:\AI_CONTENT\Sofia\docs\...\analytics\post_insights.csv"
+```
+
+Флаг `--trust` — решение владельца, а не догадка движка: факт override
+записывается в выходной файл в поле `trusted_overrides`.
+
+## Пересылки: `shares`, а не `sends`
+
+В media insights Graph API сигнал пересылки называется `shares`; отдельного
+поля `sends` в выгрузке обычно нет. Движок считает `sends per reach` из
+`shares`, когда прямого поля нет, и указывает в отчёте, из какого поля взято
+значение. Без этого главный ранжирующий сигнал 2026 терялся бы при наличии
+данных.
