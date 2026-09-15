@@ -102,7 +102,7 @@ whisper-tiny как аудиокодер, база — SD-image-variations + sd-
 ```bash
 # 0. Преконтроль: nvidia-smi, свободная VRAM, отсутствие активного gpu_render
 # 1. Клон + патч + проверка импорта (без весов)
-bash kit/setup.sh --dir ./LongCat-Video
+bash kit/setup.sh --dir ./LongCat-Video          # PowerShell: .\kit\setup.ps1 -Dir .\LongCat-Video
 # 2. Веса (≈ десятки ГБ)
 bash kit/setup.sh --dir ./LongCat-Video --weights
 # 3. Минимальный замер: 1 сегмент (3.72 c), 480p, INT8 + дистилляция
@@ -111,6 +111,11 @@ python3 kit/bench_longcat.py --repo ./LongCat-Video \
   --segments 1 --resolution 480p --vram_budget_gb 24
 # вертикаль 9:16 -> --vertical ; полный Reel ~32 c -> --segments 10
 ```
+
+Из PowerShell — `kit\setup.ps1` с теми же шагами (`-Weights` качает веса,
+`-Wsl` прогоняет bash-версию внутри WSL2). Клон делается с `core.autocrlf=false`,
+иначе CRLF в рабочем дереве ломает наложение патча. Скрипт написан по документации
+PowerShell, но в этой сессии не исполнялся — PowerShell в контейнере нет.
 
 `bench_longcat.py` сам считает пиковую VRAM (опрос `nvidia-smi` раз в секунду),
 время на 1 с видео и пишет `report.json` с `PASS` / `FAIL` / `NOT_MEASURED`
