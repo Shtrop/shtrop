@@ -203,7 +203,54 @@ def main() -> int:
         check("SHADOW", "1325 подписчиков" not in shadow_text,
               "теневой baseline не выдаётся за реальный")
 
-        print(f"\n=== 9. Изоляция: репозиторий не загрязнён ===")
+        print(f"\n=== 9. Lineage публикатора и доказательства публикации ===")
+        import sqlite3
+        queue = work / "queue" / "content_queue.db"
+        queue.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(queue)
+        connection.execute("CREATE TABLE content_items (id INTEGER, created_at TEXT, "
+                           "published_at TEXT, permalink TEXT, type TEXT, status TEXT, "
+                           "instagram_media_id TEXT)")
+        connection.executemany("INSERT INTO content_items VALUES (?,?,?,?,?,?,?)", [
+            (1, "2026-09-01", "2026-09-02", "https://example.invalid/p/AAA", "REELS",
+             "published", "17874771153567012"),
+            (2, "2026-09-03", None, None, "REELS", "rendered", None)])
+        connection.execute("CREATE TABLE publish_attempt_journal (id INTEGER, created_at TEXT, "
+                           "status TEXT, remote_post_id TEXT)")
+        connection.executemany("INSERT INTO publish_attempt_journal VALUES (?,?,?,?)",
+                               [(1, "2026-09-02", "succeeded", "17874771153567012"),
+                                (2, "2026-09-03", "failed", None)])
+        connection.commit()
+        connection.close()
+
+        queue_out = work / "queue_snapshots.json"
+        run([str(TOOLS / "ingest_insights.py"), "--source", str(queue), "--out", str(queue_out)])
+        queue_payload = json.loads(queue_out.read_text(encoding="utf-8"))
+        ids = [post.get("media_id") for post in queue_payload["posts"]]
+        check("LINEAGE", ids == ["17874771153567012"],
+              "таблица публикаций без метрик даёт lineage по реальному media_id")
+        check("LINEAGE", all(not key.startswith("_") for post in queue_payload["posts"]
+                             for key in post),
+              "служебные поля не утекают в выходной файл")
+
+        result = run([str(TOOLS / "publish_evidence.py"), "--source", str(queue)], expect=(0,))
+        check("PUBLISH", "REAL_PUBLISH_CONFIRMED" in result.stdout,
+              "подтверждённая удалённая публикация распознана")
+
+        empty_queue = work / "queue" / "empty_queue.db"
+        connection = sqlite3.connect(empty_queue)
+        connection.execute("CREATE TABLE content_items (id INTEGER, created_at TEXT, "
+                           "published_at TEXT, permalink TEXT, status TEXT, "
+                           "instagram_media_id TEXT)")
+        connection.execute("INSERT INTO content_items VALUES (1,'2026-09-01',NULL,NULL,"
+                           "'blocked_by_gate',NULL)")
+        connection.commit()
+        connection.close()
+        result = run([str(TOOLS / "publish_evidence.py"), "--source", str(empty_queue)], expect=(1,))
+        check("PUBLISH", "PUBLISH EVIDENCE: NOT_MEASURED" in result.stdout,
+              "без удалённых публикаций вердикт NOT_MEASURED, а не ноль публикаций")
+
+        print(f"\n=== 10. Изоляция: репозиторий не загрязнён ===")
         real_snapshots = BASE / "data" / "followers_snapshots.json"
         check("ISOLATION", not real_snapshots.exists() or "SYNTHETIC" not in
               real_snapshots.read_text(encoding="utf-8"),

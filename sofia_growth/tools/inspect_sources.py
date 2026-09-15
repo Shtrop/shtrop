@@ -59,9 +59,15 @@ def inspect_sqlite(path: Path) -> None:
             canon = {normalize_key(c) for c in columns} - {None}
             has_date = "date" in canon
             metrics = canon & KNOWN
-            verdict = ("ИСПОЛЬЗУЕТСЯ" if has_date and metrics else
-                       "пропускается: " + ("нет даты" if not metrics else "нет известных метрик")
-                       if not (has_date and metrics) else "")
+            lineage = canon & {"media_id", "permalink"}
+            if has_date and metrics:
+                verdict = "ИСПОЛЬЗУЕТСЯ: метрики"
+            elif has_date and lineage:
+                verdict = "ИСПОЛЬЗУЕТСЯ: lineage публикаций"
+            elif not has_date:
+                verdict = "пропускается: нет колонки с датой"
+            else:
+                verdict = "пропускается: нет ни метрик, ни идентификатора публикации"
             print(f"    таблица `{table}` — строк: {count} — {verdict}")
             show_columns(columns)
     finally:

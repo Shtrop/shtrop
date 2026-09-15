@@ -44,7 +44,7 @@ ACCOUNT_FIELDS = (
 POST_FIELDS = (
     "reach", "views", "impressions", "sends", "saves", "likes", "comments",
     "shares", "follows", "profile_visits", "watch_time", "average_watch_time",
-    "retention", "reel_plays",
+    "retention", "reel_plays", "total_interactions",
 )
 
 # Как реальные выгрузки называют те же метрики. Ключ — канон, значения — алиасы.
@@ -71,9 +71,11 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "posted_reels": ("posted_reels", "reels_published", "published_reels"),
     "follower_conversion": ("follower_conversion", "follow_rate", "conversion_rate"),
     # Идентификаторы и lineage публикации.
-    "media_id": ("media_id", "id", "ig_id", "post_id", "content_id"),
+    "media_id": ("media_id", "id", "ig_id", "post_id", "content_id",
+                 "instagram_media_id", "remote_post_id"),
+    "total_interactions": ("total_interactions", "interactions", "engagements"),
     "permalink": ("permalink", "url", "link", "permalink_url"),
-    "media_type": ("media_type", "type", "format", "content_type"),
+    "media_type": ("media_type", "type", "format", "content_type", "media_product_type"),
     "caption": ("caption", "text", "title"),
     "trend_id": ("trend_id", "trend", "signal_id", "radar_id"),
     "format_id": ("format_id", "format", "template", "content_format"),
@@ -81,6 +83,15 @@ ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 REVERSE_ALIAS = {alias: canon for canon, names in ALIASES.items() for alias in names}
+
+# Внутренний rowid не должен вытеснять настоящий идентификатор Instagram:
+# в одной таблице встречаются и `id`, и `instagram_media_id`.
+MEDIA_ID_PRIORITY = {"id": 0, "content_id": 1, "post_id": 2, "ig_id": 3,
+                     "media_id": 4, "remote_post_id": 5, "instagram_media_id": 6}
+
+# Поля, по которым строится lineage публикации (без метрик).
+LINEAGE_FIELDS = ("media_id", "permalink", "media_type", "format_id",
+                  "trend_id", "experiment_id")
 
 # Признаки теневого/симулированного контура в пути или имени файла.
 # Политика студии: не выдавать shadow, synthetic и predicted за метрики Instagram.
@@ -141,6 +152,7 @@ def parse_date(raw) -> str | None:
 def normalize_record(raw: dict) -> dict:
     """Приводит произвольную строку выгрузки к каноническим полям."""
     record: dict = {}
+    media_id_rank = -1
     for key, value in raw.items():
         canon = normalize_key(key)
         if canon is None:
@@ -152,8 +164,15 @@ def normalize_record(raw: dict) -> dict:
         elif canon in ("media_id", "permalink", "media_type", "caption",
                        "trend_id", "format_id", "experiment_id"):
             text = str(value).strip() if value is not None else ""
-            if text and text.lower() not in NULLISH:
-                record[canon] = text
+            if not text or text.lower() in NULLISH:
+                continue
+            if canon == "media_id":
+                rank = MEDIA_ID_PRIORITY.get(str(key).strip().lower(), 0)
+                if rank < media_id_rank:
+                    continue
+                media_id_rank = rank
+                record["_id_rank"] = rank
+            record[canon] = text
         else:
             number = parse_number(value)
             if number is not None:
@@ -270,14 +289,25 @@ def read_sqlite_rows(path: Path) -> list[dict]:
                 continue
             canon = {normalize_key(c) for c in columns} - {None}
             metrics = canon & set(ACCOUNT_FIELDS + POST_FIELDS)
-            if "date" not in canon or not metrics:
-                continue  # таблица не про метрики — не угадываем
+            # Таблица публикаций без метрик всё равно ценна: она даёт lineage
+            # (какой контент, когда и куда опубликован), без которого не собрать
+            # атрибуцию тренд → рост.
+            lineage = canon & {"media_id", "permalink"}
+            if "date" not in canon or not (metrics or lineage):
+                continue  # ни метрик, ни lineage — не угадываем содержимое
             try:
                 for row in connection.execute(f'SELECT * FROM "{table}"'):
                     record = normalize_record(dict(row))
-                    if record.get("date"):
-                        record["_table"] = table
-                        rows.append(record)
+                    if not record.get("date"):
+                        continue
+                    # Для lineage-строки нужен настоящий идентификатор публикации:
+                    # внутренний rowid (`id`) им не является и породил бы фантомные
+                    # «публикации», которые склеились бы с чужими данными.
+                    if not metrics and not (record.get("permalink")
+                                            or record.get("_id_rank", -1) >= 2):
+                        continue
+                    record["_table"] = table
+                    rows.append(record)
             except sqlite3.Error as exc:
                 print(f"WARN: {path.name}.{table} не читается: {exc}", file=sys.stderr)
     finally:
@@ -290,6 +320,7 @@ DISCOVERY_PATTERNS = (
     "*insights*.csv", "*insights*.jsonl", "*insights*.db",
     "*analytics*.db", "*analytics*.csv", "*analytics*.jsonl",
     "*followers*.csv", "*followers*.jsonl",
+    "*queue*.db", "*publish*.db", "*media*.db", "*sofia*.db",
 )
 
 SKIP_DIRS = {".git", "node_modules", "__pycache__", "venv", ".venv", "backups"}
@@ -532,6 +563,12 @@ def main() -> int:
         "snapshots": snapshots,
         "posts": posts,
     }
+
+    # Служебные поля наружу не выводятся.
+    for collection in (payload["snapshots"], payload["posts"]):
+        for item in collection:
+            for key in [k for k in item if k.startswith("_")]:
+                del item[key]
 
     text = json.dumps(payload, ensure_ascii=False, indent=2)
     if overall != "REAL":
