@@ -311,6 +311,31 @@ def main() -> int:
         check("SHARES", "SENDS PER REACH: NOT_MEASURED" not in result.stdout,
               "sends per reach считается из поля shares, как его отдаёт Graph API")
 
+        # Автосверка без ручного --trust: журнал и выгрузка лежат в одном дереве.
+        auto_out = work / "auto_snapshots.json"
+        result = run([str(TOOLS / "ingest_insights.py"), "--studio", str(vroot),
+                      "--out", str(auto_out)], expect=(3,))
+        auto_payload = json.loads(auto_out.read_text(encoding="utf-8"))
+        check("AUTO", "подтверждена сверкой media_id" in result.stdout,
+              "подлинная выгрузка признана реальной автоматически, без --trust")
+        check("AUTO", any("post_insights.csv" in path
+                          for path in auto_payload["auto_verified_sources"]),
+              "факт автосверки зафиксирован в выходном файле")
+        genuine_label = [source["evidence_label"] for source in auto_payload["sources"]
+                         if source["path"].endswith("post_insights.csv")]
+        check("AUTO", genuine_label == ["REAL"] and auto_payload["evidence_label"] == "MIXED",
+              "подтверждённый файл REAL, но общая доказательность MIXED из-за подделки рядом")
+        forged_labels = [source["evidence_label"] for source in auto_payload["sources"]
+                         if "fake_insights" in source["path"]]
+        check("AUTO", forged_labels == ["SHADOW"],
+              "подделка в том же дереве осталась SHADOW: сверка не выдаёт индульгенцию всему каталогу")
+
+        no_auto = work / "no_auto.json"
+        run([str(TOOLS / "ingest_insights.py"), "--studio", str(vroot), "--out", str(no_auto),
+             "--no-auto-verify"], expect=(3,))
+        check("AUTO", json.loads(no_auto.read_text(encoding="utf-8"))["evidence_label"] != "REAL",
+              "--no-auto-verify возвращает строгое поведение по маркерам пути")
+
         print(f"\n=== 11. Изоляция: репозиторий не загрязнён ===")
         real_snapshots = BASE / "data" / "followers_snapshots.json"
         check("ISOLATION", not real_snapshots.exists() or "SYNTHETIC" not in

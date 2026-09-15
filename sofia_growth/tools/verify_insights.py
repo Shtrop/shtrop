@@ -19,50 +19,14 @@
 from __future__ import annotations
 
 import argparse
-import sqlite3
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ingest_insights import (  # noqa: E402
-    classify_source, discover, is_post_record, read_source,
+    ID_MATCH_THRESHOLD as MATCH_THRESHOLD,
+    classify_source, discover, is_post_record, published_ids, read_source,
 )
-
-PROOF_COLUMNS = ("instagram_media_id", "remote_post_id", "remote_media_id", "ig_media_id")
-NULLISH = ("", "none", "null", "n/a", "pending", "0")
-# Доля совпавших идентификаторов, начиная с которой файл считается подлинным.
-MATCH_THRESHOLD = 0.5
-
-
-def published_ids(path: Path) -> set[str]:
-    ids: set[str] = set()
-    try:
-        connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    except sqlite3.Error:
-        return ids
-    try:
-        tables = [row[0] for row in connection.execute(
-            "SELECT name FROM sqlite_master WHERE type IN ('table','view')")]
-        for table in tables:
-            try:
-                columns = {c[1].lower(): c[1] for c in connection.execute(f'PRAGMA table_info("{table}")')}
-            except sqlite3.Error:
-                continue
-            for proof in PROOF_COLUMNS:
-                if proof not in columns:
-                    continue
-                try:
-                    for (value,) in connection.execute(f'SELECT "{columns[proof]}" FROM "{table}"'):
-                        if value is None:
-                            continue
-                        text = str(value).strip()
-                        if text.lower() not in NULLISH:
-                            ids.add(text)
-                except sqlite3.Error:
-                    continue
-    finally:
-        connection.close()
-    return ids
 
 
 def main() -> int:
@@ -94,13 +58,17 @@ def main() -> int:
         return 2
 
     confirmed: set[str] = set()
+    strict: set[str] = set()
     print("Журналы публикаций:")
     for path in journals:
         found = published_ids(path)
         evidence, _ = classify_source(path)
         print(f"  [{evidence}] {path} — подтверждённых идентификаторов: {len(found)}")
         confirmed |= found
+        if evidence == "REAL":
+            strict |= found
     print(f"\nВсего уникальных подтверждённых публикаций: {len(confirmed)}")
+    print(f"Из них в журналах без теневых маркеров (строгий анкер): {len(strict)}")
     if not confirmed:
         print("\nBLOCKED: подтверждённых публикаций нет — сверка невозможна.")
         return 2
@@ -110,28 +78,38 @@ def main() -> int:
     for path in insights:
         rows = [row for row in read_source(path) if is_post_record(row)]
         ids = [str(row["media_id"]) for row in rows if row.get("media_id")]
-        matched = [value for value in ids if value in confirmed]
         evidence, markers = classify_source(path)
+        matched = [value for value in ids if value in confirmed]
+        matched_strict = [value for value in ids if value in strict]
         share = len(matched) / len(ids) if ids else 0.0
+        share_strict = len(matched_strict) / len(ids) if ids else 0.0
         print(f"\n  {path}")
         print(f"    метка по пути: {evidence}"
               + (f" (маркеры: {', '.join(markers)})" if markers else ""))
-        print(f"    строк с media_id: {len(ids)} | совпало с опубликованными: {len(matched)} "
-              f"({round(share * 100, 1)}%)")
+        print(f"    строк с media_id: {len(ids)}")
+        print(f"    совпало со всеми журналами: {len(matched)} ({round(share * 100, 1)}%)")
+        print(f"    совпало со строгим анкером: {len(matched_strict)} "
+              f"({round(share_strict * 100, 1)}%)")
         if not ids:
             print("    ВЕРДИКТ: NOT_MEASURED — идентификаторов публикаций в файле нет")
+        elif share_strict >= MATCH_THRESHOLD:
+            print("    ВЕРДИКТ: ID_MATCH_CONFIRMED — файл описывает реально опубликованный контент.")
+            print("    Движок признает его реальным автоматически, без ручных флагов.")
+            exit_code = 0
         elif share >= MATCH_THRESHOLD:
-            print(f"    ВЕРДИКТ: ID_MATCH_CONFIRMED — файл описывает реально опубликованный контент.")
-            if evidence != "REAL":
-                print(f"    Метка SHADOW поставлена по пути и опровергается фактом. Чтобы учесть")
-                print(f"    файл как реальный, передать его в ingest явным доверием:")
-                print(f'      --trust "{path}"')
+            print("    ВЕРДИКТ: ID_MATCH_CONFIRMED по нестрогому анкеру.")
+            print("    Совпадения подтверждаются журналом, лежащим в теневом каталоге, поэтому")
+            print("    автоматически файл реальным НЕ станет. Если вы подтверждаете, что журнал")
+            print("    содержит настоящие публикации, добавьте к запуску цикла:")
+            print(f'      --trust "{path}"')
             exit_code = 0
         else:
             print("    ВЕРДИКТ: NO_MATCH — идентификаторы не совпадают с опубликованным "
                   "контентом. Считать реальными метриками нельзя.")
 
     print("\nСверка по идентификаторам — доказательство подлинности, а не имя папки.")
+    print("Неполное совпадение — норма, если журнал снят раньше выгрузки метрик:")
+    print("публикации, сделанные после снимка журнала, в нём просто отсутствуют.")
     return exit_code
 
 

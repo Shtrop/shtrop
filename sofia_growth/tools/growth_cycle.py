@@ -55,19 +55,44 @@ def main() -> int:
     parser.add_argument("--plan-days", type=int, default=14, help="горизонт плана")
     parser.add_argument("--plan-out", type=Path, help="куда записать план (по умолчанию plans/<дата>)")
     parser.add_argument("--account", default="", help="handle аккаунта")
+    parser.add_argument("--trust", type=Path, action="append", default=[],
+                        help="явно доверять источнику вопреки маркерам пути")
     args = parser.parse_args()
 
     stages = []
     print("=== Growth Engine: недельный цикл ===\n")
 
+    # 0. Были ли реальные публикации — от этого зависит смысл всех метрик.
+    publishes = Stage("PUBLISH EVIDENCE — были ли реальные публикации")
+    stages.append(publishes)
+    if args.studio:
+        code, out, _ = run([str(TOOLS / "publish_evidence.py"), "--studio", str(args.studio)],
+                           (0, 1, 2))
+        verdict = next((line.split(":", 1)[1].strip() for line in out.splitlines()
+                        if line.startswith("PUBLISH EVIDENCE:")), "NOT_MEASURED")
+        publishes.status = "OK" if code == 0 else "BLOCKED"
+        publishes.detail = verdict
+    else:
+        publishes.detail = "--studio не задан"
+    print(publishes.line())
+
     # 1. INSIGHTS
     ingest = Stage("INSIGHTS — сбор выгрузок")
     stages.append(ingest)
     if args.studio:
-        code, out, _ = run([str(TOOLS / "ingest_insights.py"), "--studio", str(args.studio),
-                            "--out", str(args.snapshots), "--account", args.account], (0, 2))
-        if code == 0:
-            ingest.status, ingest.detail = "OK", out.strip().splitlines()[-1].strip()
+        ingest_args = [str(TOOLS / "ingest_insights.py"), "--studio", str(args.studio),
+                       "--out", str(args.snapshots), "--account", args.account]
+        for path in args.trust:
+            ingest_args += ["--trust", str(path)]
+        code, out, _ = run(ingest_args, (0, 2, 3))
+        if code in (0, 3):
+            ingest.status = "OK"
+            evidence = next((line.split(":", 1)[1].strip() for line in out.splitlines()
+                             if line.strip().startswith("доказательность:")), "?")
+            verified = sum(1 for line in out.splitlines() if "подтверждена сверкой" in line)
+            ingest.detail = f"доказательность {evidence}"
+            if verified:
+                ingest.detail += f", подтверждено сверкой media_id: {verified}"
         else:
             ingest.status = "BLOCKED"
             ingest.detail = "источников не найдено, снимки не перезаписаны"

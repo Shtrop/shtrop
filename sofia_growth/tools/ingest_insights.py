@@ -356,6 +356,45 @@ def read_source(path: Path) -> list[dict]:
     return []
 
 
+# Колонки, непустое значение в которых доказывает состоявшуюся публикацию.
+PROOF_COLUMNS = ("instagram_media_id", "remote_post_id", "remote_media_id", "ig_media_id")
+PROOF_NULLISH = ("", "none", "null", "n/a", "pending", "0")
+# Доля совпавших идентификаторов, с которой выгрузка считается подлинной.
+ID_MATCH_THRESHOLD = 0.5
+
+
+def published_ids(path: Path) -> set[str]:
+    """Идентификаторы публикаций, подтверждённые журналом публикатора."""
+    ids: set[str] = set()
+    try:
+        connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return ids
+    try:
+        tables = [row[0] for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type IN ('table','view')")]
+        for table in tables:
+            try:
+                columns = {c[1].lower(): c[1] for c in connection.execute(f'PRAGMA table_info("{table}")')}
+            except sqlite3.Error:
+                continue
+            for proof in PROOF_COLUMNS:
+                if proof not in columns:
+                    continue
+                try:
+                    for (value,) in connection.execute(f'SELECT "{columns[proof]}" FROM "{table}"'):
+                        if value is None:
+                            continue
+                        text = str(value).strip()
+                        if text.lower() not in PROOF_NULLISH:
+                            ids.add(text)
+                except sqlite3.Error:
+                    continue
+    finally:
+        connection.close()
+    return ids
+
+
 def classify_source(path: Path) -> tuple[str, list[str]]:
     """Определяет, реальные это метрики платформы или теневой контур.
 
@@ -488,6 +527,8 @@ def main() -> int:
                         help="явный источник (можно повторять)")
     parser.add_argument("--out", type=Path, default=base / "data" / "followers_snapshots.json")
     parser.add_argument("--account", default="", help="handle аккаунта для метаданных")
+    parser.add_argument("--no-auto-verify", action="store_true",
+                        help="не проверять подлинность теневых выгрузок сверкой media_id")
     parser.add_argument("--trust", type=Path, action="append", default=[],
                         help="считать источник реальным вопреки маркерам пути; "
                              "применять только после сверки verify_insights.py")
@@ -497,6 +538,25 @@ def main() -> int:
     sources = list(args.source) + [p for p in discover(args.studio) if p not in args.source]
     sources = [p for p in sources if p.exists()]
     trusted = {path.resolve() for path in args.trust}
+
+    # Анкер доверия: идентификаторы из журналов, которые сами не теневые.
+    # Совпасть с реально опубликованным контентом симуляция не может,
+    # поэтому сверка сильнее эвристики по имени каталога.
+    anchor: set[str] = set()
+    if not args.no_auto_verify:
+        for path in sources:
+            if path.suffix.lower() in (".db", ".sqlite", ".sqlite3") \
+                    and classify_source(path)[0] == "REAL":
+                anchor |= published_ids(path)
+        if anchor:
+            print(f"Анкер сверки: подтверждённых публикаций в реальных журналах: {len(anchor)}")
+
+    def verify_by_ids(rows: list[dict]) -> tuple[bool, float]:
+        ids = [str(row["media_id"]) for row in rows if row.get("media_id")]
+        if not anchor or not ids:
+            return False, 0.0
+        share = sum(1 for value in ids if value in anchor) / len(ids)
+        return share >= ID_MATCH_THRESHOLD, share
 
     if not sources:
         print("BLOCKED: реальных источников Instagram Insights не найдено.")
@@ -519,15 +579,21 @@ def main() -> int:
         meta = file_fingerprint(path)
         evidence, hits = classify_source(path)
         override = path.resolve() in trusted
-        if override:
-            # Явное решение владельца после сверки идентификаторов публикаций.
+        auto_verified, match_share = (False, 0.0)
+        if evidence != "REAL" and not override:
+            auto_verified, match_share = verify_by_ids(posts)
+        if override or auto_verified:
             evidence = "REAL"
         meta.update({"rows": len(rows), "post_rows": len(posts), "account_rows": len(accounts),
                      "evidence_label": evidence, "shadow_markers": hits,
-                     "trusted_override": override})
+                     "trusted_override": override, "auto_verified": auto_verified,
+                     "id_match_share": round(match_share, 4) if auto_verified else None})
         source_meta.append(meta)
         flag = f"  [{evidence}]"
-        if override and hits:
+        if auto_verified:
+            flag += (f" подлинность подтверждена сверкой media_id "
+                     f"({round(match_share * 100, 1)}% совпало), маркеры пути: {', '.join(hits)}")
+        elif override and hits:
             flag += f" доверено явно, несмотря на маркеры: {', '.join(hits)}"
         elif hits:
             flag += f" маркеры: {', '.join(hits)}"
@@ -559,11 +625,15 @@ def main() -> int:
         overall = "MIXED"  # смесь нельзя считать реальной: считаем по слабейшему звену
 
     overrides = [meta["path"] for meta in source_meta if meta.get("trusted_override")]
+    auto_verified_paths = [meta["path"] for meta in source_meta if meta.get("auto_verified")]
     note = ("Собрано из локальных выгрузок студии. Отсутствующие поля опущены, "
             "а не заполнены нулями. NULL/UNKNOWN != 0.")
     if overrides:
         note += (" Часть источников помечена реальными по явному решению владельца "
                  "(--trust) после сверки идентификаторов публикаций.")
+    if auto_verified_paths:
+        note += (" Часть источников признана реальной автоматически: их media_id совпали "
+                 "с публикациями, подтверждёнными журналом публикатора.")
     if overall != "REAL":
         note += (" ВНИМАНИЕ: часть или все источники относятся к теневому/обучающему "
                  "контуру. Это НЕ метрики Instagram и не могут служить основанием "
@@ -577,6 +647,7 @@ def main() -> int:
         "note": note,
         "sources": source_meta,
         "trusted_overrides": overrides,
+        "auto_verified_sources": auto_verified_paths,
         "coverage": coverage(snapshots, posts),
         "snapshots": snapshots,
         "posts": posts,
@@ -609,6 +680,13 @@ def main() -> int:
     print(f"  публикаций: {len(posts)}")
     print(f"  измеренных полей: {len(measured)} из {len(payload['coverage'])}")
     print(f"  доказательность: {overall}")
+
+    newest = max((meta["modified_at"] for meta in source_meta), default=None)
+    if newest:
+        age = (dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(newest)).days
+        print(f"  самый свежий источник: {newest[:10]} ({age} дн. назад)")
+        if age > 7:
+            print("  WARN: данные старше недели — возможно, это снимок, а не живая очередь.")
     return 0 if overall == "REAL" else 3
 
 

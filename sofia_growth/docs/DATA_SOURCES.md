@@ -12,7 +12,7 @@ cd D:\AI_CONTENT\Sofia
 python <путь>\sofia_growth\tools\ingest_insights.py `
     --studio "D:\AI_CONTENT\Sofia" `
     --out <путь>\sofia_growth\data\followers_snapshots.json `
-    --account <handle>
+    --account sofia_handle
 ```
 
 Автопоиск идёт по шаблонам: `post_insights.csv`, `ig_insights.jsonl`,
@@ -135,7 +135,7 @@ python sofia_growth\tests\run_e2e.py
 Когда источники на месте, отдельные шаги не нужны:
 
 ```powershell
-python sofia_growth\tools\growth_cycle.py --studio "D:\AI_CONTENT\Sofia" --account <handle>
+python sofia_growth\tools\growth_cycle.py --studio "D:\AI_CONTENT\Sofia" --account sofia_handle
 ```
 
 Цикл выполнит сбор Insights, расчёт KPI, обновление growth memory, пересборку
@@ -207,3 +207,12 @@ python sofia_growth\tools\ingest_insights.py --studio "D:\AI_CONTENT\Sofia" `
 `shares`, когда прямого поля нет, и указывает в отчёте, из какого поля взято
 значение. Без этого главный ранжирующий сигнал 2026 терялся бы при наличии
 данных.
+
+## Подводные камни PowerShell
+
+- Угловые скобки зарезервированы: `--account <handle>` вызовет
+  `ParserError: Оператор "<" зарезервирован`. Подставлять реальное значение
+  или опускать флаг: `--account` необязателен и влияет только на метаданные.
+- Пути с пробелами брать в кавычки: `--studio "D:\AI_CONTENT\Sofia"`.
+- Обратный апостроф `` ` `` — перенос строки в PowerShell; при копировании
+  в одну строку его нужно убрать.
