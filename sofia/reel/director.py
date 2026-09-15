@@ -1,0 +1,935 @@
+"""ReelDirector — one logical owner, accountable for the finished Reel.
+
+The director is not a dispatcher that calls generators in order. It holds the
+brief (purpose, audience, trend, hook, arc, shot list, emotions, voice,
+continuity, expected KPI), owns the Reel's lease, checkpoints every stage so
+work resumes instead of restarting, routes repairs to the narrowest component,
+and answers for the FinalGate verdict.
+
+Publishing stays on HOLD: the best outcome this class can produce is
+``READY_FOR_OWNER_REVIEW``. It has no publish path at all.
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable, Mapping, Optional, Sequence
+
+from sofia.agents.base import AgentContext, Capability
+from sofia.agents.ownership import OwnershipRegistry
+from sofia.agents.runner import AgentRunner
+from sofia.core.checkpoint import CheckpointStore, StageState
+from sofia.core.errors import BackendUnavailableError, OwnershipError
+from sofia.core.gates import GateResult, evaluate_gates
+from sofia.core.verdict import Evidence, Measurement, Verdict
+from sofia.reel.backends import ReelBackends
+from sofia.reel.contracts import (
+    GrowthInput,
+    ReelAssets,
+    ReelBrief,
+    ReelDefect,
+    ReelDiagnosis,
+    ReelResult,
+    Shot,
+    ShotType,
+)
+from sofia.reel.critics import (
+    FINAL_GATE_CATEGORIES,
+    AudioMixCritic,
+    CoverCritic,
+    FinalGate,
+    LipSyncCritic,
+    PerceptualReviewGate,
+    PerceptualSample,
+    ReelThresholds,
+    StoryCritic,
+    SubtitleCritic,
+    VideoQACritic,
+)
+from sofia.reel.gpu import GpuArbiter, GpuBusy, WorkClass
+from sofia.reel.repair_router import RepairDecision, RepairRouter
+from sofia.reel.shots import profile_for
+from sofia.reel.stages import (
+    AuthoredPlan,
+    ContentPlan,
+    CreativeSource,
+    HookAgent,
+    IdeaAgent,
+    ScriptAgent,
+    ShotDirector,
+    SourceSelector,
+    StoryboardAgent,
+    TrendAgent,
+    build_reel_brief,
+)
+from sofia.reel.audio_mix import build_voice_track, duck_offline
+from sofia.reel.subtitles import (
+    build_cues,
+    estimate_text_extent,
+    write_ass,
+    write_srt,
+)
+from sofia.voice.contracts import Language, VoiceVerdict
+from sofia.voice.pipeline import VoiceTeam
+
+#: Publishing is fail-closed and this module has no way to change it.
+PUBLISHING_HOLD = True
+TERMINAL_APPROVED_STATE = "READY_FOR_OWNER_REVIEW"
+
+
+@dataclass
+class ReelDirectorConfig:
+    workdir: Path
+    language: Language = Language.RU
+    max_repair_rounds: int = 2
+    target_duration_s: float = 22.0
+    sofia_references: Mapping[str, str] = field(default_factory=dict)
+    subtitle_text_top: float = 0.62
+    subtitle_text_bottom: float = 0.78
+    frame_width: int = 1080
+    frame_height: int = 1920
+
+
+class ReelDirector:
+    """The single logical owner of one Reel."""
+
+    name = "sofia.reel.director"
+    role = "ReelDirector"
+
+    def __init__(
+        self,
+        config: ReelDirectorConfig,
+        *,
+        voice_team: VoiceTeam,
+        backends: ReelBackends,
+        creative: CreativeSource,
+        runner: Optional[AgentRunner] = None,
+        ownership: Optional[OwnershipRegistry] = None,
+        checkpoints: Optional[CheckpointStore] = None,
+        gpu: Optional[GpuArbiter] = None,
+        thresholds: Optional[ReelThresholds] = None,
+        music_backend: Any = None,
+    ) -> None:
+        self.config = config
+        self.workdir = Path(config.workdir)
+        self.workdir.mkdir(parents=True, exist_ok=True)
+        self.voice_team = voice_team
+        self.backends = backends
+        self.creative = creative
+        self.runner = runner
+        self.ownership = ownership or OwnershipRegistry(self.workdir / "leases")
+        self.checkpoints = checkpoints or CheckpointStore(self.workdir / "checkpoints")
+        self.gpu = gpu or GpuArbiter()
+        self.thresholds = thresholds or ReelThresholds()
+        self.music_backend = music_backend
+
+        # Logical roles carried by this director's team.
+        self.trend_agent = TrendAgent()
+        self.idea_agent = IdeaAgent(creative)
+        self.hook_agent = HookAgent()
+        self.script_agent = ScriptAgent()
+        self.storyboard_agent = StoryboardAgent()
+        self.shot_director = ShotDirector()
+        self.source_selector = SourceSelector(config.sofia_references)
+        self.repair_router = RepairRouter()
+        self.final_gate = FinalGate()
+
+        self.story_critic = StoryCritic(self.thresholds)
+        self.video_critic = VideoQACritic(backends, self.thresholds)
+        self.lipsync_critic = LipSyncCritic(backends, self.thresholds)
+        self.subtitle_critic = SubtitleCritic()
+        self.audio_critic = AudioMixCritic(self.thresholds)
+        self.cover_critic = CoverCritic()
+        self.perceptual_gate = PerceptualReviewGate()
+
+    # ---- lifecycle -------------------------------------------------------
+    def claim(self, reel_id: str) -> None:
+        """Take exclusive ownership. A second director is rejected."""
+        self.ownership.acquire(reel_id, self.name, ttl_s=6 * 3600)
+
+    def resume_point(self, reel_id: str) -> StageState:
+        return self.checkpoints.resume_point(reel_id)
+
+    def _checkpoint(
+        self,
+        reel_id: str,
+        stage: StageState,
+        *,
+        artifacts: Optional[Mapping[str, str]] = None,
+        payload: Optional[Mapping[str, Any]] = None,
+        allow_regression: bool = False,
+    ) -> None:
+        self.checkpoints.advance(
+            reel_id,
+            stage,
+            self.name,
+            artifacts=artifacts,
+            payload=payload,
+            allow_regression=allow_regression,
+        )
+
+    # ---- the pipeline ----------------------------------------------------
+    def produce(
+        self,
+        reel_id: str,
+        growth: GrowthInput,
+        *,
+        perceptual_samples: Sequence[PerceptualSample] = (),
+        cover_measurements: Optional[Mapping[str, Optional[float]]] = None,
+        resume: bool = True,
+        diagnostic: bool = False,
+    ) -> ReelResult:
+        """Run the Reel end to end, resuming from the last good stage.
+
+        ``diagnostic=True`` keeps going past a blocking stage so one run
+        surfaces every defect instead of one per attempt. It records each block
+        as a diagnosis and **forces a non-PASS verdict**: a diagnostic run can
+        never approve a Reel, whatever the downstream gates say.
+        """
+
+        self.claim(reel_id)
+        assets = ReelAssets()
+        started = StageState.CREATED if not resume else self.resume_point(reel_id)
+        diagnoses: list[ReelDiagnosis] = []
+        repairs: list[dict] = []
+        brief: Optional[ReelBrief] = None
+        plan: Optional[ContentPlan] = None
+
+        try:
+            # -- BRIEF: trend -> idea -> purpose -> hook -> script ----------
+            trend = self._invoke(Capability.TREND_RESEARCH, reel_id, growth=growth)
+            plan = self._invoke(Capability.IDEA, reel_id, growth=growth)
+            hook = self._invoke(Capability.HOOK, reel_id, plan=plan)
+            lines = self._invoke(Capability.SCRIPT, reel_id, plan=plan)
+            brief = build_reel_brief(
+                reel_id, plan, growth, self.config.language,
+                target_duration_s=self.config.target_duration_s,
+            )
+            self._checkpoint(
+                reel_id,
+                StageState.BRIEF_DONE,
+                payload={"trend": trend, "hook": hook, "plan": plan.to_dict()},
+            )
+            self._checkpoint(
+                reel_id,
+                StageState.SCRIPT_DONE,
+                payload={"lines": [ln.to_dict() for ln in lines]},
+            )
+
+            # -- STORYBOARD / SHOT LIST / SOURCE SELECTION -----------------
+            shots = self._invoke(Capability.STORYBOARD, reel_id, lines=lines)
+            shots, cost = self._invoke(Capability.SHOT_DIRECTION, reel_id, shots=shots)
+            # Resume: reattach artifacts a previous run already produced, so a
+            # lost session re-uses finished renders instead of paying for them
+            # twice.
+            if resume:
+                self._rehydrate(reel_id, shots, assets)
+            assets.shots = shots
+            self._checkpoint(
+                reel_id,
+                StageState.SHOTS_DONE,
+                payload={
+                    "shots": [s.to_dict() for s in shots],
+                    "gpu_cost_estimate": cost,
+                },
+            )
+
+            # -- VOICE (light/voice work may proceed while GPU is busy) ----
+            voice_results = self._stage(
+                diagnostic,
+                diagnoses,
+                ReelDefect.VOICE,
+                "voice",
+                lambda: self._invoke(
+                    Capability.VOICE_GENERATION,
+                    reel_id,
+                    shots=shots,
+                    assets=assets,
+                    strict=not diagnostic,
+                ),
+                default={},
+            )
+            self._checkpoint(
+                reel_id,
+                StageState.VOICE_DONE,
+                artifacts={f"voice.{k}": v for k, v in assets.voice_clips.items()},
+            )
+
+            # -- VIDEO (heavy: waits for production) -----------------------
+            self._stage(
+                diagnostic,
+                diagnoses,
+                ReelDefect.SHOT,
+                "video",
+                lambda: self._invoke(
+                    Capability.VIDEO_GENERATION,
+                    reel_id,
+                    shots=shots,
+                    # _render_shots asks the arbiter itself, backend-aware.
+                    gpu_cleared=True,
+                ),
+            )
+            self._checkpoint(
+                reel_id,
+                StageState.VIDEO_DONE,
+                payload={"shots": [s.to_dict() for s in shots]},
+            )
+
+            # -- LIP-SYNC (heavy) ------------------------------------------
+            self._stage(
+                diagnostic,
+                diagnoses,
+                ReelDefect.LIPSYNC,
+                "lipsync",
+                lambda: self._invoke(
+                    Capability.LIPSYNC,
+                    reel_id,
+                    shots=shots,
+                    assets=assets,
+                    gpu_cleared=True,
+                ),
+            )
+            self._checkpoint(
+                reel_id,
+                StageState.LIPSYNC_DONE,
+                payload={"shots": [s.to_dict() for s in shots]},
+            )
+
+            # -- EDIT / MUSIC / SFX / SUBTITLES / COVER --------------------
+            self._stage(
+                diagnostic,
+                diagnoses,
+                ReelDefect.EDIT,
+                "edit",
+                lambda: self._invoke(
+                    Capability.EDIT,
+                    reel_id,
+                    brief=brief,
+                    plan=plan,
+                    shots=shots,
+                    assets=assets,
+                    voice_results=voice_results,
+                ),
+            )
+            self._checkpoint(
+                reel_id,
+                StageState.EDIT_DONE,
+                artifacts={
+                    k: v
+                    for k, v in {
+                        "edit": assets.edit,
+                        "subtitles": assets.subtitles,
+                        "cover": assets.cover,
+                        "music": assets.music,
+                    }.items()
+                    if v
+                },
+            )
+
+        except (BackendUnavailableError, GpuBusy) as exc:
+            stage = self.resume_point(reel_id)
+            diagnoses.append(
+                ReelDiagnosis(
+                    ReelDefect.NOT_MEASURED,
+                    detail=f"{type(exc).__name__}: {exc}",
+                    critic=self.role,
+                )
+            )
+            report = evaluate_gates(
+                [
+                    GateResult(
+                        name="reel.production",
+                        verdict=Verdict.ERROR,
+                        critical=True,
+                        reason=str(exc),
+                    )
+                ],
+                required_critical=("reel.production",) + FINAL_GATE_CATEGORIES,
+            )
+            self._checkpoint(reel_id, StageState.HELD, allow_regression=True)
+            return ReelResult(
+                reel_id=reel_id,
+                verdict=Verdict.BLOCKED,
+                stage=stage,
+                brief=brief,
+                assets=assets,
+                report=report,
+                diagnoses=diagnoses,
+                reason=f"production stopped at {stage.value}: {exc}",
+                owner=self.name,
+            )
+
+        # -- FINAL QA ------------------------------------------------------
+        return self._final_qa(
+            reel_id,
+            brief,
+            plan,
+            assets,
+            voice_results,
+            perceptual_samples=perceptual_samples,
+            cover_measurements=cover_measurements or {},
+            repairs=repairs,
+            diagnostic=diagnostic,
+            carried_diagnoses=diagnoses,
+        )
+
+    def _invoke(self, capability: Capability, reel_id: str, **params: Any) -> Any:
+        """Dispatch a role through the execution infrastructure.
+
+        When a runner is attached every role goes through it, so each
+        invocation is timed, ownership-checked, timeout-bounded, retried per
+        policy and written to the execution log. That log is the evidence that
+        a role really ran, as opposed to merely being declared.
+        """
+
+        if self.runner is None:
+            raise BackendUnavailableError(
+                "no AgentRunner attached; roles must execute through the "
+                "agent infrastructure"
+            )
+        ctx = AgentContext(
+            reel_id=reel_id, owner=self.name, workdir=str(self.workdir), params=params
+        )
+        return self.runner.run(capability, ctx).output
+
+    def _rehydrate(
+        self, reel_id: str, shots: Sequence[Shot], assets: ReelAssets
+    ) -> int:
+        """Reattach artifacts from the last checkpoint that still exist on disk.
+
+        Only files that are actually present are restored; a checkpoint that
+        references a deleted render simply re-renders it.
+        """
+
+        checkpoint = self.checkpoints.load(reel_id)
+        if checkpoint is None:
+            return 0
+        previous = {s.get("index"): s for s in checkpoint.payload.get("shots", [])}
+        restored = 0
+        for shot in shots:
+            prior = previous.get(shot.index, {})
+            for field in ("video_path", "lipsync_path"):
+                path = prior.get(field)
+                if path and Path(path).exists() and Path(path).stat().st_size > 0:
+                    setattr(shot, field, path)
+                    restored += 1
+        for key, path in checkpoint.payload.get("artifacts", {}).items():
+            if key.startswith("voice.") and path and Path(path).exists():
+                assets.voice_clips.setdefault(key.split(".", 1)[1], path)
+                restored += 1
+        return restored
+
+    def _stage(
+        self,
+        diagnostic: bool,
+        diagnoses: list[ReelDiagnosis],
+        defect: ReelDefect,
+        label: str,
+        fn: Callable[[], Any],
+        *,
+        default: Any = None,
+    ) -> Any:
+        """Run a stage; in diagnostic mode record the block and carry on."""
+        try:
+            return fn()
+        except (BackendUnavailableError, GpuBusy) as exc:
+            if not diagnostic:
+                raise
+            diagnoses.append(
+                ReelDiagnosis(
+                    defect,
+                    locus=label,
+                    detail=f"{type(exc).__name__}: {exc}",
+                    critic=self.role,
+                )
+            )
+            return default
+
+    # ---- stage implementations ------------------------------------------
+    def _produce_voice(
+        self,
+        reel_id: str,
+        shots: Sequence[Shot],
+        assets: ReelAssets,
+        *,
+        strict: bool = True,
+    ) -> dict[int, VoiceVerdict]:
+        """Voice work continues even when the GPU is busy with production."""
+
+        results: dict[int, VoiceVerdict] = {}
+        for shot in shots:
+            if not shot.voice_line.strip():
+                continue
+            brief = self.voice_team.director.brief(
+                shot.voice_line,
+                self.config.language,
+                scene=shot.beat.value.lower(),
+                scene_context=shot.description,
+                emotion=shot.emotion,
+                target_duration_s=shot.duration_s,
+            )
+            verdict = self.voice_team.produce(
+                brief, clip_id=f"{reel_id}.shot{shot.index}"
+            )
+            results[shot.index] = verdict
+            if verdict.verdict is not Verdict.PASS and strict:
+                raise BackendUnavailableError(
+                    f"voice for shot {shot.index} did not pass: "
+                    f"{verdict.verdict.value} — {verdict.reason}"
+                )
+            if verdict.artifact and verdict.artifact.audio_path:
+                # Non-passing clips are still placed on the timeline in a
+                # diagnostic run so downstream stages are measured on real
+                # audio. The voice gate still fails; see _voice_gate.
+                assets.voice_clips[str(shot.index)] = verdict.artifact.audio_path
+        if not results:
+            raise BackendUnavailableError("reel has no talking segment at all")
+        return results
+
+    def _render_shots(self, reel_id: str, shots: Sequence[Shot]) -> None:
+        for shot in shots:
+            out = self.workdir / "shots" / f"{reel_id}.shot{shot.index}.mp4"
+            if shot.video_path and Path(shot.video_path).exists():
+                continue  # resumed: this shot is already rendered
+            if out.exists() and out.stat().st_size > 0:
+                shot.video_path = str(out)
+                continue
+            profile = profile_for(shot.shot_type)
+            # A backend that renders on CPU does not queue behind production.
+            backend_needs_gpu = getattr(self.backends.video, "requires_gpu", True)
+            if profile.vram_gb > 0 and backend_needs_gpu:
+                self.gpu.require(
+                    f"VideoAgent[{profile.name}]",
+                    reel_id,
+                    work=WorkClass.HEAVY,
+                    vram_gb=profile.vram_gb,
+                )
+            shot.video_path = str(self.backends.video.render(shot, profile, out))
+
+    def _lipsync(
+        self, reel_id: str, shots: Sequence[Shot], assets: ReelAssets
+    ) -> None:
+        for shot in shots:
+            if not shot.shot_type.needs_lipsync:
+                continue
+            synced = self.workdir / "lipsync" / f"{reel_id}.shot{shot.index}.mp4"
+            if shot.lipsync_path and Path(shot.lipsync_path).exists():
+                continue
+            if synced.exists() and synced.stat().st_size > 0:
+                shot.lipsync_path = str(synced)
+                continue
+            audio = assets.voice_clips.get(str(shot.index))
+            if not audio:
+                raise BackendUnavailableError(
+                    f"talking shot {shot.index} has no verified voice clip"
+                )
+            if not self.backends.lipsync.available():
+                raise BackendUnavailableError(
+                    f"talking shot {shot.index} cannot be lip-synced: the champion "
+                    "lip-sync model is not available on this machine"
+                )
+            if getattr(self.backends.lipsync, "requires_gpu", True):
+                self.gpu.require(
+                    "LipSyncAgent", reel_id, work=WorkClass.HEAVY, vram_gb=20.0
+                )
+            shot.lipsync_path = str(
+                self.backends.lipsync.sync(
+                    Path(shot.video_path or ""), Path(audio), synced
+                )
+            )
+
+    def _edit(
+        self,
+        reel_id: str,
+        brief: ReelBrief,
+        plan: ContentPlan,
+        shots: Sequence[Shot],
+        assets: ReelAssets,
+        voice_results: Mapping[int, VoiceVerdict],
+    ) -> None:
+        """Assemble picture and sound: cuts, voice timeline, music, ducking,
+        subtitles, cover.
+
+        Subtitles are built from the *verified* speech (the ASR transcript of
+        what was actually said) and only fall back to the script line when the
+        voice clip itself passed. They are never invented from the script for a
+        clip that failed.
+        """
+
+        total = sum(s.duration_s for s in shots)
+
+        # --- voice timeline -------------------------------------------------
+        segments: list[tuple[str, float, float]] = []
+        placed: list[tuple[str, float]] = []
+        cursor = 0.0
+        for shot in shots:
+            if shot.voice_line.strip():
+                verdict = voice_results.get(shot.index)
+                artifact = verdict.artifact if verdict else None
+                spoken = (
+                    artifact.transcript
+                    if artifact and artifact.transcript
+                    else shot.voice_line
+                )
+                segments.append((spoken, cursor, cursor + shot.duration_s))
+                clip = assets.voice_clips.get(str(shot.index))
+                if clip:
+                    placed.append((clip, cursor))
+            cursor += shot.duration_s
+
+        # --- subtitles ------------------------------------------------------
+        cues = build_cues(segments)
+        assets.subtitles = str(
+            write_srt(cues, self.workdir / "subtitles" / f"{reel_id}.srt")
+        )
+        # The burn-in copy carries explicit PlayRes/margins so what is rendered
+        # matches what the subtitle critic verified.
+        burn_in = write_ass(
+            cues,
+            self.workdir / "subtitles" / f"{reel_id}.ass",
+            width=self.config.frame_width,
+            height=self.config.frame_height,
+            safe_bottom=self.config.subtitle_text_bottom,
+        )
+        top, bottom = estimate_text_extent(
+            cues,
+            height=self.config.frame_height,
+            safe_bottom=self.config.subtitle_text_bottom,
+        )
+        self._subtitle_extent = (top, bottom)
+
+        # --- audio: voice track, music bed, verified ducking ----------------
+        audio_track: Optional[str] = None
+        if placed:
+            voice_track = build_voice_track(
+                placed, self.workdir / "audio" / f"{reel_id}.voice.wav", total_s=total
+            )
+            assets.voice_clips["_track"] = str(voice_track)
+            if self.music_backend is not None:
+                music = self.music_backend.generate(
+                    self.workdir / "audio" / f"{reel_id}.music.wav", total
+                )
+                assets.music = str(music)
+                mixer = getattr(self.backends.editor, "mix_audio", None)
+                out = self.workdir / "audio" / f"{reel_id}.mix.wav"
+                if callable(mixer):
+                    audio_track = str(
+                        mixer(
+                            Path(voice_track),
+                            Path(music),
+                            out,
+                            self.thresholds.min_voice_over_music_db,
+                        )
+                    )
+                else:
+                    audio_track = str(
+                        duck_offline(
+                            voice_track,
+                            music,
+                            out,
+                            target_headroom_db=self.thresholds.min_voice_over_music_db,
+                        )
+                    )
+            else:
+                audio_track = str(voice_track)
+
+        # --- picture --------------------------------------------------------
+        clips = [s.lipsync_path or s.video_path for s in shots]
+        spec = {
+            "clips": [c for c in clips if c],
+            "fps": 24,
+            "subtitles": assets.subtitles,
+            "subtitles_burn": str(burn_in),
+            "audio": audio_track,
+            "music": assets.music,
+            "duck_db": self.thresholds.min_voice_over_music_db,
+            "height": self.config.frame_height,
+            "width": self.config.frame_width,
+            "safe_zones": {
+                "top": self.config.subtitle_text_top,
+                "bottom": self.config.subtitle_text_bottom,
+            },
+        }
+        out = self.workdir / "edit" / f"{reel_id}.mp4"
+        assets.edit = str(self.backends.editor.assemble(spec, out))
+        assets.final = assets.edit
+
+        # --- cover ----------------------------------------------------------
+        cover_at = min(1.0, max(0.2, shots[0].duration_s * 0.5)) if shots else 0.5
+        assets.cover = str(
+            self.backends.editor.extract_frame(
+                Path(assets.final), cover_at, self.workdir / "cover" / f"{reel_id}.jpg"
+            )
+        )
+
+    # ---- final QA --------------------------------------------------------
+    def _final_qa(
+        self,
+        reel_id: str,
+        brief: ReelBrief,
+        plan: Optional[ContentPlan],
+        assets: ReelAssets,
+        voice_results: Mapping[int, VoiceVerdict],
+        *,
+        perceptual_samples: Sequence[PerceptualSample],
+        cover_measurements: Mapping[str, Optional[float]],
+        repairs: list[dict],
+        diagnostic: bool = False,
+        carried_diagnoses: Sequence[ReelDiagnosis] = (),
+    ) -> ReelResult:
+        results: list[GateResult] = []
+        diagnoses: list[ReelDiagnosis] = list(carried_diagnoses)
+
+        def collect(outcome) -> None:
+            results.append(outcome.result)
+            diagnoses.extend(outcome.diagnoses)
+
+        results.append(
+            self.final_gate.decode_gate(assets.final, self.backends, self.thresholds)
+        )
+        collect(
+            self.story_critic.review(
+                brief, assets.shots, caption=plan.caption if plan else ""
+            )
+        )
+        collect(self.video_critic.review(assets.shots))
+        results.append(_voice_gate(voice_results))
+        collect(self.lipsync_critic.review(assets.shots))
+        results.append(_edit_gate(assets))
+
+        transcripts = [
+            v.artifact.transcript for v in voice_results.values() if v.artifact
+        ]
+        verified_speech = bool(transcripts) and all(t for t in transcripts)
+        spoken = " ".join(
+            (v.artifact.transcript or v.artifact.brief.text)
+            for v in voice_results.values()
+            if v.artifact
+        )
+        duration = sum(s.duration_s for s in assets.shots)
+        # Measured placement of the burned-in text, not the declared intention.
+        extent = getattr(
+            self,
+            "_subtitle_extent",
+            (self.config.subtitle_text_top, self.config.subtitle_text_bottom),
+        )
+        collect(
+            self.subtitle_critic.review(
+                assets.subtitles,
+                spoken_text=spoken,
+                language=brief.language,
+                video_duration_s=duration,
+                text_top=extent[0],
+                text_bottom=extent[1],
+                verified=verified_speech,
+            )
+        )
+        collect(
+            self.audio_critic.review(
+                voice_stem=assets.voice_clips.get("_track"),
+                music_stem=assets.music,
+                final_mix=_audio_for_analysis(assets),
+            )
+        )
+        collect(self.cover_critic.review(assets.cover, cover_measurements))
+        collect(self.perceptual_gate.review(perceptual_samples))
+
+        if diagnostic:
+            # A diagnostic run gathered evidence past a known block. It reports
+            # what it found and can never approve the Reel.
+            results.append(
+                GateResult(
+                    name="reel.production",
+                    verdict=Verdict.HOLD,
+                    critical=True,
+                    reason=(
+                        "diagnostic run: the pipeline continued past a blocking "
+                        "stage to collect evidence, so this result is never an "
+                        "approval"
+                    ),
+                )
+            )
+
+        report = self.final_gate.evaluate(results)
+        scores = _score_categories(report)
+
+        if report.passed and not diagnostic:
+            self._checkpoint(reel_id, StageState.FINAL_QA)
+            self._checkpoint(reel_id, StageState.READY_FOR_OWNER_REVIEW)
+            return ReelResult(
+                reel_id=reel_id,
+                verdict=Verdict.PASS,
+                stage=StageState.READY_FOR_OWNER_REVIEW,
+                brief=brief,
+                assets=assets,
+                report=report,
+                scores=scores,
+                reason=(
+                    f"all {len(FINAL_GATE_CATEGORIES)} critical categories passed; "
+                    f"state={TERMINAL_APPROVED_STATE} (publishing remains on HOLD)"
+                ),
+                owner=self.name,
+            )
+
+        decision: RepairDecision = self.repair_router.route(diagnoses)
+        repairs.append(
+            {
+                "blocking": [r.name for r in report.blocking],
+                **decision.to_dict(),
+            }
+        )
+        verdict = _blocked_verdict(report)
+        stage = StageState.HELD if verdict is Verdict.HOLD else StageState.FAILED
+        self._checkpoint(reel_id, stage, allow_regression=True)
+        return ReelResult(
+            reel_id=reel_id,
+            verdict=verdict,
+            stage=stage,
+            brief=brief,
+            assets=assets,
+            report=report,
+            diagnoses=diagnoses,
+            repairs=repairs,
+            scores=scores,
+            reason=(
+                "blocking: "
+                + ", ".join(f"{r.name}={r.verdict.value}" for r in report.blocking)
+            ),
+            owner=self.name,
+        )
+
+    # ---- reporting -------------------------------------------------------
+    def status(self, reel_id: str) -> dict:
+        cp = self.checkpoints.load(reel_id)
+        lease = self.ownership.current(reel_id)
+        return {
+            "reel_id": reel_id,
+            "stage": cp.stage.value if cp else StageState.CREATED.value,
+            "owner": lease.owner if lease else None,
+            "journal": self.checkpoints.journal(reel_id),
+            "publishing": "HOLD" if PUBLISHING_HOLD else "OPEN",
+            "gpu": self.gpu.status(),
+            "voice_backends": self.voice_team.backends.status(),
+            "reel_backends": self.backends.status(),
+        }
+
+
+# ---- gate helpers --------------------------------------------------------
+def _voice_gate(voice_results: Mapping[int, VoiceVerdict]) -> GateResult:
+    if not voice_results:
+        return GateResult(
+            name="reel.voice",
+            verdict=Verdict.MISSING,
+            critical=True,
+            reason="no voice was produced for this reel",
+        )
+    failing = [
+        (idx, v) for idx, v in voice_results.items() if v.verdict is not Verdict.PASS
+    ]
+    if failing:
+        return GateResult(
+            name="reel.voice",
+            verdict=Verdict.FAIL,
+            critical=True,
+            reason="; ".join(
+                f"shot {idx}: {v.verdict.value} {v.reason}" for idx, v in failing[:3]
+            ),
+        )
+    return GateResult(
+        name="reel.voice",
+        verdict=Verdict.PASS,
+        critical=True,
+        reason=f"{len(voice_results)} voice clip(s) passed every critical voice gate",
+    )
+
+
+def _edit_gate(assets: ReelAssets) -> GateResult:
+    if not assets.edit or not Path(assets.edit).exists():
+        return GateResult(
+            name="reel.edit",
+            verdict=Verdict.MISSING,
+            critical=True,
+            reason="no assembled edit exists",
+        )
+    first = assets.shots[0] if assets.shots else None
+    problems = []
+    if first is not None and first.duration_s > 3.0:
+        problems.append(f"opening shot runs {first.duration_s:.1f}s before the hook lands")
+    if len(assets.shots) < 3:
+        problems.append(f"only {len(assets.shots)} shots; a reel needs 3-6 meaningful shots")
+    if problems:
+        return GateResult(
+            name="reel.edit",
+            verdict=Verdict.FAIL,
+            critical=True,
+            reason="; ".join(problems),
+        )
+    return GateResult(
+        name="reel.edit",
+        verdict=Verdict.PASS,
+        critical=True,
+        reason=f"edit assembled from {len(assets.shots)} shots with a fast hook",
+    )
+
+
+def _audio_for_analysis(assets: ReelAssets) -> Optional[str]:
+    """The mixed WAV is what the loudness analyser can read directly.
+
+    The muxed MP4 is the deliverable, but PCM analysis needs the uncompressed
+    mix; they are the same programme, so measuring the mix is honest.
+    """
+    mix = Path(str(assets.edit or "")).parent.parent / "audio"
+    if assets.final:
+        candidate = mix / (Path(assets.final).stem + ".mix.wav")
+        if candidate.exists():
+            return str(candidate)
+    track = assets.voice_clips.get("_track")
+    return track
+
+
+def _blocked_verdict(report) -> Verdict:
+    verdicts = {r.verdict for r in report.blocking}
+    if verdicts & {Verdict.NOT_MEASURED, Verdict.MISSING, Verdict.ERROR}:
+        return Verdict.HOLD
+    return Verdict.FAIL
+
+
+#: Which FinalGate categories map onto the owner-facing 0-10 scorecard.
+_SCORE_MAP = {
+    "STORY": ("reel.story",),
+    "IDENTITY": ("reel.video",),
+    "VOICE": ("reel.voice",),
+    "LIPSYNC": ("reel.lipsync",),
+    "EDITING": ("reel.edit", "reel.subtitles", "reel.audio_mix"),
+    "COVER": ("reel.cover",),
+    "REALISM": ("reel.perceptual",),
+}
+
+
+def _score_categories(report) -> dict[str, Optional[float]]:
+    """Honest scorecard: a category that could not be measured scores ``None``.
+
+    It is never rendered as 0 and never as a passing number.
+    """
+
+    scores: dict[str, Optional[float]] = {}
+    for label, gates in _SCORE_MAP.items():
+        found = [report.by_name(g) for g in gates]
+        found = [f for f in found if f is not None]
+        if not found or any(
+            f.verdict in (Verdict.NOT_MEASURED, Verdict.MISSING, Verdict.ERROR)
+            for f in found
+        ):
+            scores[label] = None
+        elif all(f.verdict is Verdict.PASS for f in found):
+            scores[label] = 8.0  # floor for "passed every hard gate"
+        else:
+            scores[label] = 4.0
+    measured = [v for v in scores.values() if v is not None]
+    scores["OVERALL"] = (
+        round(sum(measured) / len(measured), 1) if len(measured) == len(_SCORE_MAP) else None
+    )
+    return scores

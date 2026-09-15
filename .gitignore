@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.venv/
+
+# Generated media and run state — artifacts are evidence, not source.
+/out/
+/work/
+*.mp4
+*.wav
+*.ppm
+*.srt
+*.ass
