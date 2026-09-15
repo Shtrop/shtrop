@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _console import force_utf8  # noqa: E402
 from ingest_insights import (  # noqa: E402
     ACCOUNT_FIELDS, POST_FIELDS, classify_source, discover, expand_insights,
     normalize_key, read_csv_rows,
@@ -103,6 +104,7 @@ def inspect_jsonl(path: Path) -> None:
 
 
 def main() -> int:
+    force_utf8()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--studio", type=Path, help="корень студии для автопоиска")
     parser.add_argument("--source", type=Path, action="append", default=[])

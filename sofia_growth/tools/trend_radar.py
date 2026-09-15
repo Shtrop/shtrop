@@ -73,6 +73,10 @@ KPI_BY_LEVER = {
 }
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _console import force_utf8  # noqa: E402
+
+
 def load_memory(path: Path) -> dict:
     """Growth memory необязательна: без неё скоринг остаётся чисто априорным."""
     if not path or not path.exists():
@@ -223,6 +227,7 @@ def render(radar: dict, backlog: list[dict], top: int, age: int | None, max_age:
 
 
 def main() -> int:
+    force_utf8()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     base = Path(__file__).resolve().parent.parent
     parser.add_argument("--radar", type=Path, default=base / "data" / "trend_radar.json")

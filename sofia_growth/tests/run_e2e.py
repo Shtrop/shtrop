@@ -33,8 +33,10 @@ def check(stage: str, condition: bool, detail: str) -> None:
     print(f"  [{'PASS' if condition else 'FAIL'}] {stage} — {detail}")
 
 
-def run(args: list[str], expect: tuple[int, ...] = (0,)) -> subprocess.CompletedProcess:
-    result = subprocess.run([sys.executable, *args], capture_output=True, text=True)
+def run(args: list[str], expect: tuple[int, ...] = (0,),
+        env: dict | None = None) -> subprocess.CompletedProcess:
+    result = subprocess.run([sys.executable, *args], capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", env=env)
     if result.returncode not in expect:
         print(result.stdout[-2000:], file=sys.stderr)
         print(result.stderr[-2000:], file=sys.stderr)
@@ -155,10 +157,11 @@ def main() -> int:
                       "--memory", work / "absent_memory.json",
                       "--plan-out", str(work / "plan_nodata.md")], expect=(0, 1))
         check("NO-DATA", "[BLOCKED] KPI" in result.stdout, "стадия KPI честно помечена BLOCKED")
-        check("NO-DATA", "FOLLOWERS BASELINE: NOT_MEASURED" in result.stdout,
-              "без данных baseline остаётся NOT_MEASURED, а не 0")
-        check("NO-DATA", "GROWTH LOOP: PARTIAL" in result.stdout,
-              "цикл без данных объявлен PARTIAL, а не VERIFIED")
+        check("NO-DATA", "ОТЧЁТ НЕ ПОСТРОЕН" in result.stdout
+              and "снимков с метриками нет" in result.stdout,
+              "без данных печатается причина, а не придуманный блок метрик")
+        check("NO-DATA", "SENDS PER REACH" not in result.stdout,
+              "несуществующие KPI не выводятся вовсе: отсутствие данных не имитируется отчётом")
 
         print(f"\n=== 8. Теневой контур не выдаётся за реальные метрики ===")
         shadow_dir = work / "evidence" / "learning_shadow" / "analytics"
@@ -336,7 +339,30 @@ def main() -> int:
         check("AUTO", json.loads(no_auto.read_text(encoding="utf-8"))["evidence_label"] != "REAL",
               "--no-auto-verify возвращает строгое поведение по маркерам пути")
 
-        print(f"\n=== 11. Изоляция: репозиторий не загрязнён ===")
+        print(f"\n=== 11. Отчёт не теряется и сбой не выдаётся за отсутствие данных ===")
+        import os
+        narrow = dict(os.environ)
+        narrow["PYTHONIOENCODING"] = "cp1251"
+        result = run([str(TOOLS / "growth_kpi.py"), "--snapshots", str(snapshots),
+                      "--days", "30", "--summary"], expect=(0, 1), env=narrow)
+        check("ENCODING", "FOLLOWERS BASELINE" in result.stdout,
+              "отчёт доходит целиком даже при узкой кодировке вывода (cp1251)")
+        check("ENCODING", "PROFILE" in result.stdout and "CONVERSION" in result.stdout,
+              "строка с символом → не обрывает вывод")
+
+        broken = work / "broken_snapshots.json"
+        broken.write_text("{ это не json", encoding="utf-8")
+        result = run([str(TOOLS / "growth_cycle.py"), "--snapshots", str(broken),
+                      "--memory", str(work / "broken_memory.json"),
+                      "--plan-out", str(work / "broken_plan.md")], expect=(2,))
+        check("HONESTY", "[FAILED] KPI" in result.stdout,
+              "упавший расчёт помечается FAILED, а не OK")
+        check("HONESTY", "ОТЧЁТ НЕ ПОСТРОЕН" in result.stdout,
+              "вместо отчёта печатается причина сбоя")
+        check("HONESTY", "FOLLOWERS BASELINE: NOT_MEASURED" not in result.stdout,
+              "сбой расчёта не выдаётся за NOT_MEASURED")
+
+        print(f"\n=== 12. Изоляция: репозиторий не загрязнён ===")
         real_snapshots = BASE / "data" / "followers_snapshots.json"
         check("ISOLATION", not real_snapshots.exists() or "SYNTHETIC" not in
               real_snapshots.read_text(encoding="utf-8"),

@@ -41,6 +41,10 @@ KPI_REGISTRY = (
 )
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _console import force_utf8  # noqa: E402
+
+
 def load(path: Path) -> dict:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -522,6 +526,7 @@ def atomic_write(path: Path, text: str) -> None:
 
 
 def main() -> int:
+    force_utf8()
     base = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--snapshots", type=Path, default=base / "data" / "followers_snapshots.json")

@@ -28,6 +28,10 @@ BASE = Path(__file__).resolve().parent.parent
 TOOLS = BASE / "tools"
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _console import force_utf8, run_tool  # noqa: E402
+
+
 class Stage:
     def __init__(self, name: str):
         self.name = name
@@ -39,14 +43,15 @@ class Stage:
 
 
 def run(args: list[str], expect: tuple[int, ...]) -> tuple[int, str, str]:
-    result = subprocess.run([sys.executable, *args], capture_output=True, text=True)
+    result = run_tool(args)
     if result.returncode not in expect:
         print(result.stdout[-1500:], file=sys.stderr)
         print(result.stderr[-1500:], file=sys.stderr)
-    return result.returncode, result.stdout, result.stderr
+    return result.returncode, result.stdout or "", result.stderr or ""
 
 
 def main() -> int:
+    force_utf8()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--studio", type=Path, help="корень студии для сбора Insights")
     parser.add_argument("--snapshots", type=Path, default=BASE / "data" / "followers_snapshots.json")
@@ -104,11 +109,18 @@ def main() -> int:
     kpi = Stage("KPI + GROWTH MEMORY")
     stages.append(kpi)
     summary = ""
+    kpi_error = ""
     if args.snapshots.exists():
         code, summary, err = run([str(TOOLS / "growth_kpi.py"), "--snapshots", str(args.snapshots),
                                   "--days", str(args.days), "--summary",
                                   "--write-memory", str(args.memory)], (0, 1, 2))
-        if code in (0, 1):
+        if not summary.strip():
+            # Молча подставить NOT_MEASURED вместо упавшего расчёта нельзя:
+            # это выдало бы сбой за отсутствие данных.
+            kpi.status = "FAILED"
+            kpi.detail = "расчёт не дал вывода — см. ошибку ниже"
+            kpi_error = (err or "").strip()
+        elif code in (0, 1):
             kpi.status = "OK"
             kpi.detail = ("все KPI измерены" if code == 0 else "часть KPI NOT_MEASURED")
         else:
@@ -143,21 +155,26 @@ def main() -> int:
     print("\n=== Отчёт владельцу ===\n")
     if summary.strip():
         print(summary.strip())
+    elif kpi_error:
+        print("ОТЧЁТ НЕ ПОСТРОЕН: расчёт KPI завершился ошибкой.")
+        print("Подставлять NOT_MEASURED вместо упавшего расчёта нельзя — это разные вещи.")
+        print("\nОшибка:")
+        for line in kpi_error.splitlines()[-12:]:
+            print(f"  {line}")
     else:
-        print("FOLLOWERS BASELINE: NOT_MEASURED\n30D GROWTH: NOT_MEASURED\nREACH: NOT_MEASURED\n"
-              "FOLLOWS PER REACH: NOT_MEASURED\nPROFILE→FOLLOW CONVERSION: NOT_MEASURED\n"
-              "SENDS PER REACH: NOT_MEASURED\nSAVES PER REACH: NOT_MEASURED\n\n"
-              "MEASURED KPI: —\nNOT MEASURED KPI: все\n\nGROWTH LOOP: PARTIAL\n\n"
-              "REAL DATA SOURCE: NOT_MEASURED")
+        print("ОТЧЁТ НЕ ПОСТРОЕН: снимков с метриками нет.")
+        print("Сначала собрать Insights: tools/ingest_insights.py --studio <корень студии>.")
 
     print("\n=== Топ бэклога ===\n")
     table = [line for line in backlog_text.splitlines() if line.startswith("|")]
     print("\n".join(table) if table else "NOT_MEASURED: бэклог пуст")
 
     blocked = [stage for stage in stages if stage.status == "BLOCKED"]
+    failed = [stage for stage in stages if stage.status == "FAILED"]
     print(f"\nСтадий OK: {sum(1 for s in stages if s.status == 'OK')}/{len(stages)}"
-          + (f", BLOCKED: {len(blocked)}" if blocked else ""))
-    return 1 if blocked else 0
+          + (f", BLOCKED: {len(blocked)}" if blocked else "")
+          + (f", FAILED: {len(failed)}" if failed else ""))
+    return 2 if failed else (1 if blocked else 0)
 
 
 if __name__ == "__main__":

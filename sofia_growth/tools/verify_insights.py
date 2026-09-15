@@ -23,6 +23,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _console import force_utf8  # noqa: E402
 from ingest_insights import (  # noqa: E402
     ID_MATCH_THRESHOLD as MATCH_THRESHOLD,
     classify_source, discover, is_post_record, published_ids, read_source,
@@ -30,6 +31,7 @@ from ingest_insights import (  # noqa: E402
 
 
 def main() -> int:
+    force_utf8()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--studio", type=Path, help="корень студии для автопоиска")
     parser.add_argument("--insights", type=Path, action="append", default=[],

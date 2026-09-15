@@ -22,6 +22,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _console import force_utf8  # noqa: E402
 from ingest_insights import classify_source, discover  # noqa: E402
 
 # Колонки, непустое значение в которых означает состоявшуюся удалённую публикацию.
@@ -88,6 +89,7 @@ def inspect(path: Path) -> dict:
 
 
 def main() -> int:
+    force_utf8()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--studio", type=Path, help="корень студии для автопоиска")
     parser.add_argument("--source", type=Path, action="append", default=[])

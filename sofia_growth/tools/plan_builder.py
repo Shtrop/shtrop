@@ -29,6 +29,10 @@ CAROUSEL_FORMAT = "fmt-saveable-carousel"
 EXPERIMENT_SHARE = 0.2  # правило 80/20
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _console import force_utf8, run_tool  # noqa: E402
+
+
 def load_json(path: Path, default=None):
     if not path.exists():
         return default
@@ -40,10 +44,9 @@ def load_json(path: Path, default=None):
 
 def backlog_from_radar(tools: Path, radar: Path, guardrails: Path, memory: Path) -> list[dict]:
     """Переиспользует trend_radar.py как единственный источник приоритета."""
-    result = subprocess.run(
-        [sys.executable, str(tools / "trend_radar.py"), "--json",
-         "--radar", str(radar), "--guardrails", str(guardrails), "--memory", str(memory)],
-        capture_output=True, text=True)
+    result = run_tool([str(tools / "trend_radar.py"), "--json",
+                       "--radar", str(radar), "--guardrails", str(guardrails),
+                       "--memory", str(memory)])
     if result.returncode not in (0, 2):
         sys.exit(f"FAIL: trend_radar.py вернул {result.returncode}\n{result.stderr[-800:]}")
     payload = json.loads(result.stdout)
@@ -236,6 +239,7 @@ def build(args) -> str:
 
 
 def main() -> int:
+    force_utf8()
     base = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--radar", type=Path, default=base / "data" / "trend_radar.json")

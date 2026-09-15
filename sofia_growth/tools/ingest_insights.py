@@ -105,6 +105,10 @@ SHADOW_MARKERS = (
 NULLISH = {"", "none", "null", "n/a", "na", "nan", "-", "unknown", "undefined"}
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _console import force_utf8  # noqa: E402
+
+
 def normalize_key(raw: str) -> str | None:
     key = str(raw).strip().lower().replace(" ", "_").replace("-", "_")
     return REVERSE_ALIAS.get(key)
@@ -519,6 +523,7 @@ def atomic_write(path: Path, text: str) -> None:
 
 
 def main() -> int:
+    force_utf8()
     base = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--studio", type=Path, default=Path(r"D:\AI_CONTENT\Sofia"),
