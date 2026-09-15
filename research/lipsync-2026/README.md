@@ -150,19 +150,37 @@ git с `core.autocrlf=true` переписывает `.patch` в CRLF, и тог
 | `kit/preflight.py` | python 3.10–3.12, torch с CUDA (ловит CPU-сборку), поддержка `sm_` карты этой сборкой torch, свободная VRAM и кто её держит, место под веса, ffmpeg, attention-бэкенд, наложен ли патч. Ничего не меняет, коды: 0 / 1 |
 | `kit/install_torch.py` | ставит сборку torch под архитектуру карты: Blackwell (RTX 50xx, `sm_120`) требует torch ≥2.7 и колёс cu128+, на cu124 прогон падает на первом ядре |
 | `kit/torch_constraints.py` | pip-constraints с уже установленными torch-пакетами, чтобы установка requirements не подменила CUDA-сборку колесом с PyPI |
-| `kit/fix_attention_backend.py` | смотрит, что из fa3 / fa2 / xformers реально импортируется, и приводит флаги в `config.json` весов к этому. Атомарная запись, старый файл сохраняется как `.bak-<timestamp>`, существующие бэкапы не затираются |
+| `kit/fix_attention_backend.py` | смотрит, что из fa3 / fa2 / xformers реально импортируется, и приводит флаги в `config.json` весов к этому. Атомарная запись, старый файл сохраняется как `.bak-<timestamp>`, существующие бэкапы не затираются. Если не установлено ни flash-attn, ни xformers — ошибка, конфиги не трогаются |
 | `kit/bench_longcat.py` | преконтроль → подгонка бэкенда → прогон → `report.json` с вердиктом |
 
 Ручной шаг остался один: скачать веса (`-Weights`) и запустить замер.
 
-### Две ловушки, найденные на реальном железе студии (RTX 5090)
+### Запасной ветки attention в LongCat нет
+
+Поправка к более ранней формулировке в этом файле: «работает ветка xformers/обычного
+attention» — неверно. В `Attention._attn` ветки идут `bsa → fa3 → fa2 → xformers → else`,
+и `else` — это `raise RuntimeError("Unsupported attention operations.")`
+(`longcat_video/modules/attention.py:104` и `:249`, `modules/avatar/attention.py:115`).
+Значит **flash-attn или xformers обязателен**: при всех флагах `False` прогон падает
+в forward. Поэтому преконтроль считает их отсутствие блокером, а `fix_attention_backend.py`
+в этом случае отказывается править конфиги.
+
+### Ловушки, найденные на реальном железе студии (RTX 5090)
 
 1. **Установка requirements затирает CUDA-сборку torch.** Колёса torch с PyPI под Windows
    собраны без CUDA, и `pip install -r` подменяет ими рабочую сборку — после этого
    `torch.cuda.is_available()` отдаёт False. Теперь строки `torch`, `torchvision`,
    `torchaudio` вырезаются из requirements, а установка идёт с pip-constraints,
    фиксирующими уже стоящие версии.
-2. **RTX 50xx требует cu128+.** Blackwell — это `sm_120`, его поддержка появилась
+2. **Спутники torch обязаны быть из того же канала.** После переустановки torch остался
+   `torchvision` от прежней версии, и импорт упал с
+   `RuntimeError: operator torchvision::nms does not exist`. `install_torch.py` теперь
+   переставляет `torchvision`/`torchaudio` из того же канала, если они установлены.
+3. **`torchrun` на Windows требует `USE_LIBUV=0`.** Сборки torch под Windows идут без libuv,
+   а rendezvous по умолчанию его просит:
+   `DistStoreError: use_libuv was requested but PyTorch was built without libuv support`.
+   `bench_longcat.py` выставляет переменную сам.
+4. **RTX 50xx требует cu128+.** Blackwell — это `sm_120`, его поддержка появилась
    только в torch 2.7 с колёсами CUDA 12.8; закреплённый в `requirements.txt`
    `torch==2.6.0+cu124` на такой карте не запустится. Преконтроль сверяет
    `torch.cuda.get_device_capability()` со списком `torch.cuda.get_arch_list()`
