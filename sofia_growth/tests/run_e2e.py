@@ -116,11 +116,58 @@ def main() -> int:
                               for i in informed["backlog"] if i.get("measured") is None),
               "неизмеренные форматы остались PREDICTED")
 
-        print(f"\n=== 5. Изоляция: репозиторий не загрязнён ===")
+        print(f"\n=== 5. NEXT DECISION → CONTENT PLAN ===")
+        plan_blind = work / "plan_blind.md"
+        plan_informed = work / "plan_informed.md"
+        run([str(TOOLS / "plan_builder.py"), "--memory", str(work / "no_memory.json"),
+             "--days", "14", "--start", "2026-09-16", "--out", str(plan_blind)])
+        run([str(TOOLS / "plan_builder.py"), "--memory", str(memory),
+             "--days", "14", "--start", "2026-09-16", "--out", str(plan_informed)])
+        blind_text = plan_blind.read_text(encoding="utf-8")
+        informed_text = plan_informed.read_text(encoding="utf-8")
+        check("PLAN", "REAL · SCALE" not in blind_text,
+              "без замеров план целиком PREDICTED")
+        check("PLAN", "REAL · SCALE" in informed_text,
+              "после замеров подтверждённый формат помечен REAL")
+        check("PLAN", "Исключено по данным" in informed_text
+              and "this-or-that" in informed_text.split("Исключено по данным")[1],
+              "формат с вердиктом DROP исключён из слотов с указанием причины")
+        slots = informed_text.split("## Гипотезы")[0]
+        check("PLAN", "this-or-that" not in slots, "DROP-формат не попал ни в один слот")
+        check("PLAN", "1325 подписчиков" in informed_text,
+              "baseline из памяти подставлен в критерии плана")
+
+        print(f"\n=== 6. Полный цикл одной командой ===")
+        cycle_snapshots = work / "cycle_snapshots.json"
+        cycle_memory = work / "cycle_memory.json"
+        cycle_plan = work / "cycle_plan.md"
+        result = run([str(TOOLS / "growth_cycle.py"), "--studio", str(fixtures),
+                      "--snapshots", str(cycle_snapshots), "--memory", str(cycle_memory),
+                      "--plan-out", str(cycle_plan), "--account", "SYNTHETIC_TEST"], expect=(0, 1))
+        check("CYCLE", result.stdout.count("[OK]") == 4, "все 4 стадии цикла прошли")
+        check("CYCLE", "FOLLOWERS BASELINE: 1325" in result.stdout,
+              "отчёт владельцу содержит реальный baseline")
+        check("CYCLE", cycle_plan.exists() and cycle_plan.stat().st_size > 0,
+              "план создан автоматически")
+
+        print(f"\n=== 7. Цикл без данных остаётся честным ===")
+        result = run([str(TOOLS / "growth_cycle.py"), "--snapshots", work / "absent.json",
+                      "--memory", work / "absent_memory.json",
+                      "--plan-out", str(work / "plan_nodata.md")], expect=(0, 1))
+        check("NO-DATA", "[BLOCKED] KPI" in result.stdout, "стадия KPI честно помечена BLOCKED")
+        check("NO-DATA", "FOLLOWERS BASELINE: NOT_MEASURED" in result.stdout,
+              "без данных baseline остаётся NOT_MEASURED, а не 0")
+        check("NO-DATA", "GROWTH LOOP: PARTIAL" in result.stdout,
+              "цикл без данных объявлен PARTIAL, а не VERIFIED")
+
+        print(f"\n=== 8. Изоляция: репозиторий не загрязнён ===")
         real_snapshots = BASE / "data" / "followers_snapshots.json"
         check("ISOLATION", not real_snapshots.exists() or "SYNTHETIC" not in
               real_snapshots.read_text(encoding="utf-8"),
               "синтетика не попала в data/followers_snapshots.json")
+
+        check("ISOLATION", not (BASE / "plans" / "CONTENT_PLAN_2026-09-16_14d.md").exists(),
+              "тестовые планы не записаны в plans/")
 
     print("\n" + "=" * 60)
     print(f"PASS: {len(PASSED)}   FAIL: {len(FAILED)}")
