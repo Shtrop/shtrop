@@ -26,8 +26,9 @@
 | `tools/publish_evidence.py` | Отвечает, были ли реальные внешние публикации |
 | `tools/publish_funnel.py` | Где умирает контент в воронке и почему нет Reels |
 | `tools/publish_doctor.py` | Диагноз по каждому блокеру и конкретное исправление |
+| `tools/blocker_status.py` | Сдвинулись ли блокеры с прошлого прогона |
 | `tools/verify_insights.py` | Сверяет media_id выгрузки с журналом публикаций |
-| `tests/run_e2e.py` | Проверка всей цепочки на синтетике (82 проверки) |
+| `tests/run_e2e.py` | Проверка всей цепочки на синтетике (93 проверки) |
 | `tests/make_fixtures.py` | Генератор синтетических источников для E2E |
 | `docs/DATA_SOURCES.md` | **Как дать движку реальные метрики** — начинать отсюда |
 | `data/followers_snapshots.json` | Реальные снимки аккаунта (создаётся ingest-скриптом) |
@@ -45,8 +46,9 @@
 [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md).
 
 ```bash
-# Весь цикл: Insights → KPI → память → бэклог → план → отчёт владельцу
-python3 sofia_growth/tools/growth_cycle.py --studio "D:\AI_CONTENT\Sofia"
+# Весь цикл: блокеры → Insights → KPI → память → бэклог → план → отчёт
+python3 sofia_growth/tools/growth_cycle.py --studio "D:\AI_CONTENT\Sofia" \
+    --media-dir "D:\AI_CONTENT\Sofia\video_ready"
 
 # Проверить, что цикл цел (синтетика, реальные данные не трогает)
 python3 sofia_growth/tests/run_e2e.py

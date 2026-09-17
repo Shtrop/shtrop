@@ -61,6 +61,11 @@ def main() -> int:
     parser.add_argument("--plan-days", type=int, default=14, help="горизонт плана")
     parser.add_argument("--plan-out", type=Path, help="куда записать план (по умолчанию plans/<дата>)")
     parser.add_argument("--account", default="", help="handle аккаунта")
+    parser.add_argument("--media-dir", type=Path,
+                        help="каталог с готовым медиа для проверки формата")
+    parser.add_argument("--blocker-history", type=Path,
+                        default=BASE / "data" / "blocker_status.json",
+                        help="где хранить историю состояния блокеров")
     parser.add_argument("--trust", type=Path, action="append", default=[],
                         help="явно доверять источнику вопреки маркерам пути")
     args = parser.parse_args()
@@ -81,6 +86,25 @@ def main() -> int:
     else:
         publishes.detail = "--studio не задан"
     print(publishes.line())
+
+    # 0b. Сдвинулись ли блокеры — рост упирается в них, а не в метрики.
+    blockers = Stage("BLOCKERS — сдвинулись ли блокеры публикации")
+    stages.append(blockers)
+    if args.studio:
+        blocker_args = [str(TOOLS / "blocker_status.py"), "--studio", str(args.studio),
+                        "--history", str(args.blocker_history)]
+        if args.media_dir:
+            blocker_args += ["--media-dir", str(args.media_dir)]
+        code, out, _ = run(blocker_args, (0, 1, 2))
+        state = next((line.split(":", 1)[1].strip() for line in out.splitlines()
+                      if "ВЕРДИКТ:" in line), "?")
+        blockers.status = "OK" if code in (0, 1) else "BLOCKED"
+        blockers.detail = state
+        blocker_report = out
+    else:
+        blocker_report = ""
+        blockers.detail = "--studio не задан"
+    print(blockers.line())
 
     # 1. INSIGHTS
     ingest = Stage("INSIGHTS — сбор выгрузок")
@@ -165,6 +189,11 @@ def main() -> int:
     else:
         print("ОТЧЁТ НЕ ПОСТРОЕН: снимков с метриками нет.")
         print("Сначала собрать Insights: tools/ingest_insights.py --studio <корень студии>.")
+
+    if blocker_report.strip():
+        print("\n=== Блокеры публикации ===\n")
+        body = blocker_report.split("=== Состояние блокеров публикации ===", 1)[-1]
+        print(body.strip())
 
     print("\n=== Топ бэклога ===\n")
     table = [line for line in backlog_text.splitlines() if line.startswith("|")]

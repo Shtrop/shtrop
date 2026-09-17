@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 *.tmp
 sofia_growth/data/followers_snapshots.json
+sofia_growth/data/blocker_status.json

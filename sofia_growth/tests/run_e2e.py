@@ -145,8 +145,9 @@ def main() -> int:
         cycle_plan = work / "cycle_plan.md"
         result = run([str(TOOLS / "growth_cycle.py"), "--studio", str(fixtures),
                       "--snapshots", str(cycle_snapshots), "--memory", str(cycle_memory),
-                      "--plan-out", str(cycle_plan), "--account", "SYNTHETIC_TEST"], expect=(0, 1))
-        check("CYCLE", result.stdout.count("[OK]") == 4, "все 4 стадии цикла прошли")
+                      "--plan-out", str(cycle_plan), "--account", "SYNTHETIC_TEST",
+                      "--blocker-history", str(work / "cycle_blockers.json")], expect=(0, 1))
+        check("CYCLE", result.stdout.count("[OK]") == 5, "все 5 стадий цикла прошли")
         check("CYCLE", "FOLLOWERS BASELINE: 1325" in result.stdout,
               "отчёт владельцу содержит реальный baseline")
         check("CYCLE", cycle_plan.exists() and cycle_plan.stat().st_size > 0,
@@ -155,7 +156,8 @@ def main() -> int:
         print(f"\n=== 7. Цикл без данных остаётся честным ===")
         result = run([str(TOOLS / "growth_cycle.py"), "--snapshots", work / "absent.json",
                       "--memory", work / "absent_memory.json",
-                      "--plan-out", str(work / "plan_nodata.md")], expect=(0, 1))
+                      "--plan-out", str(work / "plan_nodata.md"),
+                      "--blocker-history", str(work / "nodata_blockers.json")], expect=(0, 1))
         check("NO-DATA", "[BLOCKED] KPI" in result.stdout, "стадия KPI честно помечена BLOCKED")
         check("NO-DATA", "ОТЧЁТ НЕ ПОСТРОЕН" in result.stdout
               and "снимков с метриками нет" in result.stdout,
@@ -354,7 +356,8 @@ def main() -> int:
         broken.write_text("{ это не json", encoding="utf-8")
         result = run([str(TOOLS / "growth_cycle.py"), "--snapshots", str(broken),
                       "--memory", str(work / "broken_memory.json"),
-                      "--plan-out", str(work / "broken_plan.md")], expect=(2,))
+                      "--plan-out", str(work / "broken_plan.md"),
+                      "--blocker-history", str(work / "broken_blockers.json")], expect=(2,))
         check("HONESTY", "[FAILED] KPI" in result.stdout,
               "упавший расчёт помечается FAILED, а не OK")
         check("HONESTY", "ОТЧЁТ НЕ ПОСТРОЕН" in result.stdout,
@@ -575,7 +578,64 @@ def main() -> int:
         check("DOCTOR", "1080×1920" in report,
               "целевой рендер закрывает и соотношение, и разрешение сразу")
 
-        print(f"\n=== 16. Изоляция: репозиторий не загрязнён ===")
+        print(f"\n=== 16. Трекер блокеров: сдвиг виден между прогонами ===")
+        bl_studio = work / "blockers" / "studio"
+        bl_studio.mkdir(parents=True)
+        bl_history = work / "blocker_history.json"
+        bl_media = work / "blockers" / "media"
+        bl_media.mkdir(parents=True)
+
+        def seed_queue(path, plan, evidence_rows):
+            if path.exists():
+                path.unlink()
+            conn = sqlite3.connect(path)
+            conn.execute("CREATE TABLE content_items (id INTEGER, created_at TEXT, "
+                         "type TEXT, status TEXT, error_message TEXT)")
+            seeded, index = [], 0
+            for kind, status, count in plan:
+                for _ in range(count):
+                    index += 1
+                    seeded.append((index, "2026-09-01", kind, status, None))
+            for _ in range(evidence_rows):
+                index += 1
+                seeded.append((index, "2026-09-01", "story", "review",
+                               "approval demoted to review: gate_failed:world_class_gate; "
+                               "evidence_missing:caption_guard; evidence_missing:duplicate; "
+                               "evidence_missing:identity; evidence_missing:nsfw; "
+                               "evidence_missing:realism"))
+            conn.executemany("INSERT INTO content_items VALUES (?,?,?,?,?)", seeded)
+            conn.commit()
+            conn.close()
+
+        queue_path = bl_studio / "content_queue.db"
+        seed_queue(queue_path, [("story", "published", 8), ("reel", "review_needed", 9)], 6)
+        write_png(bl_media / "sofia_reel_low.png", 480, 832)
+
+        result = run([str(TOOLS / "blocker_status.py"), "--studio", str(bl_studio),
+                      "--media-dir", str(bl_media), "--history", str(bl_history)], expect=(1,))
+        check("BLOCKERS", "ВЕРДИКТ: BLOCKED" in result.stdout,
+              "открытые блокеры дают вердикт BLOCKED")
+        check("BLOCKERS", "опубликовано 0" in result.stdout,
+              "неопубликованные Reels названы как блокер нефолловерского охвата")
+        check("BLOCKERS", "Первый снимок" in result.stdout,
+              "первый прогон честно говорит, что сравнивать не с чем")
+
+        # Починка: Reels пошли, формат исправлен, разжалований меньше.
+        seed_queue(queue_path, [("story", "published", 8), ("reel", "published", 5),
+                                ("reel", "review_needed", 4)], 1)
+        (bl_media / "sofia_reel_low.png").unlink()
+        write_png(bl_media / "sofia_reel_ok.png", 1080, 1350)
+        result = run([str(TOOLS / "blocker_status.py"), "--studio", str(bl_studio),
+                      "--media-dir", str(bl_media), "--history", str(bl_history)], expect=(0, 1))
+        check("BLOCKERS", "(+5)" in result.stdout,
+              "прирост опубликованных Reels показан как дельта к прошлому снимку")
+        check("BLOCKERS", "Сравнение с" in result.stdout,
+              "второй прогон сравнивается с сохранённым снимком")
+        history = json.loads(bl_history.read_text(encoding="utf-8"))
+        check("BLOCKERS", len(history["snapshots"]) == 2,
+              "история накапливает снимки для отслеживания динамики")
+
+        print(f"\n=== 17. Изоляция: репозиторий не загрязнён ===")
         real_snapshots = BASE / "data" / "followers_snapshots.json"
         check("ISOLATION", not real_snapshots.exists() or "SYNTHETIC" not in
               real_snapshots.read_text(encoding="utf-8"),
@@ -583,6 +643,8 @@ def main() -> int:
 
         check("ISOLATION", not (BASE / "plans" / "CONTENT_PLAN_2026-09-16_14d.md").exists(),
               "тестовые планы не записаны в plans/")
+        check("ISOLATION", not (BASE / "data" / "blocker_status.json").exists(),
+              "история блокеров из тестов не попала в data/")
 
     print("\n" + "=" * 60)
     print(f"PASS: {len(PASSED)}   FAIL: {len(FAILED)}")
