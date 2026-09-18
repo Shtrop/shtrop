@@ -26,17 +26,19 @@ def load(path: Path) -> dict:
 
 
 def compose_prompt(lock: dict, session: dict, shot: dict) -> str:
-    """Финальный positive prompt: личность -> гардероб -> поза -> кадр -> свет -> сцена -> качество."""
+    """Финальный positive prompt: личность -> гардероб -> поза -> подача -> кадр -> свет -> сцена -> качество."""
     parts = [
         lock["persona"]["identity_prompt"],
         session["wardrobe"]["prompt"],
         shot["pose"],
+        session.get("allure", ""),
         shot["camera"],
         shot["light"],
         session["location"]["prompt"],
     ]
     if shot.get("headphones"):
         parts.insert(2, "white over-ear headphones resting around her neck")
+    parts.append(lock.get("allure_tail", ""))
     parts.append(lock["quality_tail"])
     return ", ".join(p.strip().rstrip(",") for p in parts if p)
 
@@ -56,6 +58,12 @@ def render_brief(lock: dict, session: dict, jobs: list[dict]) -> str:
         f"**Референс:** {session['reference_source']}",
         "",
         f"**Настроение:** {session['mood_ru']}",
+        "",
+        "**Подача (слой на каждом кадре):**",
+        "",
+        "```text",
+        session.get("allure", "—"),
+        "```",
         "",
         "## Гардероб (единый для всех кадров)",
         "",

@@ -29,11 +29,11 @@
     "gpu": "RTX 5090 32GB — один GPU job за раз, проверять gpu_resource_scheduler"
   },
   "quality_tail": "photorealistic editorial photograph, natural skin texture with visible pores and fine detail, realistic subsurface scattering, film-like color grading, sharp focus on eyes, shallow depth of field, high dynamic range, shot on full-frame mirrorless camera, 4k detail",
-  "negative_prompt": "deformed hands, extra fingers, missing fingers, fused fingers, extra limbs, malformed anatomy, asymmetric eyes, crossed eyes, plastic skin, waxy skin, airbrushed skin, over-smoothed, doll-like, uncanny valley, cgi render, 3d render, cartoon, anime, illustration, painting, watermark, text artifacts, logo, signature, jpeg artifacts, oversaturated, blown highlights, harsh direct flash, distorted face, warped background lines, floating objects, duplicated limbs, mismatched earrings, inconsistent jewelry, nudity, explicit content, underwear as outerwear, see-through fabric, minors",
+  "negative_prompt": "deformed hands, extra fingers, missing fingers, fused fingers, extra limbs, malformed anatomy, asymmetric eyes, crossed eyes, plastic skin, waxy skin, airbrushed skin, over-smoothed, doll-like, uncanny valley, cgi render, 3d render, cartoon, anime, illustration, painting, watermark, text artifacts, logo, signature, jpeg artifacts, oversaturated, blown highlights, harsh direct flash, distorted face, warped background lines, floating objects, duplicated limbs, mismatched earrings, inconsistent jewelry, nudity, explicit content, see-through fabric, minors, shapeless baggy silhouette, flat lifeless posing, shy closed-off body language",
   "content_policy": {
-    "rating": "SFW lifestyle / fitness / cozy-home editorial",
+    "rating": "Suggestive glamour lifestyle / fitness (clothed, non-explicit)",
     "rules_ru": [
-      "Одежда всегда полностью надета и непрозрачная: спортивный топ, пижама, худи/халат.",
+      "Подача откровенная и соблазнительная, как на референсах, но одежда всегда надета и непрозрачная: спортивный топ, пижама, худи/халат. Декольте, талия, ноги, изгиб спины — допустимые акценты.",
       "Никакого explicit-контента, никакого namёka на несовершеннолетних — персона канонически 26 лет.",
       "Не использовать внешность реальных публичных людей: только каноническая Sofia LoRA.",
       "Caption/публикация проходят штатный Master Publish Gate — этот пакет только локальные промпты."
@@ -45,5 +45,6 @@
     "continuity: один и тот же наряд и причёска внутри сессии, одна и та же цепочка со звездой",
     "brand_safety: SFW, без логотипов брендов и читаемого текста в кадре",
     "photo_regen: авто-перегенерация кадра при FAIL, не подмена соседним кадром"
-  ]
+  ],
+  "allure_tail": "tasteful suggestive glamour editorial, sensual magazine styling, body-conscious flattering framing that emphasises her hourglass figure, dewy glossy skin, soft sculpting light on the curves, confident alluring presence"
 }

@@ -9,7 +9,7 @@
   "aspect": "4:5",
   "wardrobe": {
     "code": "D",
-    "prompt": "oversized cream cotton hoodie slipping off one shoulder, white ribbed boxer-style sleep shorts, slouchy white crew socks, thin silver chain with small star pendant, dark brown messy high bun with loose strands, bare face no-makeup look with soft morning puffiness",
+    "prompt": "oversized cream cotton hoodie slipping far off one bare shoulder, white ribbed boxer-style sleep shorts, slouchy white crew socks, thin silver chain with small star pendant, dark brown messy high bun with loose strands, bare face no-makeup look with soft morning puffiness",
     "notes_ru": "Худи всегда спущено с одного плеча, под ним видна бретель топа. Босиком в носках, без обуви."
   },
   "location": {
@@ -48,7 +48,7 @@
       "id": "S04-04",
       "priority": "core",
       "title_ru": "Кофемашина, пар, ожидание",
-      "pose": "leaning both forearms on the counter beside the espresso machine, watching the coffee pour into the cup, chin resting on one hand, patient sleepy expression, not looking at the camera",
+      "pose": "leaning forward with both forearms on the counter beside the espresso machine, back arched and hips pushed back, watching the coffee pour, head turned to the camera with a slow sleepy look",
       "camera": "50mm lens, eye level, side three-quarter angle, waist-up framing",
       "light": "warm kitchen lamp mixing with cool window light, steam catching a highlight above the cup",
       "headphones": true
@@ -66,7 +66,7 @@
       "id": "S04-06",
       "priority": "core",
       "title_ru": "Сидит на полу у шкафа",
-      "pose": "sitting on the warm oak floor with her back against the lower cabinets, knees pulled up, mug balanced on one knee, head tipped back against the cabinet door, eyes closed in the sun",
+      "pose": "sitting on the warm oak floor with her back against the lower cabinets, one long bare leg extended and the other knee drawn up, hoodie slipping off the shoulder, mug on her knee, head tipped back with eyes half closed",
       "camera": "35mm lens, low camera at floor level, frontal, full body framing",
       "light": "a single warm shaft of morning sun falling across her face and the floor, rest of the kitchen in soft shade",
       "headphones": false
@@ -107,5 +107,6 @@
       "light": "dark hallway foreground framing a bright sunlit kitchen, strong luminance contrast between the two",
       "headphones": false
     }
-  ]
+  ],
+  "allure": "intimate just-woken mood, oversized hoodie slipping far off one shoulder, long bare legs, sleepy bedroom eyes, soft unguarded sensuality"
 }

@@ -9,7 +9,7 @@
   "aspect": "4:5",
   "wardrobe": {
     "code": "A",
-    "prompt": "dusty mauve seamless scoop-neck sports bra with thin spaghetti straps, oversized light heather grey wide-leg cotton sweatpants with white drawstring, white low-profile sneakers, thin silver chain with small star pendant, dark brown messy high bun with damp loose face-framing strands, no makeup look with glossy skin",
+    "prompt": "tight dusty mauve seamless sports bra with a deep scoop neckline with thin spaghetti straps, oversized light heather grey wide-leg cotton sweatpants with white drawstring, white low-profile sneakers, thin silver chain with small star pendant, dark brown messy high bun with damp loose face-framing strands, no makeup look with glossy skin",
     "notes_ru": "Один и тот же комплект во всех 10 кадрах. Пыльно-сиреневый топ + светло-серые широкие джоггеры."
   },
   "location": {
@@ -107,5 +107,6 @@
       "light": "warm sunset flare blooming behind her shoulder, soft frontal fill, glowing dust in the air",
       "headphones": true
     }
-  ]
+  ],
+  "allure": "athletic glamour mood, deep scoop neckline of the sports bra, toned waist and shoulders on display, sweat-glossed skin catching the light, strong arched posture, direct sultry eye contact"
 }

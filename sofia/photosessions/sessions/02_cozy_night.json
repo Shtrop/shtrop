@@ -9,7 +9,7 @@
   "aspect": "4:5",
   "wardrobe": {
     "code": "B",
-    "prompt": "cream white cropped camisole with tiny pink ditsy floral print and thin adjustable straps, matching white ruffled-hem pajama shorts with a small pink heart print and a little satin bow at the waistband, cream knit knee-high socks with pink bows at the cuff, thin silver chain with small star pendant, dark brown messy high bun with loose strands, soft natural makeup with flushed cheeks",
+    "prompt": "fitted cream white cropped camisole with tiny pink ditsy floral print and thin adjustable straps, matching white ruffled-hem pajama shorts with a small pink heart print and a little satin bow at the waistband, cream knit knee-high socks with pink bows at the cuff, thin silver chain with small star pendant, dark brown messy high bun with loose strands, soft natural makeup with flushed cheeks",
     "notes_ru": "Ткань плотная, непрозрачная. Гольфы и бантики — обязательный continuity-маркер сессии."
   },
   "location": {
@@ -107,5 +107,6 @@
       "light": "room mostly dark, laptop and fairy lights as the only warm sources, city window glowing cool behind her",
       "headphones": true
     }
-  ]
+  ],
+  "allure": "flirtatious intimate mood, soft pajama set hugging her curves, deeply arched lower back, long bare legs and thighs, teasing half-lidded glance over the shoulder"
 }
