@@ -25,5 +25,15 @@
 | `S19` Изумрудное кружево и пояс | S | 10 | 2 | [`emerald_lace_vanity/`](emerald_lace_vanity/BRIEF.md) |
 | `S20` Кружевное боди в бархате | T | 10 | 2 | [`lace_bodysuit_velvet/`](lace_bodysuit_velvet/BRIEF.md) |
 | `S21` Красное кружево в отеле | U | 10 | 2 | [`red_lace_hotel/`](red_lace_hotel/BRIEF.md) |
+| `S22` Сатиновая комбинация | V | 8 | 2 | [`champagne_satin/`](champagne_satin/BRIEF.md) |
+| `S23` Чёрный бюстье в лофте | W | 8 | 2 | [`black_bustier_loft/`](black_bustier_loft/BRIEF.md) |
+| `S24` Шёлк на террасе ночью | X | 8 | 2 | [`silk_terrace_night/`](silk_terrace_night/BRIEF.md) |
+| `S25` Мокко и шёлковый халат | Y | 8 | 2 | [`mocha_robe_closet/`](mocha_robe_closet/BRIEF.md) |
+| `S26` Белый комплект и дождь | Z | 8 | 2 | [`white_set_rain/`](white_set_rain/BRIEF.md) |
+| `S27` Синий бархат в кабинете | AA | 8 | 2 | [`navy_velvet_study/`](navy_velvet_study/BRIEF.md) |
+| `S28` Корсет при свечах | AB | 8 | 2 | [`corset_cellar/`](corset_cellar/BRIEF.md) |
+| `S29` Пудровый розовый | AC | 8 | 2 | [`powder_pink_rug/`](powder_pink_rug/BRIEF.md) |
+| `S30` Сатин в коридоре отеля | AD | 8 | 2 | [`satin_hotel_corridor/`](satin_hotel_corridor/BRIEF.md) |
+| `S31` Серебро и дым | AE | 8 | 2 | [`silver_smoke_studio/`](silver_smoke_studio/BRIEF.md) |
 
-**Всего кадров: 210.** Режим `local-only`, публикация выключена.
+**Всего кадров: 290.** Режим `local-only`, публикация выключена.
