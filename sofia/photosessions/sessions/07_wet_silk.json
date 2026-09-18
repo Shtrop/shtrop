@@ -1,0 +1,112 @@
+{
+  "session_id": "S07",
+  "slug": "wet_silk",
+  "title": "Wet Silk",
+  "title_ru": "Мокрый шёлк",
+  "reference_source": "Максимальный гламурный регистр в рамках одетого кадра",
+  "mood_ru": "Пар, вода, чёрный камень. Тяжёлый мокрый шёлк и прямой взгляд.",
+  "base_seed": 107000,
+  "aspect": "4:5",
+  "allure": "wet-look glamour, soaked opaque silk clinging to every curve, water running over her skin, parted lips, heavy-lidded direct gaze",
+  "wardrobe": {
+    "code": "G",
+    "notes_ru": "Короткая чёрная шёлковая комбинация, насквозь мокрая, но плотная и непрозрачная.",
+    "prompt": "short black silk slip dress soaked through and clinging to her body, opaque heavy silk, thin straps slipping off the shoulders, wet hair slicked back, water beading on her skin, silver star pendant, bare feet"
+  },
+  "location": {
+    "notes_ru": "Душевая за стеклом, чёрный мрамор, пар, латунь. Вода льётся во всех кадрах.",
+    "prompt": "large walk-in rain shower behind fogged glass, black marble walls and floor, brass fixtures, thick steam, water running down the glass, wet reflections, single warm overhead light"
+  },
+  "shots": [
+    {
+      "title_ru": "Под струёй, взгляд в объектив",
+      "pose": "standing directly under the rain shower head with water pouring over her, both hands sliding the soaked hair back from her face, elbows raised, back arched, chin lowered and eyes straight into the lens",
+      "camera": "50mm lens, eye level, frontal, thigh-up framing",
+      "light": "warm overhead spot burning through the falling water, cool rim off the wet glass behind her",
+      "id": "S07-01",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "title_ru": "Ладонь на запотевшем стекле",
+      "pose": "pressed against the fogged glass from inside the shower, one palm and her cheek flat on the glass, back deeply arched, head turned sideways to hold the lens through the condensation",
+      "camera": "35mm lens, eye level, three-quarter front angle, waist-up framing",
+      "light": "warm light from behind her inside the shower, cool spill through the fogged glass",
+      "id": "S07-02",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "id": "S07-03",
+      "priority": "core",
+      "title_ru": "Прогиб, взгляд через плечо",
+      "pose": "kneeling back on her heels on the wet black marble bench, spine deeply arched, one hand planted beside her, head turned over the shoulder holding direct eye contact with the lens",
+      "camera": "35mm lens, slightly above eye level, back three-quarter angle, full body vertical framing",
+      "light": "single warm overhead spot cutting through the steam, cool blue light bouncing off the wet glass along her shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S07-04",
+      "priority": "core",
+      "title_ru": "Отражение",
+      "pose": "standing close to the fogged shower glass, one hand resting on the surface, hip pushed out, chin lowered, holding her own gaze while the camera catches her and the reflection at once",
+      "camera": "50mm lens, eye level, over-the-shoulder into the reflection, thigh-up framing",
+      "light": "single warm overhead spot cutting through the steam, cool blue light bouncing off the wet glass along her shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S07-05",
+      "priority": "core",
+      "title_ru": "Силуэт против света",
+      "pose": "standing at the glass wall of the shower with one forearm raised against the frame, weight settled on one hip, back to the camera, long line of the spine on show, looking away into the light",
+      "camera": "35mm lens, eye level, back view, full body vertical framing",
+      "light": "single warm overhead spot cutting through the steam, cool blue light bouncing off the wet glass along her shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S07-06",
+      "priority": "core",
+      "title_ru": "Полулёжа, нога вытянута",
+      "pose": "reclining back on the wet black marble bench propped on both elbows, one knee raised and the other leg stretched long, ribcage lifted, chin up, half-lidded gaze straight down the lens",
+      "camera": "35mm lens, low camera at surface level, three-quarter front angle, full body framing",
+      "light": "single warm overhead spot cutting through the steam, cool blue light bouncing off the wet glass along her shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S07-07",
+      "priority": "filler",
+      "title_ru": "Деталь",
+      "pose": "cropped detail composition of water running down her collarbones and the wet silk strap, face out of frame, fingers relaxed and naturally posed",
+      "camera": "85mm lens, close detail framing, very shallow depth of field",
+      "light": "single warm overhead spot cutting through the steam, cool blue light bouncing off the wet glass along her shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S07-08",
+      "priority": "core",
+      "title_ru": "Вид сверху",
+      "pose": "lying on her back on the wet black marble bench, one arm thrown above her head, the other hand resting on her waist, hair fanned out, knees softly bent, eyes lifted to the lens",
+      "camera": "35mm lens, directly overhead top-down angle, full body framing",
+      "light": "single warm overhead spot cutting through the steam, cool blue light bouncing off the wet glass along her shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S07-09",
+      "priority": "core",
+      "title_ru": "В рост, рука в волосах",
+      "pose": "standing tall directly under the rain shower head, one hand pushing back through her hair with the elbow raised, weight shifted onto one leg so the hip breaks the line, chin down and eyes up into the lens",
+      "camera": "50mm lens, slightly low angle, frontal, full body framing",
+      "light": "single warm overhead spot cutting through the steam, cool blue light bouncing off the wet glass along her shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S07-10",
+      "priority": "core",
+      "title_ru": "Общий план",
+      "pose": "seen small across the space behind the fogged glass of the shower, caught mid-movement and not looking at the camera, the room itself carrying the mood",
+      "camera": "24mm wide lens, eye level, wide environmental full-body shot",
+      "light": "single warm overhead spot cutting through the steam, cool blue light bouncing off the wet glass along her shoulder",
+      "headphones": false
+    }
+  ]
+}

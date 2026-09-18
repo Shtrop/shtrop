@@ -1,0 +1,112 @@
+{
+  "session_id": "S15",
+  "slug": "mirror_gym",
+  "title": "Mirror Room",
+  "title_ru": "Зеркальный зал",
+  "reference_source": "Максимальный гламурный регистр в рамках одетого кадра",
+  "mood_ru": "Ночной зал, зеркала в полный рост, неон. Микро-комплект и пот.",
+  "base_seed": 115000,
+  "aspect": "4:5",
+  "allure": "athletic micro-set glamour, tiny emerald top and micro shorts, toned abdomen and long legs fully on show, sweat-glossed skin, hard confident stare",
+  "wardrobe": {
+    "code": "O",
+    "notes_ru": "Изумрудный микро-комплект: короткий топ и очень короткие шорты, плотная ткань.",
+    "prompt": "tiny emerald green sports bra and matching micro training shorts, opaque fabric, sweat-glossed skin, white low sneakers, silver star pendant, dark hair in a high messy bun"
+  },
+  "location": {
+    "notes_ru": "Приватный зеркальный зал ночью, чёрное железо, неоновая полоса.",
+    "prompt": "private mirrored gym at night, floor-to-ceiling mirrors on every wall, matte black equipment, a single neon light strip, chalk dust in the air, dark rubber floor"
+  },
+  "shots": [
+    {
+      "title_ru": "Отражения в ряд",
+      "pose": "standing between two mirror walls so her figure repeats away into the distance, both thumbs hooked in the waistband of the micro shorts, abdomen tensed, hard unsmiling stare into the lens",
+      "camera": "35mm lens, eye level, frontal, full body framing",
+      "light": "single cool neon strip raking across her torso, mirrors throwing the light back from every side",
+      "id": "S15-01",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "title_ru": "Тяга у зеркала",
+      "pose": "bent-over single-arm row facing the mirror wall so the camera reads both her back and her reflection at once, elbow high, spine long, sweat on her skin, glancing sideways to the lens",
+      "camera": "50mm lens, eye level, side angle, waist-up framing",
+      "light": "neon strip from above, mirror bounce filling the shadow side",
+      "id": "S15-02",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "id": "S15-03",
+      "priority": "core",
+      "title_ru": "Прогиб, взгляд через плечо",
+      "pose": "kneeling back on her heels on the black padded bench, spine deeply arched, one hand planted beside her, head turned over the shoulder holding direct eye contact with the lens",
+      "camera": "35mm lens, slightly above eye level, back three-quarter angle, full body vertical framing",
+      "light": "a single cool neon strip raking across her body, mirror reflections throwing a second light back onto her",
+      "headphones": false
+    },
+    {
+      "id": "S15-04",
+      "priority": "core",
+      "title_ru": "Отражение",
+      "pose": "standing close to the floor-to-ceiling mirror wall, one hand resting on the surface, hip pushed out, chin lowered, holding her own gaze while the camera catches her and the reflection at once",
+      "camera": "50mm lens, eye level, over-the-shoulder into the reflection, thigh-up framing",
+      "light": "a single cool neon strip raking across her body, mirror reflections throwing a second light back onto her",
+      "headphones": false
+    },
+    {
+      "id": "S15-05",
+      "priority": "core",
+      "title_ru": "Силуэт против света",
+      "pose": "standing at the dark mirrored wall at the end of the room with one forearm raised against the frame, weight settled on one hip, back to the camera, long line of the spine on show, looking away into the light",
+      "camera": "35mm lens, eye level, back view, full body vertical framing",
+      "light": "a single cool neon strip raking across her body, mirror reflections throwing a second light back onto her",
+      "headphones": false
+    },
+    {
+      "id": "S15-06",
+      "priority": "core",
+      "title_ru": "Полулёжа, нога вытянута",
+      "pose": "reclining back on the black padded bench propped on both elbows, one knee raised and the other leg stretched long, ribcage lifted, chin up, half-lidded gaze straight down the lens",
+      "camera": "35mm lens, low camera at surface level, three-quarter front angle, full body framing",
+      "light": "a single cool neon strip raking across her body, mirror reflections throwing a second light back onto her",
+      "headphones": false
+    },
+    {
+      "id": "S15-07",
+      "priority": "filler",
+      "title_ru": "Деталь",
+      "pose": "cropped detail composition of sweat running down her spine and the waistband of the shorts, face out of frame, fingers relaxed and naturally posed",
+      "camera": "85mm lens, close detail framing, very shallow depth of field",
+      "light": "a single cool neon strip raking across her body, mirror reflections throwing a second light back onto her",
+      "headphones": false
+    },
+    {
+      "id": "S15-08",
+      "priority": "core",
+      "title_ru": "Вид сверху",
+      "pose": "lying on her back on the black padded bench, one arm thrown above her head, the other hand resting on her waist, hair fanned out, knees softly bent, eyes lifted to the lens",
+      "camera": "35mm lens, directly overhead top-down angle, full body framing",
+      "light": "a single cool neon strip raking across her body, mirror reflections throwing a second light back onto her",
+      "headphones": false
+    },
+    {
+      "id": "S15-09",
+      "priority": "core",
+      "title_ru": "В рост, рука в волосах",
+      "pose": "standing tall in front of the mirror wall, one hand pushing back through her hair with the elbow raised, weight shifted onto one leg so the hip breaks the line, chin down and eyes up into the lens",
+      "camera": "50mm lens, slightly low angle, frontal, full body framing",
+      "light": "a single cool neon strip raking across her body, mirror reflections throwing a second light back onto her",
+      "headphones": false
+    },
+    {
+      "id": "S15-10",
+      "priority": "core",
+      "title_ru": "Общий план",
+      "pose": "seen small across the space reflected many times down the mirrored room, caught mid-movement and not looking at the camera, the room itself carrying the mood",
+      "camera": "24mm wide lens, eye level, wide environmental full-body shot",
+      "light": "a single cool neon strip raking across her body, mirror reflections throwing a second light back onto her",
+      "headphones": false
+    }
+  ]
+}

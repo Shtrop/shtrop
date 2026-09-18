@@ -1,0 +1,112 @@
+{
+  "session_id": "S10",
+  "slug": "after_shower",
+  "title": "After the Shower",
+  "title_ru": "После душа",
+  "reference_source": "Максимальный гламурный регистр в рамках одетого кадра",
+  "mood_ru": "Пар, мрамор, свечи. Полотенце и мокрые плечи.",
+  "base_seed": 110000,
+  "aspect": "4:5",
+  "allure": "steamy bathroom glamour, small towel held closed at the chest, bare shoulders and long bare legs, damp skin catching the candlelight, slow direct look",
+  "wardrobe": {
+    "code": "J",
+    "notes_ru": "Маленькое белое полотенце, придерживается рукой. Мокрая кожа и волосы.",
+    "prompt": "small white bath towel wrapped around her body and held closed at the chest, bare shoulders, bare legs, damp skin, wet hair, silver star pendant, barefoot"
+  },
+  "location": {
+    "notes_ru": "Мраморная ванная в пару, запотевшее зеркало, свечи, отдельная ванна.",
+    "prompt": "steamy marble bathroom, fogged mirror above a stone basin, freestanding tub, lit candles, brass tap running, folded towels, eucalyptus branch, warm low light"
+  },
+  "shots": [
+    {
+      "title_ru": "У запотевшего зеркала",
+      "pose": "standing at the fogged mirror having wiped one stripe clear, towel held closed at the chest, damp shoulders bare, meeting the camera through the cleared stripe of glass",
+      "camera": "50mm lens, eye level, over-the-shoulder into the mirror, waist-up framing",
+      "light": "warm candlelight from the basin below, soft glow of steam catching the light",
+      "id": "S10-01",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "title_ru": "На краю ванны",
+      "pose": "sitting on the wide marble edge of the tub, one long leg extended and the other bent, towel high on the thigh, leaning back on one hand, head tilted with a slow look at the lens",
+      "camera": "35mm lens, low camera, three-quarter front angle, full body framing",
+      "light": "candles clustered low around the tub, cool frosted-window glow behind her",
+      "id": "S10-02",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "id": "S10-03",
+      "priority": "core",
+      "title_ru": "Прогиб, взгляд через плечо",
+      "pose": "kneeling back on her heels on the wide marble edge of the tub, spine deeply arched, one hand planted beside her, head turned over the shoulder holding direct eye contact with the lens",
+      "camera": "35mm lens, slightly above eye level, back three-quarter angle, full body vertical framing",
+      "light": "warm candlelight low and close to her skin, soft daylight glow through the frosted window behind her",
+      "headphones": false
+    },
+    {
+      "id": "S10-04",
+      "priority": "core",
+      "title_ru": "Отражение",
+      "pose": "standing close to the fogged bathroom mirror, one hand resting on the surface, hip pushed out, chin lowered, holding her own gaze while the camera catches her and the reflection at once",
+      "camera": "50mm lens, eye level, over-the-shoulder into the reflection, thigh-up framing",
+      "light": "warm candlelight low and close to her skin, soft daylight glow through the frosted window behind her",
+      "headphones": false
+    },
+    {
+      "id": "S10-05",
+      "priority": "core",
+      "title_ru": "Силуэт против света",
+      "pose": "standing at the frosted bathroom window with one forearm raised against the frame, weight settled on one hip, back to the camera, long line of the spine on show, looking away into the light",
+      "camera": "35mm lens, eye level, back view, full body vertical framing",
+      "light": "warm candlelight low and close to her skin, soft daylight glow through the frosted window behind her",
+      "headphones": false
+    },
+    {
+      "id": "S10-06",
+      "priority": "core",
+      "title_ru": "Полулёжа, нога вытянута",
+      "pose": "reclining back on the wide marble edge of the tub propped on both elbows, one knee raised and the other leg stretched long, ribcage lifted, chin up, half-lidded gaze straight down the lens",
+      "camera": "35mm lens, low camera at surface level, three-quarter front angle, full body framing",
+      "light": "warm candlelight low and close to her skin, soft daylight glow through the frosted window behind her",
+      "headphones": false
+    },
+    {
+      "id": "S10-07",
+      "priority": "filler",
+      "title_ru": "Деталь",
+      "pose": "cropped detail composition of a water drop running from her shoulder to her collarbone, face out of frame, fingers relaxed and naturally posed",
+      "camera": "85mm lens, close detail framing, very shallow depth of field",
+      "light": "warm candlelight low and close to her skin, soft daylight glow through the frosted window behind her",
+      "headphones": false
+    },
+    {
+      "id": "S10-08",
+      "priority": "core",
+      "title_ru": "Вид сверху",
+      "pose": "lying on her back on the wide marble edge of the tub, one arm thrown above her head, the other hand resting on her waist, hair fanned out, knees softly bent, eyes lifted to the lens",
+      "camera": "35mm lens, directly overhead top-down angle, full body framing",
+      "light": "warm candlelight low and close to her skin, soft daylight glow through the frosted window behind her",
+      "headphones": false
+    },
+    {
+      "id": "S10-09",
+      "priority": "core",
+      "title_ru": "В рост, рука в волосах",
+      "pose": "standing tall in the middle of the steamy bathroom floor, one hand pushing back through her hair with the elbow raised, weight shifted onto one leg so the hip breaks the line, chin down and eyes up into the lens",
+      "camera": "50mm lens, slightly low angle, frontal, full body framing",
+      "light": "warm candlelight low and close to her skin, soft daylight glow through the frosted window behind her",
+      "headphones": false
+    },
+    {
+      "id": "S10-10",
+      "priority": "core",
+      "title_ru": "Общий план",
+      "pose": "seen small across the space beside the freestanding tub, caught mid-movement and not looking at the camera, the room itself carrying the mood",
+      "camera": "24mm wide lens, eye level, wide environmental full-body shot",
+      "light": "warm candlelight low and close to her skin, soft daylight glow through the frosted window behind her",
+      "headphones": false
+    }
+  ]
+}
