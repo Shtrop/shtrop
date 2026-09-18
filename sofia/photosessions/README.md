@@ -14,6 +14,7 @@ sofia/photosessions/
 ├── sessions/05_emerald_rooftop.json  # S05 — изумрудный закат        (развитие 1)
 ├── sessions/06_rainy_hoodie.json     # S06 — дождливый день в худи   (развитие 3)
 ├── tools/build_prompts.py        # сборка финальных промптов
+├── tools/run_session.py          # прогон сессии через ComfyUI и запись PNG
 └── build/                        # результат сборки (брифы, .txt промпты, batch.json)
 ```
 
@@ -50,7 +51,21 @@ S05 намеренно берёт изумруд из канон-палитры 
 1. Preflight по `sofia-ai-studio-controller`: `control_flags\PUBLISHING_STATE.json`, `NO_DELETE.flag`, `PUBLISHING_DISABLED.flag`, локи, `nvidia-smi`, отсутствие активного `gpu_render`.
 2. Подставить реальные значения вместо `TODO_FROM_*` в `common/persona_lock.json` — sampler, вес Sofia LoRA и PuLID берутся из актуальных persona/config файлов студии, здесь они намеренно не выдуманы.
 3. Пересобрать: `python3 tools/build_prompts.py`.
-4. Отдать `build/<slug>/batch.json` в штатную очередь ComfyUI одной сессией за раз (один GPU job, по расписанию `gpu_resource_scheduler`).
+4. Прогнать сессию одной командой (одна сессия за раз, один GPU job, по расписанию `gpu_resource_scheduler`):
+
+   ```powershell
+   python tools\run_session.py `
+       --batch build\golden_gym\batch.json `
+       --workflow D:\AI_CONTENT\Sofia\workflows\<ваш_flux_workflow>_api.json `
+       --out D:\AI_CONTENT\Sofia\generated\golden_gym
+   ```
+
+   Workflow нужен в API-формате (в ComfyUI: Workflow -> Export (API)) — скрипт сам находит в графе
+   узлы позитива, негатива, seed и размера кадра и подставляет туда данные из `batch.json`.
+   Полезные флаги: `--dry-run` (показать план), `--shots S01-01 S01-07` (только хиро-кадры),
+   `--variants 2` (урезать число вариантов), `--server` (если ComfyUI не на `127.0.0.1:8188`).
+   Скрипт ничего не публикует и не перезаписывает существующие файлы; итог пишется в
+   `<out>\run_manifest.json`.
 5. Прогнать `photo_qa` + `identity_guardian` по каждому кадру; FAIL уходит в `photo_regen`, а не заменяется соседним кадром.
 6. Публикация — только через Master Publish Gate отдельным решением владельца. Этот пакет её не касается.
 
