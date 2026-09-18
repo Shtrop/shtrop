@@ -1,0 +1,95 @@
+{
+  "session_id": "S30",
+  "slug": "satin_hotel_corridor",
+  "title": "Satin Corridor",
+  "title_ru": "Сатин в коридоре отеля",
+  "reference_source": "Бельевая линия — максимальный гламурный регистр, 8 кадров, без наушников",
+  "mood_ru": "Коридор отеля ночью, ковёр, бра через равные шаги. Чёрный сатин и сетка.",
+  "base_seed": 130000,
+  "aspect": "4:5",
+  "allure": "lingerie editorial glamour at its boldest, set with full opaque lining, deep neckline and high-cut briefs, sculpted waist and long legs fully on show, unhurried commanding sensuality, direct gaze, black satin set and fishnet stockings under the corridor sconces",
+  "film": "shot on Cinestill 800T, tungsten cast and sconce halation",
+  "wardrobe": {
+    "code": "AD",
+    "notes_ru": "Чёрный сатиновый комплект с подкладкой + чулки в сетку.",
+    "prompt": "black satin lingerie set with full opaque lining, structured satin cups and high-waisted satin briefs, black fishnet stockings, silver star pendant, hair loose over one shoulder, bare feet"
+  },
+  "location": {
+    "notes_ru": "Длинный коридор отеля ночью, ковёр с рисунком, бра по стенам.",
+    "prompt": "long hotel corridor at night, patterned carpet running away into the distance, warm wall sconces at even intervals, numbered doors, dark wainscoting, one mirror at the far end"
+  },
+  "shots": [
+    {
+      "title_ru": "Спиной вдоль коридора",
+      "pose": "standing in the middle of the long corridor with her back to the camera in the black satin set, one hand trailing along the wall, weight on one hip, head turned over her shoulder to the lens",
+      "camera": "35mm lens, eye level, back view down the corridor, full body framing",
+      "light": "row of warm wall sconces receding behind her, pools of light on the carpet",
+      "id": "S30-01",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "title_ru": "У двери номера",
+      "pose": "leaning back against the numbered door with one knee bent and the sole of her foot against it, both hands behind her lower back, chest lifted, cool level stare at the camera",
+      "camera": "50mm lens, slightly low angle, frontal, full body framing",
+      "light": "one sconce directly above her throwing hard shadow under the jaw, dark corridor beyond",
+      "id": "S30-02",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "id": "S30-03",
+      "priority": "core",
+      "title_ru": "Прогиб, взгляд через плечо",
+      "pose": "kneeling back on her heels on the patterned corridor carpet, spine deeply arched, one hand planted beside her, head turned over the shoulder holding direct eye contact with the lens",
+      "camera": "35mm lens, slightly above eye level, back three-quarter angle, full body vertical framing",
+      "light": "warm sconce light from directly above her, the receding row of sconces glowing behind her",
+      "headphones": false
+    },
+    {
+      "id": "S30-04",
+      "priority": "core",
+      "title_ru": "Отражение",
+      "pose": "standing close to the mirror at the far end of the corridor, one hand flat on the surface, hip pushed out, chin lowered, meeting the camera past her own reflection",
+      "camera": "50mm lens, eye level, over-the-shoulder into the reflection, thigh-up framing",
+      "light": "warm sconce light from directly above her, the receding row of sconces glowing behind her",
+      "headphones": false
+    },
+    {
+      "id": "S30-05",
+      "priority": "core",
+      "title_ru": "Против света",
+      "pose": "standing at the lit window at the end of the corridor with one forearm raised against the frame, weight settled on one hip, the long line of her back and legs read against the light, head turned just enough to find the lens",
+      "camera": "35mm lens, eye level, back three-quarter angle, full body vertical framing",
+      "light": "warm sconce light from directly above her, the receding row of sconces glowing behind her",
+      "headphones": false
+    },
+    {
+      "id": "S30-06",
+      "priority": "core",
+      "title_ru": "Полулёжа, нога вытянута",
+      "pose": "reclining back on the patterned corridor carpet propped on both elbows, one knee raised and the other leg stretched long, ribcage lifted, chin up, half-lidded gaze straight down the lens",
+      "camera": "35mm lens, low camera at surface level, three-quarter front angle, full body framing",
+      "light": "warm sconce light from directly above her, the receding row of sconces glowing behind her",
+      "headphones": false
+    },
+    {
+      "id": "S30-07",
+      "priority": "core",
+      "title_ru": "В рост, рука в волосах",
+      "pose": "standing tall in a pool of sconce light in the middle of the corridor, one hand pushing back through her hair with the elbow raised, weight on one leg so the hip breaks the line, chin down and eyes up into the lens",
+      "camera": "50mm lens, slightly low angle, frontal, full body framing",
+      "light": "warm sconce light from directly above her, the receding row of sconces glowing behind her",
+      "headphones": false
+    },
+    {
+      "id": "S30-08",
+      "priority": "filler",
+      "title_ru": "Деталь",
+      "pose": "cropped detail composition of the fishnet pattern stretched across her thigh and her hand resting on it, face out of frame, fingers relaxed and naturally posed",
+      "camera": "85mm lens, close detail framing, very shallow depth of field",
+      "light": "warm sconce light from directly above her, the receding row of sconces glowing behind her",
+      "headphones": false
+    }
+  ]
+}

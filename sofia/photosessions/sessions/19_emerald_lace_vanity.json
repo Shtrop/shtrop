@@ -1,0 +1,113 @@
+{
+  "session_id": "S19",
+  "slug": "emerald_lace_vanity",
+  "title": "Emerald Lace and Garters",
+  "title_ru": "Изумрудное кружево и пояс",
+  "reference_source": "Серия в кружевном белье — гламурный будуарный регистр",
+  "mood_ru": "Винтажный туалетный столик, лампы у зеркала. Изумруд — канон-палитра персоны.",
+  "base_seed": 119000,
+  "aspect": "4:5",
+  "allure": "lace lingerie editorial glamour, delicate lace set with full opaque lining, sculpted waist and long legs, soft boudoir light gliding over the lace, assured sensual gaze, emerald lace with garter straps and sheer stockings, deep jewel colour against her skin",
+  "wardrobe": {
+    "code": "S",
+    "notes_ru": "Изумрудное кружево с подкладкой, пояс для чулок, чулки. Канон-палитра.",
+    "prompt": "deep emerald green lace lingerie set with full opaque lining, matching emerald garter belt with straps, sheer black stockings, silver star pendant, hair pinned up with loose strands, bare feet"
+  },
+  "location": {
+    "notes_ru": "Винтажный будуар, туалетный столик с лампами, бархат, латунь.",
+    "prompt": "vintage boudoir, wooden vanity table with warm bulbs framing the mirror, velvet stool, crystal perfume bottles, brass jewellery tray, patterned wallpaper, heavy drapes, dim warm room"
+  },
+  "shots": [
+    {
+      "title_ru": "У зеркала, застёгивает чулок",
+      "pose": "sitting on the velvet vanity stool with one heel up on the edge, fastening the garter strap to the stocking top, back arched, head turned up to the lens mid-motion",
+      "camera": "50mm lens, eye level, side three-quarter angle, full body framing",
+      "light": "warm bulb lights around the mirror throwing even glow on her skin, dim room behind",
+      "id": "S19-01",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "title_ru": "В отражении, спиной к камере",
+      "pose": "standing at the vanity with her back to the camera in the emerald set, one hand on the table, back arched, meeting the lens through her own reflection in the mirror",
+      "camera": "35mm lens, eye level, back view into the mirror, full body framing",
+      "light": "mirror bulbs frontal on her face in the reflection, warm rim along her bare back",
+      "id": "S19-02",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "id": "S19-03",
+      "priority": "core",
+      "title_ru": "Прогиб, взгляд через плечо",
+      "pose": "kneeling back on her heels on the velvet chaise beside the vanity, spine deeply arched, one hand planted beside her, head turned over the shoulder holding direct eye contact with the lens",
+      "camera": "35mm lens, slightly above eye level, back three-quarter angle, full body vertical framing",
+      "light": "warm vanity bulbs wrapping her face and shoulders, a single brass lamp glow along her back",
+      "headphones": false
+    },
+    {
+      "id": "S19-04",
+      "priority": "core",
+      "title_ru": "Отражение",
+      "pose": "standing close to the bulb-framed vanity mirror, one hand resting on the surface, hip pushed out, chin lowered, holding her own gaze while the camera catches her and the reflection at once",
+      "camera": "50mm lens, eye level, over-the-shoulder into the reflection, thigh-up framing",
+      "light": "warm vanity bulbs wrapping her face and shoulders, a single brass lamp glow along her back",
+      "headphones": false
+    },
+    {
+      "id": "S19-05",
+      "priority": "core",
+      "title_ru": "Силуэт против света",
+      "pose": "standing at the narrow draped window with one forearm raised against the frame, weight settled on one hip, back to the camera, long line of the spine on show, looking away into the light",
+      "camera": "35mm lens, eye level, back view, full body vertical framing",
+      "light": "warm vanity bulbs wrapping her face and shoulders, a single brass lamp glow along her back",
+      "headphones": false
+    },
+    {
+      "id": "S19-06",
+      "priority": "core",
+      "title_ru": "Полулёжа, нога вытянута",
+      "pose": "reclining back on the velvet chaise beside the vanity propped on both elbows, one knee raised and the other leg stretched long, ribcage lifted, chin up, half-lidded gaze straight down the lens",
+      "camera": "35mm lens, low camera at surface level, three-quarter front angle, full body framing",
+      "light": "warm vanity bulbs wrapping her face and shoulders, a single brass lamp glow along her back",
+      "headphones": false
+    },
+    {
+      "id": "S19-07",
+      "priority": "filler",
+      "title_ru": "Деталь",
+      "pose": "cropped detail composition of the garter strap clipped to the stocking top against her thigh, face out of frame, fingers relaxed and naturally posed",
+      "camera": "85mm lens, close detail framing, very shallow depth of field",
+      "light": "warm vanity bulbs wrapping her face and shoulders, a single brass lamp glow along her back",
+      "headphones": false
+    },
+    {
+      "id": "S19-08",
+      "priority": "core",
+      "title_ru": "Вид сверху",
+      "pose": "lying on her back on the velvet chaise beside the vanity, one arm thrown above her head, the other hand resting on her waist, hair fanned out, knees softly bent, eyes lifted to the lens",
+      "camera": "35mm lens, directly overhead top-down angle, full body framing",
+      "light": "warm vanity bulbs wrapping her face and shoulders, a single brass lamp glow along her back",
+      "headphones": false
+    },
+    {
+      "id": "S19-09",
+      "priority": "core",
+      "title_ru": "В рост, рука в волосах",
+      "pose": "standing tall beside the vanity in the warm bulb light, one hand pushing back through her hair with the elbow raised, weight shifted onto one leg so the hip breaks the line, chin down and eyes up into the lens",
+      "camera": "50mm lens, slightly low angle, frontal, full body framing",
+      "light": "warm vanity bulbs wrapping her face and shoulders, a single brass lamp glow along her back",
+      "headphones": false
+    },
+    {
+      "id": "S19-10",
+      "priority": "core",
+      "title_ru": "Общий план",
+      "pose": "seen small across the space across the dim vintage boudoir, caught mid-movement and not looking at the camera, the room itself carrying the mood",
+      "camera": "24mm wide lens, eye level, wide environmental full-body shot",
+      "light": "warm vanity bulbs wrapping her face and shoulders, a single brass lamp glow along her back",
+      "headphones": false
+    }
+  ],
+  "film": "shot on Kodak Portra 800, warm bulb halation and grain"
+}
