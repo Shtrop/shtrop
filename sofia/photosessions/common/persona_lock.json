@@ -52,6 +52,19 @@
     "Пластик даёт не модель, а формулировки: glossy/dewy/flawless skin, sculpting light, 4k detail, HDR.",
     "Вместо них — язык реальной камеры: доступный свет, зерно, виньетка, промахи фокуса.",
     "Слой realism_tail добавляется в каждый промпт и требует поры, веснушки, неровный тон, асимметрию.",
-    "Настройки пайплайна важнее промпта: см. REALISM.md (guidance, вес LoRA, face detailer, зерно)."
+    "Настройки пайплайна важнее промпта: см. REALISM.md (guidance, вес LoRA, face detailer, зерно).",
+    "camera_flaws раздаются по кадрам по кругу: каждый снимок получает свой огрех живой съёмки."
+  ],
+  "camera_flaws": [
+    "handheld frame tilted a degree or two off level",
+    "slightly underexposed, shadows crushed a little",
+    "one highlight blown out where the light hits hardest",
+    "focus landing a touch behind the eyes, sharpest on the ear",
+    "faint haze from a smudge on the front element",
+    "slight motion blur in one hand from a slow shutter",
+    "subject a little off-centre with one shoulder cropped by the frame edge",
+    "mild flare washing one corner of the frame",
+    "grain heavier in the shadows where the exposure was pushed",
+    "colour a touch cool and uncorrected straight out of camera"
   ]
 }

@@ -25,7 +25,7 @@ def load(path: Path) -> dict:
         return json.load(fh)
 
 
-def compose_prompt(lock: dict, session: dict, shot: dict) -> str:
+def compose_prompt(lock: dict, session: dict, shot: dict, index: int = 0) -> str:
     """Личность -> гардероб -> поза -> подача -> живая кожа -> оптика -> плёнка -> свет -> сцена -> хвосты."""
     parts = [
         lock["persona"]["identity_prompt"],
@@ -36,6 +36,8 @@ def compose_prompt(lock: dict, session: dict, shot: dict) -> str:
         shot["camera"],
         session.get("film", ""),
         shot["light"],
+        # свой огрех живой съёмки на каждый кадр, по кругу
+        (lock.get("camera_flaws") or [""])[index % len(lock.get("camera_flaws") or [""])],
         session["location"]["prompt"],
     ]
     if shot.get("headphones"):
@@ -141,7 +143,7 @@ def build_session(lock: dict, session: dict) -> list[dict]:
             "camera": shot["camera"],
             "headphones": bool(shot.get("headphones")),
             "seed": shot_seed(session, index),
-            "prompt": compose_prompt(lock, session, shot),
+            "prompt": compose_prompt(lock, session, shot, index),
             "negative_prompt": lock["negative_prompt"],
             "width": int(lock["tech_defaults"]["base_resolution"].split("x")[0]),
             "height": int(lock["tech_defaults"]["base_resolution"].split("x")[1]),
