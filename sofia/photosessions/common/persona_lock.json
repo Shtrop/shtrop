@@ -4,7 +4,7 @@
     "name": "Sofia",
     "age_canon": 26,
     "status": "fictional AI persona (not a real person, no real-person likeness)",
-    "identity_prompt": "Sofia, 26-year-old woman, warm olive skin, dark brown almost-black hair, defined dark brows, hazel-green eyes, straight nose, full lips, soft oval face with high cheekbones, athletic hourglass figure, tiny beauty mark placement per persona config",
+    "identity_prompt": "Sofia, 26-year-old woman, athletic hourglass figure",
     "signature_markers": {
       "hair_default": "messy high bun with loose face-framing strands",
       "jewelry": "thin silver chain with small star pendant",
@@ -12,7 +12,14 @@
       "headphones_on_neck_ratio_target": 0.7
     },
     "identity_source_of_truth": "D:\\AI_CONTENT\\Sofia\\CLAUDE.md + actual persona/config files",
-    "note_ru": "Точные LoRA/PuLID параметры НЕ выдуманы здесь — подставить из актуальных persona/config файлов студии перед прогоном."
+    "note_ru": "Точные LoRA/PuLID параметры НЕ выдуманы здесь — подставить из актуальных persona/config файлов студии перед прогоном.",
+    "lora_trigger": "",
+    "identity_mode": "lora_first",
+    "identity_variants": {
+      "lora_first": "Sofia, 26-year-old woman, athletic hourglass figure",
+      "descriptive": "Sofia, 26-year-old woman, warm olive skin, dark brown almost-black hair, defined dark brows, hazel-green eyes, straight nose, full lips, soft oval face with high cheekbones, athletic hourglass figure, tiny beauty mark placement per persona config"
+    },
+    "identity_notes_ru": "Режим lora_first: лицо описывает LoRA, а не текст. Подробное описание глаз, носа и губ усредняет черты и роняет сходство. Режим descriptive включать только если LoRA слабая."
   },
   "tech_defaults": {
     "pipeline": "ComfyUI + FLUX + Sofia LoRA/PuLID",
@@ -47,13 +54,14 @@
     "photo_regen: авто-перегенерация кадра при FAIL, не подмена соседним кадром"
   ],
   "allure_tail": "suggestive glamour editorial, sensual magazine styling, body-conscious flattering framing, confident alluring presence",
-  "realism_tail": "real human skin with visible pores and fine peach fuzz, faint freckles and small blemishes left unretouched, uneven natural skin tone with faint redness at the nose, knuckles and knees, shine only on the T-zone where skin is really oily, fine lines at the corners of the eyes, natural asymmetry between the two halves of the face, a few stray hairs out of place, makeup that reads as applied by hand rather than airbrushed, the proportions of a real athletic woman rather than an idealised figure",
+  "realism_tail": "real human skin with visible pores and fine peach fuzz, small blemishes and uneven tone left unretouched, faint redness at the knuckles, elbows and knees, shine only where skin is really oily, fine creases at the wrists and the inside of the elbow, a few stray hairs out of place, makeup that reads as applied by hand rather than airbrushed, the proportions of a real athletic woman",
   "realism_notes_ru": [
     "Пластик даёт не модель, а формулировки: glossy/dewy/flawless skin, sculpting light, 4k detail, HDR.",
     "Вместо них — язык реальной камеры: доступный свет, зерно, виньетка, промахи фокуса.",
-    "Слой realism_tail добавляется в каждый промпт и требует поры, веснушки, неровный тон, асимметрию.",
-    "Настройки пайплайна важнее промпта: см. REALISM.md (guidance, вес LoRA, face detailer, зерно).",
-    "camera_flaws раздаются по кадрам по кругу: каждый снимок получает свой огрех живой съёмки."
+    "realism_tail — про кожу и тело, он безопасен для сходства.",
+    "face_realism_tail трогает черты лица и по умолчанию ВЫКЛЮЧЕН: он может ронять сходство. Включать только когда identity уже держится.",
+    "camera_flaws раздаются по кадрам по кругу: каждый снимок получает свой огрех живой съёмки.",
+    "Сходство и пластик — РАЗНЫЕ рычаги. Сходство: вес PuLID/LoRA вверх. Пластик: guidance вниз, детейлер выключить, denoise апскейла вниз. Не путать их между собой."
   ],
   "camera_flaws": [
     "handheld frame tilted a degree or two off level",
@@ -66,5 +74,7 @@
     "mild flare washing one corner of the frame",
     "grain heavier in the shadows where the exposure was pushed",
     "colour a touch cool and uncorrected straight out of camera"
-  ]
+  ],
+  "face_realism_tail": "fine lines at the corners of the eyes, natural asymmetry between the two halves of the face, faint freckles across the nose",
+  "face_realism_enabled": false
 }

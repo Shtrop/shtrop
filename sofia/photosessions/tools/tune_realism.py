@@ -20,10 +20,10 @@ TARGETS = {
     "guidance":        (2.0,  "высокий guidance выглаживает кожу"),
     "cfg":             (2.0,  "то же для SD-подобных графов"),
     "steps":           (40,   "больше шагов на низком guidance = детали без выглаживания"),
-    "strength_model":  (0.75, "перевес LoRA даёт восковое лицо"),
-    "strength_clip":   (0.75, "то же по clip-ветке"),
-    "lora_strength":   (0.75, "перевес LoRA даёт восковое лицо"),
-    "weight":          (0.6,  "вес PuLID/IPAdapter: identity держим им, а не LoRA"),
+    "strength_model":  (0.8,  "LoRA: ниже 0.7 сходство рассыпается, выше 0.9 лицо воскует"),
+    "strength_clip":   (0.8,  "то же по clip-ветке"),
+    "lora_strength":   (0.8,  "LoRA: ниже 0.7 сходство рассыпается, выше 0.9 лицо воскует"),
+    "weight":          (0.85, "PuLID/IPAdapter держит СХОДСТВО — не опускать ради текстуры"),
     "denoise":         (0.30, "высокий denoise на апскейле и детейлере стирает поры"),
 }
 # Каждое поле правим только в своём классе узлов.
@@ -72,8 +72,9 @@ def main() -> int:
     ap.add_argument("--write", type=Path, help="куда сохранить исправленную копию")
     ap.add_argument("--guidance", type=float, default=2.0)
     ap.add_argument("--steps", type=int, default=40)
-    ap.add_argument("--lora", type=float, default=0.75, help="вес LoRA")
-    ap.add_argument("--identity", type=float, default=0.6, help="вес PuLID/IPAdapter")
+    ap.add_argument("--lora", type=float, default=0.8, help="вес LoRA")
+    ap.add_argument("--identity", type=float, default=0.85,
+                    help="вес PuLID/IPAdapter: он отвечает за сходство, не опускать ради текстуры")
     ap.add_argument("--denoise", type=float, default=0.30)
     args = ap.parse_args()
 
@@ -113,9 +114,14 @@ def main() -> int:
     for node_id, ctype, field, value, target, why in changes:
         print(f"  узел {node_id} ({ctype}): {field} {value} -> {target}  — {why}")
     if detailers:
-        print("\nГлавный подозреваемый — детейлер/восстановление лица:")
+        print("\nГлавный подозреваемый по пластику — детейлер/восстановление лица:")
         for node_id, ctype in detailers:
-            print(f"  узел {node_id}: {ctype} — попробуйте обойти его целиком (bypass) и сравнить кадр")
+            print(f"  узел {node_id}: {ctype} — обойти целиком (bypass) и сравнить кадр")
+        print("  Он же часто и ломает сходство: перерисовывает лицо своей моделью поверх LoRA.")
+    print("\nСходство и пластик — разные рычаги:")
+    print("  сходство слабое  -> вес PuLID/LoRA ВВЕРХ (0.85-0.95), детейлер выключить")
+    print("  пластик          -> guidance ВНИЗ (1.8-2.2), denoise апскейла вниз, детейлер выключить")
+    print("  подобрать вслепую долго — гоняйте сетку: tools\\ab_grid.py")
 
     if args.write:
         patched = copy.deepcopy(graph)

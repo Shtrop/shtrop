@@ -28,11 +28,13 @@ def load(path: Path) -> dict:
 def compose_prompt(lock: dict, session: dict, shot: dict, index: int = 0) -> str:
     """Личность -> гардероб -> поза -> подача -> живая кожа -> оптика -> плёнка -> свет -> сцена -> хвосты."""
     parts = [
+        lock["persona"].get("lora_trigger", ""),
         lock["persona"]["identity_prompt"],
         session["wardrobe"]["prompt"],
         shot["pose"],
         session.get("allure", ""),
         lock.get("realism_tail", ""),
+        lock.get("face_realism_tail", "") if lock.get("face_realism_enabled") else "",
         shot["camera"],
         session.get("film", ""),
         shot["light"],
