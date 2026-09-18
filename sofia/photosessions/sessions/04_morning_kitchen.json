@@ -1,0 +1,111 @@
+{
+  "session_id": "S04",
+  "slug": "morning_kitchen",
+  "title": "Morning Kitchen Cappuccino",
+  "title_ru": "Утро на кухне с капучино",
+  "reference_source": "Развитие референса 2 и 3 — домашняя мягкая эстетика, но утренний свет вместо ночного",
+  "mood_ru": "Сонная, тёплая, только проснулась. Растрёпанная, босиком, без макияжа. Капучино — сигнатура персоны.",
+  "base_seed": 104000,
+  "aspect": "4:5",
+  "wardrobe": {
+    "code": "D",
+    "prompt": "oversized cream cotton hoodie slipping off one shoulder, white ribbed boxer-style sleep shorts, slouchy white crew socks, thin silver chain with small star pendant, dark brown messy high bun with loose strands, bare face no-makeup look with soft morning puffiness",
+    "notes_ru": "Худи всегда спущено с одного плеча, под ним видна бретель топа. Босиком в носках, без обуви."
+  },
+  "location": {
+    "prompt": "bright modern loft kitchen in early morning, white marble countertop, matte black espresso machine, open shelving with ceramic mugs, tall window with sheer white curtains, potted herbs on the sill, wooden cutting board, glass jar of coffee beans, warm oak floor, soft steam in the air",
+    "notes_ru": "Утренний свет через тюль, много белого и дерева. Держать мягкие тени и лёгкую дымку."
+  },
+  "shots": [
+    {
+      "id": "S04-01",
+      "priority": "hero",
+      "title_ru": "Первый глоток у окна",
+      "pose": "standing at the kitchen window holding a large ceramic mug of cappuccino with both hands close to her chest, shoulders hunched in comfort, eyes half closed mid-sip, hoodie slipping off one shoulder",
+      "camera": "50mm lens, eye level, three-quarter front angle, waist-up framing",
+      "light": "soft diffused morning sunlight through sheer curtains, gentle wraparound fill, warm haze and visible steam",
+      "headphones": false
+    },
+    {
+      "id": "S04-02",
+      "priority": "core",
+      "title_ru": "Сидит на столешнице, ноги свесив",
+      "pose": "sitting up on the marble countertop with legs dangling and ankles crossed, one hand braced on the counter, the other holding the mug on her knee, head tilted with a lazy smile toward the camera",
+      "camera": "35mm lens, slightly low angle, frontal, full body framing",
+      "light": "bright window backlight behind her, warm bounce off the white marble filling the face",
+      "headphones": false
+    },
+    {
+      "id": "S04-03",
+      "priority": "core",
+      "title_ru": "Тянется за кружкой на полке",
+      "pose": "stretching up on tiptoes to reach a ceramic mug on the top open shelf, back arched, hoodie riding up slightly, face in profile looking up at the shelf",
+      "camera": "35mm lens, eye level, side three-quarter angle, full body framing",
+      "light": "side window light raking across the shelves, long soft shadows on the wall",
+      "headphones": false
+    },
+    {
+      "id": "S04-04",
+      "priority": "core",
+      "title_ru": "Кофемашина, пар, ожидание",
+      "pose": "leaning both forearms on the counter beside the espresso machine, watching the coffee pour into the cup, chin resting on one hand, patient sleepy expression, not looking at the camera",
+      "camera": "50mm lens, eye level, side three-quarter angle, waist-up framing",
+      "light": "warm kitchen lamp mixing with cool window light, steam catching a highlight above the cup",
+      "headphones": true
+    },
+    {
+      "id": "S04-05",
+      "priority": "filler",
+      "title_ru": "Деталь: руки и чашка",
+      "pose": "cropped detail of both hands wrapped around the warm ceramic mug on the marble counter, hoodie sleeves pulled over the palms, star pendant hanging into frame, face out of shot",
+      "camera": "85mm lens, close detail framing, very shallow depth of field",
+      "light": "soft window key from the left, gentle specular highlights on the glaze of the mug",
+      "headphones": false
+    },
+    {
+      "id": "S04-06",
+      "priority": "core",
+      "title_ru": "Сидит на полу у шкафа",
+      "pose": "sitting on the warm oak floor with her back against the lower cabinets, knees pulled up, mug balanced on one knee, head tipped back against the cabinet door, eyes closed in the sun",
+      "camera": "35mm lens, low camera at floor level, frontal, full body framing",
+      "light": "a single warm shaft of morning sun falling across her face and the floor, rest of the kitchen in soft shade",
+      "headphones": false
+    },
+    {
+      "id": "S04-07",
+      "priority": "hero",
+      "title_ru": "Утренний портрет без макияжа",
+      "pose": "close portrait leaning against the door frame, loose strands across the cheek, chin lowered, sleepy soft eye contact with a barely-there smile",
+      "camera": "85mm portrait lens, eye level, tight head-and-shoulders framing, creamy background bokeh",
+      "light": "large soft window key, natural skin texture visible, warm catchlight in both eyes",
+      "headphones": false
+    },
+    {
+      "id": "S04-08",
+      "priority": "core",
+      "title_ru": "Поливает зелень на подоконнике",
+      "pose": "standing at the windowsill watering the potted herbs from a small glass, weight on one hip, free hand touching a leaf, looking down at the plants",
+      "camera": "50mm lens, eye level, side profile, thigh-up framing",
+      "light": "strong backlight through the curtain rimming her profile and the plants, cool shade in the foreground",
+      "headphones": true
+    },
+    {
+      "id": "S04-09",
+      "priority": "core",
+      "title_ru": "Танцует босиком по кухне",
+      "pose": "mid-motion barefoot-in-socks spin across the kitchen floor, one arm raised, hoodie flaring, hair strands flying, laughing with her eyes shut",
+      "camera": "24mm wide lens, low angle, wide full-body framing with slight motion blur in the limbs",
+      "light": "bright morning wash across the whole room, warm bounce from the oak floor",
+      "headphones": true
+    },
+    {
+      "id": "S04-10",
+      "priority": "core",
+      "title_ru": "Общий план кухни через дверной проём",
+      "pose": "seen small from the hallway standing at the far counter with her back to the camera, pouring milk into the cup, morning routine caught from a distance",
+      "camera": "35mm lens, eye level, framed through the doorway, wide environmental full-body shot",
+      "light": "dark hallway foreground framing a bright sunlit kitchen, strong luminance contrast between the two",
+      "headphones": false
+    }
+  ]
+}
