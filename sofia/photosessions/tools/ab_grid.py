@@ -24,31 +24,6 @@ _spec = importlib.util.spec_from_file_location("rs", Path(__file__).with_name("r
 rs = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(rs)
 
-IDENTITY_CLASSES = ("pulid", "ipadapter", "instantid")
-LORA_CLASSES = ("lora",)
-DETAILER_CLASSES = ("detailer", "facerestore", "codeformer", "gfpgan", "reactor")
-
-
-def set_weights(graph: dict, identity: float | None, lora: float | None,
-                skip_detailer: bool) -> dict:
-    g = copy.deepcopy(graph)
-    for node in g.values():
-        low = str(node.get("class_type", "")).lower()
-        inputs = node.get("inputs", {})
-        if identity is not None and any(c in low for c in IDENTITY_CLASSES):
-            if isinstance(inputs.get("weight"), (int, float)):
-                inputs["weight"] = identity
-        if lora is not None and any(c in low for c in LORA_CLASSES):
-            for field in ("strength_model", "strength_clip", "lora_strength"):
-                if isinstance(inputs.get(field), (int, float)):
-                    inputs[field] = lora
-        if skip_detailer and any(c in low for c in DETAILER_CLASSES):
-            # мягкий обход: минимальный denoise вместо удаления узла
-            if isinstance(inputs.get("denoise"), (int, float)):
-                inputs["denoise"] = 0.05
-    return g
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(description="Сетка подбора параметров на одном кадре")
     ap.add_argument("--batch", required=True, type=Path)
@@ -101,7 +76,7 @@ def main() -> int:
         out_dir.mkdir(parents=True, exist_ok=True)
         print(f"  {tag}")
         try:
-            g = set_weights(graph, identity, lora, args.no_detailer)
+            g = rs.set_weights(graph, identity, lora, args.no_detailer)
             g = rs.patch(g, binding, job, job["seed"], guidance, args.steps)
             queued = rs.post(args.server, "/prompt", {"prompt": g, "client_id": client_id})
             record = rs.wait_for(args.server, queued["prompt_id"], args.timeout)

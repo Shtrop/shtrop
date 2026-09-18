@@ -162,6 +162,31 @@ def parse_ref(value: str, with_field: bool = True):
     return (node_id, field or "text")
 
 
+IDENTITY_CLASSES = ("pulid", "ipadapter", "instantid")
+LORA_CLASSES = ("lora",)
+DETAILER_CLASSES = ("detailer", "facerestore", "codeformer", "gfpgan", "reactor")
+
+
+def set_weights(graph: dict, identity: float | None = None, lora: float | None = None,
+                skip_detailer: bool = False) -> dict:
+    """Веса идентичности и обход детейлера. Сходство держат identity/lora, пластик — детейлер."""
+    g = copy.deepcopy(graph)
+    for node in g.values():
+        low = str(node.get("class_type", "")).lower()
+        inputs = node.get("inputs", {})
+        if identity is not None and any(c in low for c in IDENTITY_CLASSES):
+            if isinstance(inputs.get("weight"), (int, float)):
+                inputs["weight"] = identity
+        if lora is not None and any(c in low for c in LORA_CLASSES):
+            for field in ("strength_model", "strength_clip", "lora_strength"):
+                if isinstance(inputs.get(field), (int, float)):
+                    inputs[field] = lora
+        if skip_detailer and any(c in low for c in DETAILER_CLASSES):
+            if isinstance(inputs.get("denoise"), (int, float)):
+                inputs["denoise"] = 0.05
+    return g
+
+
 def patch(graph: dict, binding: Binding, job: dict, seed: int,
           guidance: float | None = None, steps: int | None = None) -> dict:
     g = copy.deepcopy(graph)
@@ -255,6 +280,11 @@ def main() -> int:
     ap.add_argument("--guidance", type=float,
                     help="переопределить guidance/cfg в графе (против пластика: 1.8-2.5 для FLUX)")
     ap.add_argument("--steps", type=int, help="переопределить число шагов сэмплера")
+    ap.add_argument("--identity", type=float,
+                    help="вес PuLID/IPAdapter: отвечает за сходство (0.85-0.95)")
+    ap.add_argument("--lora", type=float, help="вес LoRA (0.8)")
+    ap.add_argument("--no-detailer", action="store_true",
+                    help="заглушить детейлер лица: он воскует кожу и перерисовывает лицо поверх LoRA")
     args = ap.parse_args()
 
     batch = json.loads(args.batch.read_text(encoding="utf-8"))
@@ -298,6 +328,12 @@ def main() -> int:
         print("        Посмотрите граф: --list-nodes, затем укажите узлы вручную:", file=sys.stderr)
         print("        --positive <id>:<поле> --negative <id>:<поле> --seed-node <id>:<поле>", file=sys.stderr)
         return 2
+
+    # веса идентичности применяем один раз ко всему графу, дальше правим только промпт и seed
+    if args.identity is not None or args.lora is not None or args.no_detailer:
+        graph = set_weights(graph, args.identity, args.lora, args.no_detailer)
+        print(f"Веса: identity={args.identity} lora={args.lora} "
+              f"детейлер={'заглушен' if args.no_detailer else 'как в графе'}")
 
     jobs = batch["jobs"]
     if args.shots:

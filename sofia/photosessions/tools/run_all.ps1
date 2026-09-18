@@ -26,6 +26,9 @@ param(
     [string]   $LatentNode,
     [double]   $Guidance,
     [int]      $Steps,
+    [double]   $Identity,
+    [double]   $Lora,
+    [switch]   $NoDetailer,
     [switch]   $DryRun
 )
 
@@ -136,6 +139,9 @@ foreach ($batch in $batches) {
     if ($LatentNode) { $params += @('--latent-node', $LatentNode) }
     if ($Guidance)   { $params += @('--guidance', $Guidance) }
     if ($Steps)      { $params += @('--steps', $Steps) }
+    if ($Identity)   { $params += @('--identity', $Identity) }
+    if ($Lora)       { $params += @('--lora', $Lora) }
+    if ($NoDetailer) { $params += '--no-detailer' }
     if ($DryRun)     { $params += '--dry-run' }
 
     & $Python $Runner @params
