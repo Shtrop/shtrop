@@ -20,6 +20,10 @@ param(
     [string]   $Server  = '127.0.0.1:8188',
     [string[]] $Sessions,
     [int]      $Variants,
+    [string]   $Positive,
+    [string]   $Negative,
+    [string]   $SeedNode,
+    [string]   $LatentNode,
     [switch]   $DryRun
 )
 
@@ -58,6 +62,18 @@ try {
 }
 
 # --- workflow -----------------------------------------------------------
+$videoHints = @('i2v', 't2v', 'wan', 'video', 'reel', 'anim', 'latentsync', 'svd')
+$photoHints = @('flux', 'photo', 'foto', 'image', 'portrait', 'sdxl', 'pulid')
+
+function Get-WorkflowRank([string]$Path) {
+    # Чем меньше, тем лучше: фото-графы вперёд, видео-графы в конец.
+    $name = (Split-Path -Leaf $Path).ToLower()
+    if ($videoHints | Where-Object { $name -like "*$_*" }) { return 2 }
+    if ($photoHints | Where-Object { $name -like "*$_*" }) { return 0 }
+    return 1
+}
+
+$candidates = @()
 if (-not $Workflow) {
     Write-Host 'Ищу workflow в API-формате ...'
     $searchDirs = @(
@@ -66,20 +82,32 @@ if (-not $Workflow) {
         $PSScriptRoot
     ) | Where-Object { Test-Path $_ }
     foreach ($dir in $searchDirs) {
-        $found = Get-ChildItem -Path $dir -Filter *.json -Recurse -ErrorAction SilentlyContinue |
-                 Sort-Object LastWriteTime -Descending |
-                 Where-Object { Test-ApiWorkflow $_.FullName } |
-                 Select-Object -First 1
-        if ($found) { $Workflow = $found.FullName; break }
+        Get-ChildItem -Path $dir -Filter *.json -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { Test-ApiWorkflow $_.FullName } |
+            ForEach-Object { $candidates += $_.FullName }
     }
+    $candidates = $candidates | Sort-Object { Get-WorkflowRank $_ }, { (Get-Item $_).LastWriteTime } -Descending:$false
+    $Workflow = $candidates | Select-Object -First 1
 }
+
 if (-not $Workflow) {
-    throw 'Не нашёл workflow в API-формате. В ComfyUI: Workflow -> Export (API), затем укажите -Workflow <путь>.'
+    Write-Host 'Не нашёл ни одного workflow в API-формате.' -ForegroundColor Red
+    Write-Host 'В ComfyUI: Workflow -> Export (API). Затем осмотрите файлы:'
+    Write-Host "  python `"$PSScriptRoot\inspect_workflows.py`" D:\AI_CONTENT\Sofia\workflows"
+    throw 'Нет workflow для прогона.'
 }
 if (-not (Test-ApiWorkflow $Workflow)) {
     throw "Файл $Workflow не в API-формате. В ComfyUI: Workflow -> Export (API)."
 }
 Write-Host "  Workflow: $Workflow" -ForegroundColor Green
+if ((Get-WorkflowRank $Workflow) -eq 2) {
+    Write-Host '  ВНИМАНИЕ: имя файла похоже на видео-пайплайн (i2v/Wan), а не на фото-граф.' -ForegroundColor Yellow
+    Write-Host '  Если кадры не получатся, осмотрите все графы:' -ForegroundColor Yellow
+    Write-Host "    python `"$PSScriptRoot\inspect_workflows.py`" D:\AI_CONTENT\Sofia\workflows" -ForegroundColor Yellow
+}
+if ($candidates.Count -gt 1) {
+    Write-Host "  (найдено кандидатов: $($candidates.Count); переопределить: -Workflow <путь>)"
+}
 
 # --- сессии -------------------------------------------------------------
 $batches = Get-ChildItem -Path (Join-Path $PackRoot 'build') -Filter batch.json -Recurse |
@@ -99,8 +127,12 @@ foreach ($batch in $batches) {
     Write-Host "=== $slug ===" -ForegroundColor Cyan
 
     $params = @('--batch', $batch.FullName, '--workflow', $Workflow, '--out', $out, '--server', $Server)
-    if ($Variants) { $params += @('--variants', $Variants) }
-    if ($DryRun)   { $params += '--dry-run' }
+    if ($Variants)   { $params += @('--variants', $Variants) }
+    if ($Positive)   { $params += @('--positive', $Positive) }
+    if ($Negative)   { $params += @('--negative', $Negative) }
+    if ($SeedNode)   { $params += @('--seed-node', $SeedNode) }
+    if ($LatentNode) { $params += @('--latent-node', $LatentNode) }
+    if ($DryRun)     { $params += '--dry-run' }
 
     & $Python $Runner @params
     if ($LASTEXITCODE -ne 0) { $failed += $slug }

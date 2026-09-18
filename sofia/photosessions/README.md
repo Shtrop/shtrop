@@ -16,6 +16,7 @@ sofia/photosessions/
 ├── tools/build_prompts.py        # сборка финальных промптов
 ├── tools/run_session.py          # прогон одной сессии через ComfyUI
 ├── tools/run_all.ps1             # один запуск: все сессии -> Рабочий стол\Фотосессия
+├── tools/inspect_workflows.py    # какой из workflow ComfyUI годится для фото
 └── build/                        # результат сборки (брифы, .txt промпты, batch.json)
 ```
 
@@ -62,8 +63,26 @@ powershell -ExecutionPolicy Bypass -File tools\run_all.ps1
 `-Variants 2` (меньше вариантов на кадр), `-Workflow <путь>` (если автопоиск промахнулся),
 `-OutRoot <путь>` (другая папка), `-DryRun` (показать план без генерации).
 
-Перед первым запуском подставить реальные значения вместо `TODO_FROM_*` в
-`common/persona_lock.json` и пересобрать `python tools\build_prompts.py`.
+`TODO_FROM_*` в `common/persona_lock.json` на прогон не влияют: раннер подставляет в ваш
+workflow только промпт, негатив, seed и размер кадра, а sampler и веса LoRA/PuLID берутся из
+самого графа. Это справочные значения.
+
+Если автопоиск подцепил не тот граф (например видео-пайплайн i2v вместо фото-FLUX), осмотрите
+все workflow и возьмите нужный:
+
+```powershell
+python tools\inspect_workflows.py D:\AI_CONTENT\Sofia\workflows
+```
+
+Скрипт для каждого файла скажет, API-формат ли это, фото это или видео, и получается ли
+привязать позитив, негатив, seed и размер кадра. Дальше передайте нужный граф:
+`-Workflow "<путь>"`. Если привязка не определяется автоматически, посмотрите узлы
+
+```powershell
+python tools\run_session.py --batch build\golden_gym\batch.json --workflow "<путь>" --out . --list-nodes
+```
+
+и укажите их вручную: `-Positive 6:text -Negative 7:text -SeedNode 25:noise_seed`.
 
 ## Как прогонять в студии
 

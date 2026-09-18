@@ -27,20 +27,37 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-SAMPLERS = {"KSampler", "KSamplerAdvanced", "SamplerCustom", "SamplerCustomAdvanced"}
-TEXT_NODES = {"CLIPTextEncode", "CLIPTextEncodeFlux", "CLIPTextEncodeSDXL"}
-LATENT_NODES = {"EmptyLatentImage", "EmptySD3LatentImage", "EmptyLatentImagePresets"}
-NOISE_NODES = {"RandomNoise", "KSamplerSelect"}
+SAMPLER_HINTS = ("sampler", "guider")
+LATENT_HINTS = ("emptylatent", "emptysd3latent", "emptyimage", "latentimagepresets")
+SEED_FIELDS = ("seed", "noise_seed", "rand_seed")
+POSITIVE_FIELDS = ("text", "positive_prompt", "positive", "prompt")
+NEGATIVE_FIELDS = ("negative_prompt", "negative", "text")
+NEGATIVE_MARKERS = ("worst quality", "low quality", "blurry", "deformed", "watermark", "jpeg artifacts")
+
+
+def is_text_node(class_type: str) -> bool:
+    """Любой текстовый энкодер: CLIPTextEncode, T5TextEncode, WanVideoTextEncode, ..."""
+    c = class_type.lower()
+    return "text" in c and ("encode" in c or "prompt" in c)
+
+
+def text_field(node: dict, fields: tuple) -> str | None:
+    """Первое строковое поле узла из перечисленных."""
+    inputs = node.get("inputs", {})
+    for field in fields:
+        if isinstance(inputs.get(field), str):
+            return field
+    return None
 
 
 class Binding:
     """Куда в графе класть промпт, негатив, seed и размер кадра."""
 
     def __init__(self, positive=None, negative=None, seed=None, latent=None):
-        self.positive = positive
-        self.negative = negative
-        self.seed = seed
-        self.latent = latent
+        self.positive = positive   # (node_id, field)
+        self.negative = negative   # (node_id, field)
+        self.seed = seed           # (node_id, field)
+        self.latent = latent       # node_id
 
     def describe(self) -> str:
         return (f"positive={self.positive} negative={self.negative} "
@@ -51,52 +68,107 @@ class Binding:
 
 
 def autodetect(graph: dict) -> Binding:
-    """Найти узлы по структуре графа, а не по догадкам об именах."""
+    """Найти узлы по структуре графа: от сэмплера через guidance к текстовому энкодеру."""
     b = Binding()
 
-    def follow(ref):
-        """Ссылка вида [node_id, output_index] -> id текстового узла."""
-        if not isinstance(ref, list) or not ref:
+    def follow(ref, fields, depth=6, seen=None):
+        """Пройти по ссылке [node_id, idx] до текстового узла, минуя guidance-обёртки."""
+        seen = seen or set()
+        if not isinstance(ref, list) or not ref or depth <= 0:
             return None
         node_id = str(ref[0])
+        if node_id in seen:
+            return None
+        seen.add(node_id)
         node = graph.get(node_id)
-        if node and node.get("class_type") in TEXT_NODES:
-            return node_id
+        if not node:
+            return None
+        if is_text_node(node.get("class_type", "")):
+            field = text_field(node, fields)
+            return (node_id, field) if field else None
+        for value in node.get("inputs", {}).values():
+            hit = follow(value, fields, depth - 1, seen)
+            if hit:
+                return hit
         return None
 
     for node_id, node in graph.items():
-        ctype = node.get("class_type")
+        ctype = str(node.get("class_type", ""))
+        low = ctype.lower()
         inputs = node.get("inputs", {})
-        if ctype in SAMPLERS:
-            b.positive = b.positive or follow(inputs.get("positive"))
-            b.negative = b.negative or follow(inputs.get("negative"))
-            if "seed" in inputs and b.seed is None:
-                b.seed = (node_id, "seed")
-            elif "noise_seed" in inputs and b.seed is None:
-                b.seed = (node_id, "noise_seed")
-        if ctype in NOISE_NODES and "noise_seed" in inputs and b.seed is None:
-            b.seed = (node_id, "noise_seed")
-        if ctype in LATENT_NODES and b.latent is None:
+
+        if any(h in low for h in SAMPLER_HINTS):
+            if b.positive is None:
+                for key in ("positive", "conditioning", "text_embeds", "guider"):
+                    b.positive = b.positive or follow(inputs.get(key), POSITIVE_FIELDS)
+            if b.negative is None:
+                b.negative = follow(inputs.get("negative"), NEGATIVE_FIELDS)
+        if b.seed is None:
+            field = next((f for f in SEED_FIELDS if isinstance(inputs.get(f), (int, float))), None)
+            if field and (any(h in low for h in SAMPLER_HINTS) or "noise" in low):
+                b.seed = (node_id, field)
+        if b.latent is None and any(h in low for h in LATENT_HINTS) and "width" in inputs:
             b.latent = node_id
 
-    # Запасной вариант: по заголовку узла в ComfyUI.
+    # Узел с двумя текстовыми полями сразу (Wan-подобные графы).
     if b.positive is None or b.negative is None:
         for node_id, node in graph.items():
-            if node.get("class_type") not in TEXT_NODES:
+            if not is_text_node(str(node.get("class_type", ""))):
+                continue
+            inputs = node.get("inputs", {})
+            if isinstance(inputs.get("positive_prompt"), str) and isinstance(inputs.get("negative_prompt"), str):
+                b.positive = b.positive or (node_id, "positive_prompt")
+                b.negative = b.negative or (node_id, "negative_prompt")
+                break
+
+    # Запасной вариант: по заголовку узла или по содержимому (негатив выдаёт себя списком артефактов).
+    if b.positive is None or b.negative is None:
+        candidates = []
+        for node_id, node in graph.items():
+            if not is_text_node(str(node.get("class_type", ""))):
+                continue
+            field = text_field(node, ("text", "prompt"))
+            if not field:
                 continue
             title = str(node.get("_meta", {}).get("title", "")).lower()
-            if b.positive is None and ("positive" in title or "промпт" in title):
-                b.positive = node_id
-            if b.negative is None and ("negative" in title or "негатив" in title):
-                b.negative = node_id
+            value = str(node["inputs"][field]).lower()
+            looks_negative = ("negative" in title or "негатив" in title
+                              or any(m in value for m in NEGATIVE_MARKERS))
+            candidates.append((node_id, field, title, looks_negative))
+        for node_id, field, title, looks_negative in candidates:
+            if looks_negative and b.negative is None:
+                b.negative = (node_id, field)
+            elif not looks_negative and b.positive is None:
+                b.positive = (node_id, field)
+
+    # Любой seed-подобный числовой вход, если структура не помогла.
+    if b.seed is None:
+        for node_id, node in graph.items():
+            field = next((f for f in SEED_FIELDS
+                          if isinstance(node.get("inputs", {}).get(f), (int, float))), None)
+            if field:
+                b.seed = (node_id, field)
+                break
     return b
+
+
+def parse_ref(value: str, with_field: bool = True):
+    """Разбор ручного указания узла: '6:text' или '27'."""
+    if not value:
+        return None
+    if not with_field:
+        return value.split(":")[0]
+    node_id, _, field = value.partition(":")
+    return (node_id, field or "text")
 
 
 def patch(graph: dict, binding: Binding, job: dict, seed: int) -> dict:
     g = copy.deepcopy(graph)
-    g[binding.positive]["inputs"]["text"] = job["prompt"]
+    node_id, field = binding.positive
+    g[node_id]["inputs"][field] = job["prompt"]
     if binding.negative:
-        g[binding.negative]["inputs"]["text"] = job["negative_prompt"]
+        node_id, field = binding.negative
+        g[node_id]["inputs"][field] = job["negative_prompt"]
     node_id, field = binding.seed
     g[node_id]["inputs"][field] = seed
     if binding.latent:
@@ -163,6 +235,12 @@ def main() -> int:
     ap.add_argument("--variants", type=int, help="переопределить число вариантов на кадр")
     ap.add_argument("--timeout", type=int, default=900, help="ожидание одного кадра, с")
     ap.add_argument("--dry-run", action="store_true", help="показать план и выйти")
+    ap.add_argument("--list-nodes", action="store_true",
+                    help="показать узлы workflow и выйти (диагностика привязки)")
+    ap.add_argument("--positive", help="узел позитива вручную, например 6:text")
+    ap.add_argument("--negative", help="узел негатива вручную, например 7:text")
+    ap.add_argument("--seed-node", help="узел seed вручную, например 25:noise_seed")
+    ap.add_argument("--latent-node", help="узел латента вручную, например 27")
     args = ap.parse_args()
 
     batch = json.loads(args.batch.read_text(encoding="utf-8"))
@@ -171,11 +249,40 @@ def main() -> int:
         print("ОШИБКА: workflow сохранён в формате редактора. Нужен Export (API).", file=sys.stderr)
         return 2
 
+    if args.list_nodes:
+        print(f"Узлы workflow {args.workflow.name}:\n")
+        for node_id, node in sorted(graph.items(), key=lambda kv: int(kv[0]) if kv[0].isdigit() else 0):
+            ctype = node.get("class_type", "?")
+            title = node.get("_meta", {}).get("title", "")
+            fields = []
+            for key, value in node.get("inputs", {}).items():
+                if isinstance(value, str) and len(value) > 0:
+                    preview = value[:60].replace("\n", " ")
+                    fields.append(f"{key}='{preview}'")
+                elif isinstance(value, (int, float)) and key in SEED_FIELDS + ("width", "height", "batch_size"):
+                    fields.append(f"{key}={value}")
+            mark = " <- текстовый" if is_text_node(ctype) else ""
+            print(f"  {node_id:>4}  {ctype}{mark}" + (f"  [{title}]" if title else ""))
+            for f in fields:
+                print(f"        {f}")
+        print(f"\nАвтопривязка: {autodetect(graph).describe()}")
+        return 0
+
     binding = autodetect(graph)
+    if args.positive:
+        binding.positive = parse_ref(args.positive)
+    if args.negative:
+        binding.negative = parse_ref(args.negative)
+    if args.seed_node:
+        binding.seed = parse_ref(args.seed_node)
+    if args.latent_node:
+        binding.latent = parse_ref(args.latent_node, with_field=False)
+
     if binding.missing():
         print(f"ОШИБКА: не найдены узлы графа: {', '.join(binding.missing())}.", file=sys.stderr)
         print(f"        Найдено: {binding.describe()}", file=sys.stderr)
-        print("        Переименуйте текстовые узлы в 'positive'/'negative' и повторите.", file=sys.stderr)
+        print("        Посмотрите граф: --list-nodes, затем укажите узлы вручную:", file=sys.stderr)
+        print("        --positive <id>:<поле> --negative <id>:<поле> --seed-node <id>:<поле>", file=sys.stderr)
         return 2
 
     jobs = batch["jobs"]
