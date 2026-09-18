@@ -22,7 +22,7 @@
       "title_ru": "Свет по контуру",
       "pose": "standing in profile turned into the light, back deeply arched, both arms raised overhead with wrists crossed, ribcage lifted, chin up, eyes closed",
       "camera": "85mm lens, eye level, side profile, full body framing",
-      "light": "one hard softbox edge sculpting the entire silhouette, everything else falling to black",
+      "light": "one hard softbox edge grazing the whole silhouette, everything else falling to black",
       "id": "S11-01",
       "priority": "hero",
       "headphones": false
@@ -42,7 +42,7 @@
       "title_ru": "Прогиб, взгляд через плечо",
       "pose": "kneeling back on her heels on the low black apple box, spine deeply arched, one hand planted beside her, head turned over the shoulder holding direct eye contact with the lens",
       "camera": "35mm lens, slightly above eye level, back three-quarter angle, full body vertical framing",
-      "light": "one large softbox raking from camera left, sculpting every line, a narrow hard rim light along her opposite side",
+      "light": "one large softbox raking from camera left, raking across her, leaving real shadow in every hollow, a narrow hard rim light along her opposite side",
       "headphones": false
     },
     {
@@ -51,7 +51,7 @@
       "title_ru": "Отражение",
       "pose": "standing close to the tall studio mirror at the edge of the set, one hand resting on the surface, hip pushed out, chin lowered, holding her own gaze while the camera catches her and the reflection at once",
       "camera": "50mm lens, eye level, over-the-shoulder into the reflection, thigh-up framing",
-      "light": "one large softbox raking from camera left, sculpting every line, a narrow hard rim light along her opposite side",
+      "light": "one large softbox raking from camera left, raking across her, leaving real shadow in every hollow, a narrow hard rim light along her opposite side",
       "headphones": false
     },
     {
@@ -60,7 +60,7 @@
       "title_ru": "Силуэт против света",
       "pose": "standing at the edge of the black backdrop where the light falls off with one forearm raised against the frame, weight settled on one hip, back to the camera, long line of the spine on show, looking away into the light",
       "camera": "35mm lens, eye level, back view, full body vertical framing",
-      "light": "one large softbox raking from camera left, sculpting every line, a narrow hard rim light along her opposite side",
+      "light": "one large softbox raking from camera left, raking across her, leaving real shadow in every hollow, a narrow hard rim light along her opposite side",
       "headphones": false
     },
     {
@@ -69,7 +69,7 @@
       "title_ru": "Полулёжа, нога вытянута",
       "pose": "reclining back on the low black apple box propped on both elbows, one knee raised and the other leg stretched long, ribcage lifted, chin up, half-lidded gaze straight down the lens",
       "camera": "35mm lens, low camera at surface level, three-quarter front angle, full body framing",
-      "light": "one large softbox raking from camera left, sculpting every line, a narrow hard rim light along her opposite side",
+      "light": "one large softbox raking from camera left, raking across her, leaving real shadow in every hollow, a narrow hard rim light along her opposite side",
       "headphones": false
     },
     {
@@ -78,7 +78,7 @@
       "title_ru": "Деталь",
       "pose": "cropped detail composition of the line of her waist and the edge of the bodysuit against the black, face out of frame, fingers relaxed and naturally posed",
       "camera": "85mm lens, close detail framing, very shallow depth of field",
-      "light": "one large softbox raking from camera left, sculpting every line, a narrow hard rim light along her opposite side",
+      "light": "one large softbox raking from camera left, raking across her, leaving real shadow in every hollow, a narrow hard rim light along her opposite side",
       "headphones": false
     },
     {
@@ -87,7 +87,7 @@
       "title_ru": "Вид сверху",
       "pose": "lying on her back on the low black apple box, one arm thrown above her head, the other hand resting on her waist, hair fanned out, knees softly bent, eyes lifted to the lens",
       "camera": "35mm lens, directly overhead top-down angle, full body framing",
-      "light": "one large softbox raking from camera left, sculpting every line, a narrow hard rim light along her opposite side",
+      "light": "one large softbox raking from camera left, raking across her, leaving real shadow in every hollow, a narrow hard rim light along her opposite side",
       "headphones": false
     },
     {
@@ -96,7 +96,7 @@
       "title_ru": "В рост, рука в волосах",
       "pose": "standing tall alone in the middle of the black set, one hand pushing back through her hair with the elbow raised, weight shifted onto one leg so the hip breaks the line, chin down and eyes up into the lens",
       "camera": "50mm lens, slightly low angle, frontal, full body framing",
-      "light": "one large softbox raking from camera left, sculpting every line, a narrow hard rim light along her opposite side",
+      "light": "one large softbox raking from camera left, raking across her, leaving real shadow in every hollow, a narrow hard rim light along her opposite side",
       "headphones": false
     },
     {
@@ -105,8 +105,9 @@
       "title_ru": "Общий план",
       "pose": "seen small across the space small against the huge black backdrop, caught mid-movement and not looking at the camera, the room itself carrying the mood",
       "camera": "24mm wide lens, eye level, wide environmental full-body shot",
-      "light": "one large softbox raking from camera left, sculpting every line, a narrow hard rim light along her opposite side",
+      "light": "one large softbox raking from camera left, raking across her, leaving real shadow in every hollow, a narrow hard rim light along her opposite side",
       "headphones": false
     }
-  ]
+  ],
+  "film": "shot on Kodak Ektar 100 in the studio, fine tight grain, deep true blacks"
 }

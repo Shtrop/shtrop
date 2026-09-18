@@ -24,6 +24,8 @@ param(
     [string]   $Negative,
     [string]   $SeedNode,
     [string]   $LatentNode,
+    [double]   $Guidance,
+    [int]      $Steps,
     [switch]   $DryRun
 )
 
@@ -132,6 +134,8 @@ foreach ($batch in $batches) {
     if ($Negative)   { $params += @('--negative', $Negative) }
     if ($SeedNode)   { $params += @('--seed-node', $SeedNode) }
     if ($LatentNode) { $params += @('--latent-node', $LatentNode) }
+    if ($Guidance)   { $params += @('--guidance', $Guidance) }
+    if ($Steps)      { $params += @('--steps', $Steps) }
     if ($DryRun)     { $params += '--dry-run' }
 
     & $Python $Runner @params

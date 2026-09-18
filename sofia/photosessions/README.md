@@ -19,6 +19,7 @@ sofia/photosessions/
 ├── tools/run_session.py          # прогон одной сессии через ComfyUI
 ├── tools/run_all.ps1             # один запуск: все сессии -> Рабочий стол\Фотосессия
 ├── tools/inspect_workflows.py    # какой из workflow ComfyUI годится для фото
+├── REALISM.md                    # как убрать пластик: настройки графа и формулировки
 └── build/                        # результат сборки (брифы, .txt промпты, batch.json)
 ```
 
@@ -108,6 +109,12 @@ python tools\run_session.py --batch build\golden_gym\batch.json --workflow "<п�
    `<out>\run_manifest.json`.
 5. Прогнать `photo_qa` + `identity_guardian` по каждому кадру; FAIL уходит в `photo_regen`, а не заменяется соседним кадром.
 6. Публикация — только через Master Publish Gate отдельным решением владельца. Этот пакет её не касается.
+
+## Если кожа выглядит пластиковой
+
+См. [`REALISM.md`](REALISM.md). Коротко: `-Guidance 2.0 -Steps 40`, вес Sofia LoRA 0.65–0.8,
+face detailer выключить. Формулировки в промптах уже исправлены — слой `realism_tail` требует поры,
+веснушки, неровный тон и асимметрию, а в негативе стоят маркеры ИИ-вида.
 
 ## Границы контента
 

@@ -162,7 +162,8 @@ def parse_ref(value: str, with_field: bool = True):
     return (node_id, field or "text")
 
 
-def patch(graph: dict, binding: Binding, job: dict, seed: int) -> dict:
+def patch(graph: dict, binding: Binding, job: dict, seed: int,
+          guidance: float | None = None, steps: int | None = None) -> dict:
     g = copy.deepcopy(graph)
     node_id, field = binding.positive
     g[node_id]["inputs"][field] = job["prompt"]
@@ -176,6 +177,16 @@ def patch(graph: dict, binding: Binding, job: dict, seed: int) -> dict:
         latent_inputs["width"] = job["width"]
         latent_inputs["height"] = job["height"]
         latent_inputs["batch_size"] = 1
+    # Против пластиковой кожи: ниже guidance, больше шагов. Поля есть не в каждом графе.
+    if guidance is not None:
+        for node in g.values():
+            for field in ("guidance", "cfg"):
+                if isinstance(node.get("inputs", {}).get(field), (int, float)):
+                    node["inputs"][field] = guidance
+    if steps is not None:
+        for node in g.values():
+            if isinstance(node.get("inputs", {}).get("steps"), (int, float)):
+                node["inputs"]["steps"] = steps
     return g
 
 
@@ -241,6 +252,9 @@ def main() -> int:
     ap.add_argument("--negative", help="узел негатива вручную, например 7:text")
     ap.add_argument("--seed-node", help="узел seed вручную, например 25:noise_seed")
     ap.add_argument("--latent-node", help="узел латента вручную, например 27")
+    ap.add_argument("--guidance", type=float,
+                    help="переопределить guidance/cfg в графе (против пластика: 1.8-2.5 для FLUX)")
+    ap.add_argument("--steps", type=int, help="переопределить число шагов сэмплера")
     args = ap.parse_args()
 
     batch = json.loads(args.batch.read_text(encoding="utf-8"))
@@ -313,7 +327,9 @@ def main() -> int:
             seed = job["seed"] * 100 + v
             try:
                 queued = post(args.server, "/prompt",
-                              {"prompt": patch(graph, binding, job, seed), "client_id": client_id})
+                              {"prompt": patch(graph, binding, job, seed,
+                                               args.guidance, args.steps),
+                               "client_id": client_id})
                 record = wait_for(args.server, queued["prompt_id"], args.timeout)
                 files = save_images(args.server, record, args.out, f"{job['id']}_seed{seed}")
                 manifest.append({"id": job["id"], "seed": seed,

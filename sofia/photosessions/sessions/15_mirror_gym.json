@@ -7,11 +7,11 @@
   "mood_ru": "Ночной зал, зеркала в полный рост, неон. Микро-комплект и пот.",
   "base_seed": 115000,
   "aspect": "4:5",
-  "allure": "athletic micro-set glamour, tiny emerald top and micro shorts, toned abdomen and long legs fully on show, sweat-glossed skin, hard confident stare",
+  "allure": "athletic micro-set glamour, tiny emerald top and micro shorts, toned abdomen and long legs fully on show, skin damp with real sweat, hard confident stare",
   "wardrobe": {
     "code": "O",
     "notes_ru": "Изумрудный микро-комплект: короткий топ и очень короткие шорты, плотная ткань.",
-    "prompt": "tiny emerald green sports bra and matching micro training shorts, opaque fabric, sweat-glossed skin, white low sneakers, silver star pendant, dark hair in a high messy bun"
+    "prompt": "tiny emerald green sports bra and matching micro training shorts, opaque fabric, skin damp with real sweat, white low sneakers, silver star pendant, dark hair in a high messy bun"
   },
   "location": {
     "notes_ru": "Приватный зеркальный зал ночью, чёрное железо, неоновая полоса.",
@@ -108,5 +108,6 @@
       "light": "a single cool neon strip raking across her body, mirror reflections throwing a second light back onto her",
       "headphones": false
     }
-  ]
+  ],
+  "film": "shot on Cinestill 800T, neon halation and visible grain in the mirrors"
 }

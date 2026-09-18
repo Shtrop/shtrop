@@ -9,7 +9,7 @@
   "aspect": "4:5",
   "wardrobe": {
     "code": "E",
-    "prompt": "tight deep emerald green seamless ribbed sports bra with a plunging neckline with thin straps, matching emerald high-waisted leggings, bare feet, thin silver chain with small star pendant, dark brown messy high bun with damp loose face-framing strands, fresh dewy skin with no heavy makeup",
+    "prompt": "tight deep emerald green seamless ribbed sports bra with a plunging neckline with thin straps, matching emerald high-waisted leggings, bare feet, thin silver chain with small star pendant, dark brown messy high bun with damp loose face-framing strands, clean bare skin with visible texture, no heavy makeup",
     "notes_ru": "Изумрудный комплект — сигнатурная палитра персоны. Босиком на коврике, обувь только в кадрах у парапета."
   },
   "location": {
@@ -108,5 +108,6 @@
       "headphones": true
     }
   ],
-  "allure": "athletic glamour, emerald set hugging every line of the figure, toned waist and long legs emphasised, sheen of sweat on the skin, assured sensual gaze"
+  "allure": "athletic glamour, emerald set hugging every line of the figure, toned waist and long legs emphasised, sheen of sweat on the skin, assured sensual gaze",
+  "film": "shot on Kodak Gold 200, warm golden grain"
 }

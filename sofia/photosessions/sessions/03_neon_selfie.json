@@ -9,7 +9,7 @@
   "aspect": "4:5",
   "wardrobe": {
     "code": "C",
-    "prompt": "tight white ribbed cotton camisole with a low scoop neckline with tiny pink ditsy floral print and a small pink satin bow at the neckline, light grey drawstring sweatpants, fuzzy soft pink fleece robe worn open and slipping off both shoulders, thin silver chain with small star pendant, dark brown messy high bun with damp loose strands framing the face, dewy natural makeup with glossy lips and flushed cheeks",
+    "prompt": "tight white ribbed cotton camisole with a low scoop neckline with tiny pink ditsy floral print and a small pink satin bow at the neckline, light grey drawstring sweatpants, fuzzy soft pink fleece robe worn open and slipping off both shoulders, thin silver chain with small star pendant, dark brown messy high bun with damp loose strands framing the face, light natural makeup, flushed cheeks, matte balm on the lips",
     "notes_ru": "Халат всегда на плечах или приспущен, но кадр остаётся SFW — топ полностью надет."
   },
   "location": {
@@ -108,5 +108,6 @@
       "headphones": false
     }
   ],
-  "allure": "flirty selfie energy, fuzzy robe slipping low off both shoulders, deep neckline of the fitted tank, glossy parted lips, teasing half-lidded gaze straight down the lens"
+  "allure": "flirty selfie energy, fuzzy robe slipping low off both shoulders, deep neckline of the fitted tank, softly parted lips, teasing half-lidded gaze straight down the lens",
+  "film": "smartphone front camera at night, sensor noise, slight handheld blur, no flash"
 }

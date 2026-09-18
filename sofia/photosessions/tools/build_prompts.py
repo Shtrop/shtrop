@@ -26,13 +26,15 @@ def load(path: Path) -> dict:
 
 
 def compose_prompt(lock: dict, session: dict, shot: dict) -> str:
-    """Финальный positive prompt: личность -> гардероб -> поза -> подача -> кадр -> свет -> сцена -> качество."""
+    """Личность -> гардероб -> поза -> подача -> живая кожа -> оптика -> плёнка -> свет -> сцена -> хвосты."""
     parts = [
         lock["persona"]["identity_prompt"],
         session["wardrobe"]["prompt"],
         shot["pose"],
         session.get("allure", ""),
+        lock.get("realism_tail", ""),
         shot["camera"],
+        session.get("film", ""),
         shot["light"],
         session["location"]["prompt"],
     ]
@@ -102,6 +104,8 @@ def render_brief(lock: dict, session: dict, jobs: list[dict]) -> str:
         f"- Pipeline: {tech['pipeline']}",
         f"- Разрешение: {tech['base_resolution']}, апскейл {tech['upscale']}",
         f"- Steps {tech['steps']}, guidance {tech['guidance']}, sampler `{tech['sampler']}`",
+        f"- Плёнка сессии: {session.get('film', '—')}",
+        "- Против пластика см. `REALISM.md`: guidance, вес LoRA, face detailer, зерно",
         f"- LoRA `{tech['lora_weight']}`, PuLID `{tech['pulid_weight']}` — подставить из persona config",
         f"- Seed: {tech['seed_policy']}; по {tech['batch_per_shot']} варианта на кадр",
         f"- GPU: {tech['gpu']}",

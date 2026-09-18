@@ -9,7 +9,7 @@
   "aspect": "4:5",
   "wardrobe": {
     "code": "A",
-    "prompt": "tight dusty mauve seamless sports bra with a deep scoop neckline with thin spaghetti straps, oversized light heather grey wide-leg cotton sweatpants with white drawstring, white low-profile sneakers, thin silver chain with small star pendant, dark brown messy high bun with damp loose face-framing strands, no makeup look with glossy skin",
+    "prompt": "tight dusty mauve seamless sports bra with a deep scoop neckline with thin spaghetti straps, oversized light heather grey wide-leg cotton sweatpants with white drawstring, white low-profile sneakers, thin silver chain with small star pendant, dark brown messy high bun with damp loose face-framing strands, bare face with visible skin texture and a natural sheen",
     "notes_ru": "Один и тот же комплект во всех 10 кадрах. Пыльно-сиреневый топ + светло-серые широкие джоггеры."
   },
   "location": {
@@ -23,7 +23,7 @@
       "title_ru": "Тяга гантели в наклоне (реконструкция референса)",
       "pose": "bent-over single-arm dumbbell row, torso hinged forward about 45 degrees, right palm braced flat on the towel-covered bench, left hand gripping a heavy black dumbbell pulled up to the hip, elbow high and back, spine long, legs staggered, head lifted with direct intense eye contact into the lens",
       "camera": "35mm lens, chest-level eye line, three-quarter front angle, full body vertical framing",
-      "light": "warm low sunset backlight through the windows rimming the shoulders and arms, soft bounced fill on the face, glossy highlights on collarbones",
+      "light": "warm low sunset backlight through the windows rimming the shoulders and arms, soft bounced fill on the face, soft highlights on the collarbones",
       "headphones": false
     },
     {
@@ -108,5 +108,6 @@
       "headphones": true
     }
   ],
-  "allure": "athletic glamour mood, deep scoop neckline of the sports bra, toned waist and shoulders on display, sweat-glossed skin catching the light, strong arched posture, direct sultry eye contact"
+  "allure": "athletic glamour mood, deep scoop neckline of the sports bra, toned waist and shoulders on display, real sweat beading on her skin, strong arched posture, direct sultry eye contact",
+  "film": "shot on Kodak Portra 400, warm natural grain"
 }

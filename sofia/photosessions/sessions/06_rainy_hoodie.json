@@ -9,7 +9,7 @@
   "aspect": "4:5",
   "wardrobe": {
     "code": "F",
-    "prompt": "cropped heather grey zip hoodie unzipped low over a white ribbed tank top, matching grey lounge shorts, thigh-high grey ribbed socks, thin silver chain with small star pendant, dark brown messy high bun with loose damp strands, minimal dewy makeup",
+    "prompt": "cropped heather grey zip hoodie unzipped low over a white ribbed tank top, matching grey lounge shorts, thigh-high grey ribbed socks, thin silver chain with small star pendant, dark brown messy high bun with loose damp strands, minimal natural makeup",
     "notes_ru": "Серый меланж на всех кадрах. Молния худи наполовину — под ней всегда белый топ, кадр остаётся SFW."
   },
   "location": {
@@ -108,5 +108,6 @@
       "headphones": true
     }
   ],
-  "allure": "cozy sensual mood, cropped hoodie unzipped low over the fitted tank, bare thighs above the high socks, wistful smouldering look"
+  "allure": "cozy sensual mood, cropped hoodie unzipped low over the fitted tank, bare thighs above the high socks, wistful smouldering look",
+  "film": "shot on Fujifilm Pro 400H, cool muted greens and fine grain"
 }
