@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "persona": {
+    "name": "Sofia",
+    "age_canon": 26,
+    "status": "fictional AI persona (not a real person, no real-person likeness)",
+    "identity_prompt": "Sofia, 26-year-old woman, warm olive skin, dark brown almost-black hair, defined dark brows, hazel-green eyes, straight nose, full lips, soft oval face with high cheekbones, athletic hourglass figure, tiny beauty mark placement per persona config",
+    "signature_markers": {
+      "hair_default": "messy high bun with loose face-framing strands",
+      "jewelry": "thin silver chain with small star pendant",
+      "palette": "cappuccino + emerald accents (persona canon)",
+      "headphones_on_neck_ratio_target": 0.7
+    },
+    "identity_source_of_truth": "D:\\AI_CONTENT\\Sofia\\CLAUDE.md + actual persona/config files",
+    "note_ru": "Точные LoRA/PuLID параметры НЕ выдуманы здесь — подставить из актуальных persona/config файлов студии перед прогоном."
+  },
+  "tech_defaults": {
+    "pipeline": "ComfyUI + FLUX + Sofia LoRA/PuLID",
+    "base_resolution": "896x1152",
+    "upscale": "1.5x latent + face detailer pass",
+    "aspect": "4:5 vertical (Instagram feed)",
+    "steps": 30,
+    "guidance": 3.5,
+    "sampler": "TODO_FROM_STUDIO_WORKFLOW",
+    "lora_weight": "TODO_FROM_PERSONA_CONFIG",
+    "pulid_weight": "TODO_FROM_PERSONA_CONFIG",
+    "seed_policy": "per-session base seed, +1 per shot; hero shots get 4 seed variants",
+    "batch_per_shot": 4,
+    "gpu": "RTX 5090 32GB — один GPU job за раз, проверять gpu_resource_scheduler"
+  },
+  "quality_tail": "photorealistic editorial photograph, natural skin texture with visible pores and fine detail, realistic subsurface scattering, film-like color grading, sharp focus on eyes, shallow depth of field, high dynamic range, shot on full-frame mirrorless camera, 4k detail",
+  "negative_prompt": "deformed hands, extra fingers, missing fingers, fused fingers, extra limbs, malformed anatomy, asymmetric eyes, crossed eyes, plastic skin, waxy skin, airbrushed skin, over-smoothed, doll-like, uncanny valley, cgi render, 3d render, cartoon, anime, illustration, painting, watermark, text artifacts, logo, signature, jpeg artifacts, oversaturated, blown highlights, harsh direct flash, distorted face, warped background lines, floating objects, duplicated limbs, mismatched earrings, inconsistent jewelry, nudity, explicit content, underwear as outerwear, see-through fabric, minors",
+  "content_policy": {
+    "rating": "SFW lifestyle / fitness / cozy-home editorial",
+    "rules_ru": [
+      "Одежда всегда полностью надета и непрозрачная: спортивный топ, пижама, худи/халат.",
+      "Никакого explicit-контента, никакого namёka на несовершеннолетних — персона канонически 26 лет.",
+      "Не использовать внешность реальных публичных людей: только каноническая Sofia LoRA.",
+      "Caption/публикация проходят штатный Master Publish Gate — этот пакет только локальные промпты."
+    ]
+  },
+  "qa_gates": [
+    "identity_guardian: совпадение лица с каноном Sofia >= порог из persona config",
+    "photo_qa: руки, пальцы, украшения, симметрия глаз, артефакты фона",
+    "continuity: один и тот же наряд и причёска внутри сессии, одна и та же цепочка со звездой",
+    "brand_safety: SFW, без логотипов брендов и читаемого текста в кадре",
+    "photo_regen: авто-перегенерация кадра при FAIL, не подмена соседним кадром"
+  ]
+}

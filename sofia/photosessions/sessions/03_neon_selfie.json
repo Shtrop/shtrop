@@ -1,0 +1,111 @@
+{
+  "session_id": "S03",
+  "slug": "neon_selfie",
+  "title": "Neon Selfie Night",
+  "title_ru": "Неоновое селфи ночью",
+  "reference_source": "Референс 3 — селфи с прищуром, розовый халат, гейминг-комната с неоном",
+  "mood_ru": "Игривая, домашняя, чуть дерзкая. Эстетика фронтальной камеры: лёгкий шум, живая перспектива.",
+  "base_seed": 103000,
+  "aspect": "4:5",
+  "wardrobe": {
+    "code": "C",
+    "prompt": "white ribbed cotton camisole with tiny pink ditsy floral print and a small pink satin bow at the neckline, light grey drawstring sweatpants, fuzzy soft pink fleece robe worn open and slipping off both shoulders, thin silver chain with small star pendant, dark brown messy high bun with damp loose strands framing the face, dewy natural makeup with glossy lips and flushed cheeks",
+    "notes_ru": "Халат всегда на плечах или приспущен, но кадр остаётся SFW — топ полностью надет."
+  },
+  "location": {
+    "prompt": "night bedroom with a gaming setup, ultrawide monitor glowing with a purple sunset wallpaper, white over-ear headphones on a stand, RGB light strips in pink and violet, pink neon sign reading nothing legible on the wall, wall of pinned polaroid photographs, white gaming chair, lit candle, stack of books, plush cushions and cream faux-fur bedding, floor-to-ceiling window with city bokeh",
+    "notes_ru": "Неон розово-фиолетовый + тёплая свеча. Не выводить читаемый текст в кадре (brand safety)."
+  },
+  "shots": [
+    {
+      "id": "S03-01",
+      "priority": "hero",
+      "title_ru": "Селфи с подмигиванием (реконструкция референса)",
+      "pose": "handheld arm's-length selfie while leaning back into the pillows on the bed, one arm extended toward the camera, head tilted against the shoulder, one eye winked shut, lips in a soft playful pout, pink robe slipping off both shoulders",
+      "camera": "24mm front-facing phone camera look, slightly above eye level, natural selfie perspective with mild wide-angle distortion, chest-up framing",
+      "light": "mixed pink and violet neon wash from the left, warm candle glow from the right, cool city window as background bokeh",
+      "headphones": false
+    },
+    {
+      "id": "S03-02",
+      "priority": "core",
+      "title_ru": "Зеркальное селфи в полный рост",
+      "pose": "full-length mirror selfie standing with the phone held at chest height partially covering her face, hip cocked to one side, free hand tugging the fuzzy robe off one shoulder, relaxed confident posture",
+      "camera": "26mm phone rear camera look, eye level, full body framing in the mirror with the neon-lit room reflected behind",
+      "light": "pink neon key from behind the camera, violet RGB rim along the arm and robe, mild mirror haze",
+      "headphones": false
+    },
+    {
+      "id": "S03-03",
+      "priority": "core",
+      "title_ru": "Селфи за игровым столом в наушниках",
+      "pose": "sitting sideways in the white gaming chair with white over-ear headphones on, holding the phone out to one side, knees pulled up onto the seat, making a small peace sign near her cheek, bright open smile",
+      "camera": "24mm front-facing phone camera look, slight high angle, waist-up framing with the glowing monitor behind",
+      "light": "cool monitor glow on one side of the face, pink RGB strip light on the other, dark room between them",
+      "headphones": true
+    },
+    {
+      "id": "S03-04",
+      "priority": "core",
+      "title_ru": "Селфи сверху, лёжа в подушках",
+      "pose": "lying on her back among the faux-fur cushions holding the phone directly above her face with both hands, loose strands fanned across the pillow, robe spread open around her like petals, lips slightly parted, sleepy eye contact",
+      "camera": "24mm front-facing phone camera look, directly overhead top-down angle, head-and-shoulders framing",
+      "light": "soft violet neon from above the bed, warm candle spill on the cheek, gentle falloff into the dark bedding",
+      "headphones": false
+    },
+    {
+      "id": "S03-05",
+      "priority": "hero",
+      "title_ru": "Полулицо крупно, неоновый контур",
+      "pose": "very close selfie filling the frame with half of her face, one hand pushing loose strands back from the temple, chin slightly down, steady direct eye contact, small knowing smirk",
+      "camera": "24mm front-facing phone camera look, extreme close framing, mild lens distortion at the edges",
+      "light": "hard pink neon rim along the cheekbone and jaw, magenta catchlights in the eyes, deep shadow on the far side",
+      "headphones": false
+    },
+    {
+      "id": "S03-06",
+      "priority": "core",
+      "title_ru": "Селфи на фоне неоновой вывески",
+      "pose": "standing selfie turned three-quarter away with the glowing pink neon sign framed over her shoulder, phone held high, free hand adjusting the messy bun, chin lifted, calm cool expression",
+      "camera": "24mm front-facing phone camera look, high angle looking down, chest-up framing",
+      "light": "saturated pink neon backlight glowing through the loose hair, weak warm fill on the face, heavy color contrast",
+      "headphones": false
+    },
+    {
+      "id": "S03-07",
+      "priority": "core",
+      "title_ru": "Кандид: смеётся за клавиатурой",
+      "pose": "candid third-person shot of her mid-laugh at the gaming desk, both hands on a low-profile keyboard, headphones on, shoulders hunched forward in excitement, eyes on the monitor and not on the camera",
+      "camera": "35mm lens, eye level, side three-quarter angle, waist-up framing",
+      "light": "monitor glow as the main key on the face, violet RGB rim from behind, candle warmth in the far background",
+      "headphones": true
+    },
+    {
+      "id": "S03-08",
+      "priority": "core",
+      "title_ru": "Селфи с капучино у лица",
+      "pose": "cozy selfie holding a ceramic mug of cappuccino up near her cheek with both hands, robe pulled closed around her, shoulders raised in a comfortable shrug, warm soft smile with eyes almost closed",
+      "camera": "24mm front-facing phone camera look, eye level, chest-up framing",
+      "light": "warm candle key from below the mug, pink neon fill from the side, steam catching the light between them",
+      "headphones": true
+    },
+    {
+      "id": "S03-09",
+      "priority": "core",
+      "title_ru": "Селфи у окна, капюшон халата",
+      "pose": "selfie beside the dark window with the fuzzy pink robe hood pulled up over the bun, one hand holding the hood edge near her face, leaning her temple against the glass, quiet thoughtful expression",
+      "camera": "24mm front-facing phone camera look, eye level, head-and-shoulders framing with the city bokeh behind",
+      "light": "low ambient night light, cool blue city reflection on the cheek, faint pink neon from deep in the room, visible low-light grain",
+      "headphones": false
+    },
+    {
+      "id": "S03-10",
+      "priority": "filler",
+      "title_ru": "Автопортрет сверху: ноги, ноутбук, кадр в кадре",
+      "pose": "top-down self-portrait looking down her own body from her eye position, showing crossed legs in grey sweatpants, sock-clad feet, an open laptop and a mug on the bedding, one hand in the frame holding the phone visible in a small mirror at the edge",
+      "camera": "24mm front-facing phone camera look, steep top-down point-of-view angle, wide flat-lay style framing",
+      "light": "even pink and violet ambient neon over the bedding, warm candle pool in one corner, soft shadows",
+      "headphones": false
+    }
+  ]
+}
