@@ -34,6 +34,18 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Сессии могут прийти и пробелами (остаточные аргументы), и одной строкой с запятыми —
+# нормализуем к плоскому списку, иначе слаги не совпадут с именами папок.
+if ($Sessions) {
+    $Sessions = @(
+        $Sessions |
+            ForEach-Object { $_ -split '[,;]' } |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ -ne '' }
+    )
+}
+
 if ($Server -notmatch '^[\w\.\-]+:\d+$') {
     throw "Адрес ComfyUI выглядит неверно: '$Server'. Ожидается вид 127.0.0.1:8188. " +
           "Если это имя сессии — перечисляйте сессии после -Sessions или через запятую."
