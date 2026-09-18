@@ -18,6 +18,7 @@ param(
     [string]   $Workflow,
     [string]   $OutRoot = (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Фотосессия'),
     [string]   $Server  = '127.0.0.1:8188',
+    [Parameter(ValueFromRemainingArguments = $true)]
     [string[]] $Sessions,
     [int]      $Variants,
     [string]   $Positive,
@@ -33,6 +34,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if ($Server -notmatch '^[\w\.\-]+:\d+$') {
+    throw "Адрес ComfyUI выглядит неверно: '$Server'. Ожидается вид 127.0.0.1:8188. " +
+          "Если это имя сессии — перечисляйте сессии после -Sessions или через запятую."
+}
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {}
 $env:PYTHONIOENCODING = 'utf-8'
 
@@ -117,9 +122,15 @@ if ($candidates.Count -gt 1) {
 # --- сессии -------------------------------------------------------------
 $batches = Get-ChildItem -Path (Join-Path $PackRoot 'build') -Filter batch.json -Recurse |
            Sort-Object FullName
+$available = $batches | ForEach-Object { $_.Directory.Name }
 if ($Sessions) {
+    $unknown = $Sessions | Where-Object { $available -notcontains $_ }
+    if ($unknown) {
+        Write-Host "Неизвестные сессии: $($unknown -join ', ')" -ForegroundColor Red
+        Write-Host "Доступны: $($available -join ', ')"
+        throw 'Проверьте имена сессий.'
+    }
     $batches = $batches | Where-Object { $Sessions -contains $_.Directory.Name }
-    if (-not $batches) { throw "Сессии не найдены: $($Sessions -join ', ')" }
 }
 
 New-Item -ItemType Directory -Force -Path $OutRoot | Out-Null
