@@ -147,3 +147,32 @@ def test_agent_returning_the_wrong_type_fails_loudly(tmp_path):
     factory.ownership.acquire("r1", "bad")
     with pytest.raises(Exception):
         runner.run(Capability.IDEA, AgentContext("r1", "bad", str(tmp_path)))
+
+
+def test_a_corrupt_lease_is_not_read_as_an_unowned_task(tmp_path):
+    """Answering "nobody owns this" on damaged input invites a second director.
+
+    A lease truncated by a hard reset used to parse as ``None``, which is the
+    same answer as "free" — so the next process would take the Reel over while
+    the original owner was still working on it.
+    """
+    own = OwnershipRegistry(tmp_path)
+    own.acquire("r1", "director-a")
+
+    path = tmp_path / "r1.lease"
+    path.write_text(path.read_text(encoding="utf-8")[:6], encoding="utf-8")
+
+    with pytest.raises(OwnershipError):
+        own.current("r1")
+    with pytest.raises(OwnershipError):
+        own.acquire("r1", "director-b")
+
+
+def test_a_released_lease_is_still_free(tmp_path):
+    """Release truncates to empty (NO-DELETE); that stays a clean hand-back."""
+    own = OwnershipRegistry(tmp_path)
+    own.acquire("r1", "director-a")
+    own.release("r1", "director-a")
+
+    assert own.current("r1") is None
+    assert own.acquire("r1", "director-b").owner == "director-b"

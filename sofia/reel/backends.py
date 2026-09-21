@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Protocol, Sequence, runtime_checkable
 
+from sofia.core.durable import atomic_write_text
 from sofia.core.errors import BackendUnavailableError
 from sofia.reel.contracts import Shot
 from sofia.reel.shots import GeneratorProfile
@@ -331,10 +332,9 @@ class FfmpegEditor:
             raise BackendUnavailableError(f"edit spec references missing clips: {missing}")
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        list_file = out_path.parent / f"{out_path.stem}.concat.txt"
-        list_file.write_text(
+        list_file = atomic_write_text(
+            out_path.parent / f"{out_path.stem}.concat.txt",
             "\n".join(_concat_entry(Path(c)) for c in clips) + "\n",
-            encoding="utf-8",
         )
         cmd = [self.binary, "-y", "-f", "concat", "-safe", "0", "-i", str(list_file)]
         audio_track = spec.get("audio")

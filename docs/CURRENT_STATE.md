@@ -219,6 +219,34 @@ A torn tail is now tolerated and *reported* (`journal_integrity`, surfaced in
 `director.status()`), while corruption anywhere other than the tail still
 raises, because nothing in normal operation can produce that.
 
+Following the same fault forward: **the writes themselves were not atomic.**
+`Path.write_text` truncates the file before the new bytes land, so a power loss
+inside that window leaves neither version. Checkpoints already wrote through a
+temp-file-and-rename, but nothing else did — including
+`GrowthMemory.save`, the *only* store of REAL publication records, which
+NO-DELETE exists to protect. Every durable write in `sofia/` now goes through
+`sofia/core/durable.py` (write to a temp file in the target directory, fsync,
+`os.replace`): growth memory, ownership leases, `.ass`/`.srt` subtitle files
+(libass renders a truncated one without complaining), the ffmpeg concat list
+and every saved report. JSON is serialised *before* the file is touched, so an
+unencodable object fails with the previous version still on disk.
+
+Two reads of that state were fail-open and are now fail-closed:
+
+- **A torn growth-memory file read as an empty history**, which is not "unknown
+  baseline" but "zero publications" — the exact NOT_MEASURED-to-0 conversion
+  the policy forbids. It now raises `GrowthMemoryError` naming the file.
+- **A torn lease file read as `None`**, which is the same answer as "nobody
+  owns this Reel", so a second director could take over live work. An
+  unreadable lease now raises; only an empty one (how `release` hands a task
+  back under NO-DELETE) still means free.
+
+A third defect surfaced while fixing the first: `save` dropped each
+publication's evidence label and `load` assumed `REAL`, so a `PREDICTED` record
+came back as a REAL publication and fed a REAL baseline. The label is now
+persisted and read back, and `GrowthMemory` rejects any non-REAL record in
+`records` at construction — predictions belong in `shadow`.
+
 One hypothesis from the same audit did **not** hold and was deliberately not
 "fixed": lease staleness uses a PID, and a hard reset can let the OS reuse it,
 so a dead holder can look alive. In this design the director always claims

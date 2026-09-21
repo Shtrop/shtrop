@@ -12,12 +12,12 @@ and a batch where nothing could be measured is ``NOT_MEASURED`` rather than
 
 from __future__ import annotations
 
-import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Mapping, Optional, Sequence
 
+from sofia.core.durable import atomic_write_json
 from sofia.core.verdict import Verdict
 from sofia.reel.contracts import GrowthInput, ReelResult
 from sofia.reel.shots import estimated_cost
@@ -258,9 +258,5 @@ def run_batch(
 
     report.wall_s = time.monotonic() - started
     if report_dir:
-        Path(report_dir).mkdir(parents=True, exist_ok=True)
-        (Path(report_dir) / "reel_batch.json").write_text(
-            json.dumps(report.to_dict(), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        atomic_write_json(Path(report_dir) / "reel_batch.json", report.to_dict())
     return report

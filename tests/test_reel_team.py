@@ -1,4 +1,5 @@
 """Reel team: shot routing, story structure, subtitles, mix, repair, gates."""
+import json
 
 import pytest
 
@@ -28,7 +29,12 @@ from sofia.reel.critics import (
 )
 from sofia.reel.backends import ReelBackends
 from sofia.reel.gpu import GpuArbiter, WorkClass
-from sofia.reel.growth import GrowthEngine, GrowthMemory
+from sofia.reel.growth import (
+    GrowthEngine,
+    GrowthMemory,
+    GrowthMemoryError,
+    PublicationRecord,
+)
 from sofia.reel.repair_router import RepairRouter
 from sofia.reel.shots import estimated_cost, assign_profiles, profile_for, validate_story
 from sofia.reel.subtitles import (
@@ -738,6 +744,77 @@ def test_shadow_memory_survives_a_reload_and_stays_separate(tmp_path):
     assert reloaded.records == []
     # A reload must never promote a shadow entry into a REAL baseline.
     assert reloaded.baseline("retention").value is None
+
+
+def test_a_predicted_record_cannot_be_filed_as_a_real_publication():
+    """``records`` is the REAL stream; a prediction there becomes a REAL baseline."""
+    from sofia.core.verdict import Evidence
+    from sofia.reel.growth import GrowthMemoryError, PublicationRecord
+
+    with pytest.raises(GrowthMemoryError):
+        GrowthMemory(
+            records=[
+                PublicationRecord(
+                    content_id="c1",
+                    permalink="",
+                    hook="h",
+                    format="reel",
+                    published_at="2026-01-01",
+                    metrics={"retention": 0.9},
+                    evidence=Evidence.PREDICTED,
+                )
+            ]
+        )
+
+
+def test_a_publication_keeps_its_evidence_label_across_a_reload(tmp_path):
+    """The label used to be dropped on save and assumed REAL on load."""
+    from sofia.core.verdict import Evidence
+    from sofia.reel.growth import PublicationRecord
+
+    path = GrowthMemory(
+        records=[
+            PublicationRecord(
+                content_id="c1",
+                permalink="https://example/p",
+                hook="h",
+                format="reel",
+                published_at="2026-01-01",
+                metrics={"retention": 0.5},
+            )
+        ]
+    ).save(tmp_path / "history.json")
+
+    on_disk = json.loads(path.read_text(encoding="utf-8"))
+    assert on_disk["records"][0]["evidence"] == Evidence.REAL.value
+
+    # And a file that claims otherwise is refused rather than quietly upgraded.
+    on_disk["records"][0]["evidence"] = Evidence.PREDICTED.value
+    path.write_text(json.dumps(on_disk), encoding="utf-8")
+    with pytest.raises(GrowthMemoryError):
+        GrowthMemory.load(path)
+
+
+def test_an_unreadable_history_is_an_error_not_an_empty_baseline(tmp_path):
+    """A torn file must not read as "no publications" — that erases the baseline."""
+    path = GrowthMemory(
+        records=[
+            PublicationRecord(
+                content_id="c1",
+                permalink="",
+                hook="h",
+                format="reel",
+                published_at="2026-01-01",
+                metrics={"retention": 0.5},
+            )
+        ]
+    ).save(tmp_path / "history.json")
+
+    full = path.read_text(encoding="utf-8")
+    path.write_text(full[: len(full) // 2], encoding="utf-8")
+
+    with pytest.raises(GrowthMemoryError):
+        GrowthMemory.load(path)
 
 
 def test_growth_offers_a_prior_winning_hook_when_none_is_supplied():

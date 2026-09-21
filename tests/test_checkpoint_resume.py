@@ -272,3 +272,50 @@ def test_a_missing_journal_reports_absent_rather_than_torn(tmp_path):
     report = CheckpointStore(tmp_path).journal_integrity("never-existed")
     assert report["exists"] is False
     assert report["torn_tail"] is False
+
+
+# ---- durable writes ------------------------------------------------------
+def test_an_interrupted_write_leaves_the_previous_version_intact(tmp_path):
+    """The host loses power mid-write; the old file must still be readable.
+
+    ``Path.write_text`` truncates first, so the crash window costs the whole
+    file. The atomic helper writes elsewhere and renames, so a reader sees one
+    version or the other and never a splice.
+    """
+    from sofia.core.durable import atomic_write_json
+
+    target = tmp_path / "state.json"
+    atomic_write_json(target, {"records": ["first"]})
+
+    class Unserialisable:
+        pass
+
+    with pytest.raises(TypeError):
+        atomic_write_json(target, {"records": [Unserialisable()]})
+
+    assert json.loads(target.read_text(encoding="utf-8")) == {"records": ["first"]}
+
+
+def test_an_interrupted_write_leaves_no_temp_file_behind(tmp_path, monkeypatch):
+    """A stray temp file would be picked up as an artifact on the next resume.
+
+    The interrupt is injected at ``os.replace`` — the last moment before the
+    swap — so the temp file definitely exists when it lands.
+    """
+    import os
+
+    from sofia.core import durable
+
+    target = tmp_path / "sub" / "cues.ass"
+    durable.atomic_write_text(target, "ok")
+
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt("power loss")
+
+    monkeypatch.setattr(os, "replace", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        durable.atomic_write_text(target, "half written")
+
+    monkeypatch.undo()
+    assert target.read_text(encoding="utf-8") == "ok"
+    assert [p.name for p in target.parent.iterdir() if p.name.startswith(".tmp-")] == []

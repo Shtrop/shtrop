@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional, Sequence
 
+from sofia.core.durable import atomic_write_text
 from sofia.voice.contracts import Language
 from sofia.voice.text import normalize
 
@@ -129,10 +130,7 @@ def to_srt(cues: Sequence[Cue]) -> str:
 
 
 def write_srt(cues: Sequence[Cue], path: str | Path) -> Path:
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(to_srt(cues), encoding="utf-8")
-    return p
+    return atomic_write_text(path, to_srt(cues))
 
 
 def parse_srt(path: str | Path) -> list[Cue]:
@@ -366,9 +364,11 @@ def write_ass(
     safe_bottom: float = SAFE_BOTTOM,
     font_size: Optional[int] = None,
 ) -> Path:
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(
+    # Written atomically: a half-written .ass is not an error to libass, it
+    # silently renders fewer cues, and on resume it would be reused as if it
+    # were complete.
+    return atomic_write_text(
+        path,
         to_ass(
             cues,
             width=width,
@@ -376,9 +376,7 @@ def write_ass(
             safe_bottom=safe_bottom,
             font_size=font_size,
         ),
-        encoding="utf-8",
     )
-    return p
 
 
 def _ass_ts(seconds: float) -> str:

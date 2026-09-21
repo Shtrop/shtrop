@@ -9,12 +9,12 @@ that happened to work.
 
 from __future__ import annotations
 
-import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
+from sofia.core.durable import atomic_write_json
 from sofia.core.gates import GateResult
 from sofia.core.verdict import Verdict
 from sofia.voice.contracts import Language, VoiceVerdict
@@ -225,10 +225,9 @@ def run_campaign(
 
     report.wall_s = time.monotonic() - started
     if report_dir:
-        Path(report_dir).mkdir(parents=True, exist_ok=True)
-        out = Path(report_dir) / f"voice_campaign_{language.value}.json"
-        out.write_text(
-            json.dumps(report.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
+        atomic_write_json(
+            Path(report_dir) / f"voice_campaign_{language.value}.json",
+            report.to_dict(),
         )
     return report
 
@@ -370,10 +369,7 @@ def run_cross_language(
             )
 
     if report_dir:
-        Path(report_dir).mkdir(parents=True, exist_ok=True)
-        (Path(report_dir) / "voice_cross_language.json").write_text(
-            json.dumps(out.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        atomic_write_json(Path(report_dir) / "voice_cross_language.json", out.to_dict())
     return out
 
 

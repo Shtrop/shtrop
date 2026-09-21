@@ -8,7 +8,6 @@ covered, and which backends this machine actually has.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Optional
@@ -16,6 +15,7 @@ from typing import Mapping, Optional
 from sofia.agents.base import AgentContext, AgentResult, AgentSpec, Capability
 from sofia.agents.factory import AgentFactory
 from sofia.agents.runner import AgentRunner
+from sofia.core.durable import atomic_write_json
 from sofia.reel.backends import ReelBackends, detect_reel_backends
 from sofia.reel.critics import ReelThresholds
 from sofia.reel.director import ReelDirector, ReelDirectorConfig
@@ -74,12 +74,7 @@ class Studio:
         }
 
     def save_audit(self, path: str | Path) -> Path:
-        p = Path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(
-            json.dumps(self.audit(), ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        return p
+        return atomic_write_json(path, self.audit())
 
 
 def build_studio(

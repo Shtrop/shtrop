@@ -11,12 +11,12 @@ measured recommends nothing at all.
 
 from __future__ import annotations
 
-import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Sequence
 
+from sofia.core.durable import atomic_write_json
 from sofia.core.errors import BackendUnavailableError
 from sofia.core.paths import safe_component
 from sofia.core.verdict import Evidence, Measurement, Verdict
@@ -274,7 +274,4 @@ def _run_arm(
 
 
 def save_trial(report: TrialReport, path: str | Path) -> Path:
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(report.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
-    return p
+    return atomic_write_json(path, report.to_dict())

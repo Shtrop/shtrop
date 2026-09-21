@@ -11,12 +11,12 @@ from __future__ import annotations
 import enum
 import json
 import os
-import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Optional, Sequence
 
+from sofia.core.durable import atomic_write_json
 from sofia.core.errors import CheckpointError
 from sofia.core.paths import safe_component as _safe
 
@@ -293,19 +293,7 @@ def remaining_stages(stage: StageState) -> Sequence[StageState]:
 
 # ---- io helpers ----------------------------------------------------------
 def _atomic_write_json(path: Path, data: Mapping[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    text = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True)
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".tmp-", suffix=".json")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(text)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp, path)
-    except BaseException:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
-        raise
+    atomic_write_json(path, data, sort_keys=True)
 
 
 def _append_jsonl(path: Path, entry: Mapping[str, Any]) -> None:

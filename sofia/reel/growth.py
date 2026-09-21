@@ -14,8 +14,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
+from sofia.core.durable import atomic_write_json
+from sofia.core.errors import SofiaError
 from sofia.core.verdict import Evidence, Measurement
 from sofia.reel.contracts import GrowthInput
+
+
+class GrowthMemoryError(SofiaError):
+    """Raised when the growth memory file cannot be trusted.
+
+    Never downgraded to "no history": an unreadable file means the baseline is
+    unknown, which is a different thing from a baseline of zero.
+    """
 
 
 @dataclass
@@ -52,12 +62,35 @@ class GrowthMemory:
     shadow: list[dict] = field(default_factory=list)
     source: str = "historical-analytics"
 
+    def __post_init__(self) -> None:
+        # The invariant the whole class rests on. A single mislabelled entry
+        # would turn a prediction into a REAL baseline, so it is checked where
+        # the list is built rather than trusted by convention.
+        for record in self.records:
+            if record.evidence is not Evidence.REAL:
+                raise GrowthMemoryError(
+                    f"publication {record.content_id!r} is labelled "
+                    f"{record.evidence.value}; only REAL publications belong in "
+                    "records (use shadow for anything predicted)"
+                )
+
     @classmethod
     def load(cls, path: str | Path) -> "GrowthMemory":
         p = Path(path)
         if not p.exists():
             return cls(records=[], source=f"{p} (absent)")
-        data = json.loads(p.read_text(encoding="utf-8"))
+        raw = p.read_text(encoding="utf-8")
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            # A half-written file is the one thing that must not read as an
+            # empty history: that would silently erase every REAL publication
+            # from the baseline instead of reporting that it is unknown.
+            raise GrowthMemoryError(
+                f"growth memory at {p} is not valid JSON ({exc}); "
+                f"{len(raw)} bytes on disk. Refusing to continue with an "
+                "empty history — restore the file or start a new one explicitly"
+            ) from exc
         shadow = list(data.get("shadow", []))
         records = [
             PublicationRecord(
@@ -67,6 +100,10 @@ class GrowthMemory:
                 format=r.get("format", ""),
                 published_at=r.get("published_at", ""),
                 metrics=dict(r.get("metrics", {})),
+                # Files written before the label was persisted only ever held
+                # REAL records, so an absent key reads as REAL; a present one
+                # is honoured, and __post_init__ rejects anything else.
+                evidence=Evidence(r.get("evidence", Evidence.REAL.value)),
             )
             for r in data.get("records", [])
         ]
@@ -76,32 +113,28 @@ class GrowthMemory:
         """Persist REAL publications and shadow entries side by side.
 
         They stay in separate keys so a reload can never mistake one for the
-        other.
+        other, each record carries its evidence label, and the write is atomic:
+        this is the only store of REAL platform records, and losing power
+        mid-write must not cost us the history.
         """
-        p = Path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(
-            json.dumps(
-                {
-                    "records": [
-                        {
-                            "content_id": r.content_id,
-                            "permalink": r.permalink,
-                            "hook": r.hook,
-                            "format": r.format,
-                            "published_at": r.published_at,
-                            "metrics": dict(r.metrics),
-                        }
-                        for r in self.records
-                    ],
-                    "shadow": list(self.shadow),
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
+        return atomic_write_json(
+            path,
+            {
+                "records": [
+                    {
+                        "content_id": r.content_id,
+                        "permalink": r.permalink,
+                        "hook": r.hook,
+                        "format": r.format,
+                        "published_at": r.published_at,
+                        "metrics": dict(r.metrics),
+                        "evidence": r.evidence.value,
+                    }
+                    for r in self.records
+                ],
+                "shadow": list(self.shadow),
+            },
         )
-        return p
 
     def baseline(self, kpi: str) -> Measurement:
         values = [r.kpi(kpi) for r in self.records]

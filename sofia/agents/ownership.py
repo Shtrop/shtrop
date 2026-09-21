@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from sofia.core.durable import atomic_write_text
 from sofia.core.errors import OwnershipError
 from sofia.core.paths import safe_component
 
@@ -63,14 +64,34 @@ class OwnershipRegistry:
         return self.root / f"{safe_component(task_id)}.lease"
 
     def current(self, task_id: str) -> Optional[Lease]:
+        """The live lease, ``None`` if the task was released or never claimed.
+
+        A lease we cannot read is *not* reported as free. Answering "nobody owns
+        this" on damaged input is how two directors end up writing the same
+        Reel, so an unreadable file raises instead.
+        """
         path = self._path(task_id)
         if not path.exists():
             return None
         try:
-            owner, acquired_at, ttl_s, pid = path.read_text(encoding="utf-8").split("\n")[:4]
-            return Lease(task_id, owner, float(acquired_at), float(ttl_s), int(pid))
-        except (ValueError, OSError):
+            raw = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise OwnershipError(
+                f"lease file for task {task_id!r} cannot be read ({exc}); "
+                "refusing to treat the task as unowned"
+            ) from exc
+        if not raw.strip():
+            # release() truncates rather than deleting, per NO-DELETE.
             return None
+        try:
+            owner, acquired_at, ttl_s, pid = raw.split("\n")[:4]
+            return Lease(task_id, owner, float(acquired_at), float(ttl_s), int(pid))
+        except ValueError as exc:
+            raise OwnershipError(
+                f"lease file for task {task_id!r} is corrupt ({exc}); "
+                f"{len(raw)} bytes on disk. Inspect {path} and truncate it to "
+                "release the task deliberately"
+            ) from exc
 
     def acquire(self, task_id: str, owner: str, ttl_s: float = 3600.0) -> Lease:
         existing = self.current(task_id)
@@ -81,9 +102,9 @@ class OwnershipRegistry:
                 f"{owner!r} may not take it over"
             )
         lease = Lease(task_id, owner, time.time(), ttl_s, os.getpid())
-        self._path(task_id).write_text(
+        atomic_write_text(
+            self._path(task_id),
             f"{lease.owner}\n{lease.acquired_at}\n{lease.ttl_s}\n{lease.pid}\n",
-            encoding="utf-8",
         )
         return lease
 
@@ -100,7 +121,7 @@ class OwnershipRegistry:
         self.assert_owner(task_id, owner)
         # NO-DELETE policy applies to artifacts and journals, not to transient
         # lease files; a released lease is truncated rather than removed.
-        self._path(task_id).write_text("", encoding="utf-8")
+        atomic_write_text(self._path(task_id), "")
 
     def renew(self, task_id: str, owner: str, ttl_s: float = 3600.0) -> Lease:
         self.assert_owner(task_id, owner)
