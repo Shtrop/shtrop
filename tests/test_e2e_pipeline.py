@@ -506,7 +506,7 @@ def test_the_repair_loop_is_bounded_and_stops_when_the_reel_settles(tmp_path):
 
     director._regenerate = fake_regenerate
 
-    def failing() -> ReelResult:
+    def failing(voice=None) -> ReelResult:
         return ReelResult(
             reel_id="r",
             verdict=Verdict.FAIL,
@@ -539,7 +539,7 @@ def test_a_repair_that_clears_the_defect_stops_the_loop(tmp_path):
     rounds = {"n": 0}
     director._regenerate = lambda reel_id, stages, **kw: kw["voice_results"]
 
-    def qa() -> ReelResult:
+    def qa(voice=None) -> ReelResult:
         rounds["n"] += 1
         if rounds["n"] > 1:
             return ReelResult(reel_id="r", verdict=Verdict.PASS, stage=StageState.FINAL_QA)
@@ -634,3 +634,67 @@ def test_a_trial_run_through_the_studio_cannot_forget_the_arbiter(tmp_path):
     report = studio.lipsync_trial({}, shots, {1: "/dev/null"}, lambda p, s: {})
     assert asked["n"] == 1
     assert "production holds the GPU" in report.champion.failures[0]
+
+
+def test_a_voice_repair_is_judged_on_the_takes_it_produced(tmp_path):
+    """The gates must see the repaired verdicts, not the ones thrown away.
+
+    The final-QA call started life as a closure over the director's original
+    ``voice_results``, so a voice repair regenerated the clips and then had them
+    judged by the previous takes' verdicts.
+    """
+    from sofia.reel.contracts import ReelAssets, ReelDefect, ReelDiagnosis, ReelResult
+
+    director = _studio(tmp_path, devkit=False).director
+    director.config.max_repair_rounds = 1
+    repaired = {7: "second take"}
+    director._regenerate = lambda reel_id, stages, **kw: repaired
+
+    seen: list = []
+
+    def qa(voice) -> ReelResult:
+        seen.append(voice)
+        return ReelResult(
+            reel_id="r",
+            verdict=Verdict.FAIL,
+            stage=StageState.FAILED,
+            diagnoses=[ReelDiagnosis(ReelDefect.VOICE, detail="clip is muffled")],
+        )
+
+    director._repair_until_settled(
+        qa({1: "first take"}),
+        qa,
+        reel_id="r",
+        brief=None,
+        plan=None,
+        shots=[],
+        assets=ReelAssets(),
+        voice_results={1: "first take"},
+        repairs=[],
+    )
+    assert seen[-1] is repaired, "the gates were handed the discarded takes"
+
+
+def test_one_reel_never_inherits_the_previous_reel_s_measurements(tmp_path):
+    """A director produces many Reels; the gates must read this one's numbers.
+
+    Subtitle placement, the cover frame and the voice timeline are recorded on
+    the director as each stage runs. A run that stops before the edit stage
+    left the previous Reel's values in place for this one's gates to read.
+    """
+    director = _studio(tmp_path, devkit=False).director
+    director._subtitle_extent = (0.01, 0.99)
+    director._cover_ppm = "/previous/reel/cover.ppm"
+    director._voice_spans = [("previous.wav", 0.0, 3.0)]
+
+    try:
+        director.produce("reel-second", _growth())
+    except Exception:  # noqa: BLE001 - no backends here; production stops early
+        pass
+
+    assert director._cover_ppm is None
+    assert director._voice_spans is None
+    assert director._subtitle_extent == (
+        director.config.subtitle_text_top,
+        director.config.subtitle_text_bottom,
+    )

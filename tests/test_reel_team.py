@@ -1547,3 +1547,18 @@ def test_unreported_voice_placement_is_not_a_clean_timeline():
     check_voice_timeline(None, 21.5, EditThresholds(), issues)
     assert issues.voice_timeline == []
     assert any("could not be ruled out" in m for m in issues.not_measured)
+
+
+def test_spoken_lines_with_nothing_placed_is_not_a_clean_timeline():
+    from sofia.reel.edit_qa import EditIssues, EditThresholds, check_voice_timeline
+
+    issues = EditIssues()
+    check_voice_timeline([], 21.5, EditThresholds(), issues, _shots())
+    assert any("could not be ruled out" in m for m in issues.not_measured)
+
+    silent = EditIssues()
+    quiet_shots = _shots()
+    for shot in quiet_shots:
+        shot.voice_line = ""
+    check_voice_timeline([], 21.5, EditThresholds(), silent, quiet_shots)
+    assert silent.not_measured == []

@@ -222,9 +222,18 @@ class ReelDirector:
         """
 
         self.claim(reel_id)
-        # Per Reel, not per director: the round budget and the artifact tag
-        # belong to this production, not to whatever ran before it.
+        # Everything the stages hand to the gates is per Reel, not per
+        # director. One director produces many Reels, and a run that stops
+        # before the edit stage would otherwise leave the previous Reel's
+        # subtitle placement, cover frame and voice timeline in place for this
+        # one's gates to read.
         self._repair_round = 0
+        self._subtitle_extent = (
+            self.config.subtitle_text_top,
+            self.config.subtitle_text_bottom,
+        )
+        self._cover_ppm = None
+        self._voice_spans = None
         assets = ReelAssets()
         started = StageState.CREATED if not resume else self.resume_point(reel_id)
         diagnoses: list[ReelDiagnosis] = []
@@ -397,13 +406,16 @@ class ReelDirector:
             ), diagnostic=diagnostic)
 
         # -- FINAL QA ------------------------------------------------------
-        def run_final_qa() -> ReelResult:
+        def run_final_qa(voice: Mapping[int, VoiceVerdict]) -> ReelResult:
+            # Taken as an argument, not captured: a voice repair replaces these
+            # verdicts, and a closure over the original binding would hand the
+            # gates the takes that were thrown away.
             return self._final_qa(
                 reel_id,
                 brief,
                 plan,
                 assets,
-                voice_results,
+                voice,
                 perceptual_samples=perceptual_samples,
                 cover_measurements=cover_measurements or {},
                 repairs=repairs,
@@ -411,7 +423,7 @@ class ReelDirector:
                 carried_diagnoses=diagnoses,
             )
 
-        result = run_final_qa()
+        result = run_final_qa(voice_results)
         if diagnostic:
             # A diagnostic run reports what it found; repairing it would be
             # chasing defects that were deliberately walked past.
@@ -432,7 +444,7 @@ class ReelDirector:
     def _repair_until_settled(
         self,
         result: ReelResult,
-        run_final_qa: Callable[[], ReelResult],
+        run_final_qa: Callable[[Mapping[int, VoiceVerdict]], ReelResult],
         *,
         reel_id: str,
         brief: Optional[ReelBrief],
@@ -503,7 +515,7 @@ class ReelDirector:
                     }
                 )
                 return result
-            result = run_final_qa()
+            result = run_final_qa(voice_results)
 
         if result.verdict is not Verdict.PASS:
             repairs.append(

@@ -333,6 +333,7 @@ def check_voice_timeline(
     runtime_s: Optional[float],
     t: EditThresholds,
     issues: EditIssues,
+    shots: Sequence[Shot] = (),
 ) -> None:
     """Voice clips must fit the slots they were placed in.
 
@@ -353,6 +354,14 @@ def check_voice_timeline(
         issues.not_measured.append(
             "the voice clips as placed on the timeline were not reported, so "
             "overlapping speech could not be ruled out"
+        )
+        return
+    if not spans and any(s.voice_line.strip() for s in shots):
+        # There are lines to speak and not one clip was placed, so whether they
+        # overlap is unknown rather than fine.
+        issues.not_measured.append(
+            "the reel has spoken lines but no placed voice clip could be "
+            "measured, so overlapping speech could not be ruled out"
         )
         return
     ordered = sorted(spans, key=lambda span: span[1])
@@ -394,7 +403,7 @@ def analyse_edit(
     issues = EditIssues()
     check_pacing(shots, t, issues)
     check_runtime(shots, delivered_runtime_s, t, issues)
-    check_voice_timeline(voice_spans, delivered_runtime_s, t, issues)
+    check_voice_timeline(voice_spans, delivered_runtime_s, t, issues, shots)
     check_first_frame(final_path, editor, workdir, t, issues)
     check_dead_time(mix_path, t, issues)
     check_beat_sync(shots, music_bpm, t, issues)
