@@ -1333,3 +1333,37 @@ def test_a_trial_with_no_arbiter_still_runs():
         Path(tempfile.mkdtemp()), lambda path, shot: {"identity": 0.9},
     )
     assert report.champion.failures == []
+
+
+def test_a_reel_that_opens_on_silence_is_a_late_hook(tmp_path):
+    """The pause statistics skip leading silence, so nothing saw this before.
+
+    ``check_pacing`` only knows when the first *cut* lands. A Reel could open on
+    two silent seconds — the worst place in short form to spend them — and pass
+    both the hook check and the dead-air check.
+    """
+    import math
+
+    from sofia.reel.edit_qa import EditIssues, EditThresholds, check_dead_time
+    from sofia.voice.audio import write_wav
+
+    rate = 22050
+
+    def mix(lead_s: float, name: str) -> str:
+        samples = []
+        for i in range(int(rate * 5.0)):
+            t = i / rate
+            env = 0.0 if t < lead_s else 0.3
+            samples.append(env * math.sin(2 * math.pi * 200 * t))
+        return str(write_wav(tmp_path / name, samples, rate))
+
+    late = EditIssues()
+    check_dead_time(mix(2.0, "late.wav"), EditThresholds(), late)
+    assert late.measurements["silence_before_speech_s"] == pytest.approx(2.0, abs=0.05)
+    assert any("before the first word" in m for m in late.dead_time)
+    # It is not counted twice: the silence is at the head, not inside the mix.
+    assert not any("dead air in the mix" in m for m in late.dead_time)
+
+    prompt = EditIssues()
+    check_dead_time(mix(0.2, "prompt.wav"), EditThresholds(), prompt)
+    assert prompt.dead_time == []

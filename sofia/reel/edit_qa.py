@@ -7,7 +7,8 @@ critics. This module covers the rest, and it measures them rather than assuming
 them:
 
 * **first frame** — decoded and analysed, so a black or flat opener is caught;
-* **dead time** — the longest silence in the actual mix;
+* **dead time** — the longest silence in the actual mix, and the silence
+  before the first word, which the pause statistics skip by design;
 * **pacing** — shot-length distribution and cut rate from the real shot list;
 * **aspect** — the delivered frame must be vertical;
 * **beat sync** — cut points against the music grid.
@@ -42,6 +43,9 @@ class EditThresholds:
     max_cuts_per_10s: float = 6.0
     #: Silence longer than this inside the programme is dead air.
     max_dead_air_s: float = 0.9
+    #: Silence before the first word. A short-form Reel spends its hook in the
+    #: opening moment; dead air there is the most expensive kind.
+    max_silence_before_speech_s: float = 0.75
     #: A first frame must clear these or it is not worth stopping for.
     min_first_frame_contrast: float = 0.06
     min_first_frame_sharpness: float = 0.010
@@ -170,10 +174,20 @@ def check_dead_time(mix_path: Optional[str], t: EditThresholds, issues: EditIssu
 
     issues.measurements["longest_silence_s"] = round(stats.longest_pause_s, 3)
     issues.measurements["silence_ratio"] = round(stats.silence_ratio, 3)
+    issues.measurements["silence_before_speech_s"] = round(stats.leading_silence_s, 3)
     if stats.longest_pause_s > t.max_dead_air_s:
         issues.dead_time.append(
             f"{stats.longest_pause_s:.2f}s of dead air in the mix "
             f"(limit {t.max_dead_air_s:.1f}s)"
+        )
+    # The pause statistics skip leading silence by design, so without this the
+    # Reel could open on two silent seconds and no gate would notice: the
+    # opening-shot check only looks at the planned cut, not at when the hook is
+    # actually heard.
+    if stats.leading_silence_s > t.max_silence_before_speech_s:
+        issues.dead_time.append(
+            f"{stats.leading_silence_s:.2f}s of silence before the first word "
+            f"(limit {t.max_silence_before_speech_s:.2f}s); the hook is late"
         )
 
 

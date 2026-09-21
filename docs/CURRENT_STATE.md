@@ -255,6 +255,19 @@ under the same owner name, so it reclaims its own Reel after a reboot; only a
 The logic is imprecise but causes no real failure, so it was left alone rather
 than padded with boot-id detection.
 
+## A Reel could open on silence and pass the hook check
+
+`check_pacing` enforced "the first cut lands within 3 s" — a fact about the
+plan. `check_dead_time` measured the longest silence *inside* the programme,
+and the pause statistics skip leading silence deliberately, because they exist
+to find gaps between words. Between them, nothing knew when the hook was
+actually heard: a Reel opening on two silent seconds passed both.
+
+`AudioStats` now reports `leading_silence_s`, and the edit gate blocks when
+speech starts later than 0.75 s into the delivered mix. This is the measurable
+half of "hook" — whether the hook is *strong* is still an audience outcome, and
+still reported as `--` in the scorecard.
+
 ## The heavy experiment did not wait for the GPU
 
 "Production first, heavy experiments wait" was enforced for the director and

@@ -129,10 +129,17 @@ plan:
 |---|---|---|
 | Strong first frame | frame 0 decoded to PPM; brightness, contrast, sharpness, blown ratio | yes |
 | Vertical delivery | aspect from the decoded frame | yes |
-| Fast hook | opening shot ≤ 3 s | yes |
+| Fast hook | opening shot ≤ 3 s, **and** speech starts within 0.75 s in the delivered mix | yes |
 | Dead time | longest silence in the actual mix | yes |
 | Pacing | shot count, cuts per 10 s, longest-shot share of runtime | yes |
 | Beat sync | cut points against the music grid | **no** — advisory |
+
+"Fast hook" used to mean only "the first cut lands within 3 s", which is a
+statement about the plan. The pause statistics ignore leading silence on
+purpose — they exist to find gaps *between* words — so a Reel could open on two
+silent seconds, the most expensive place in short form to spend them, and pass
+both checks. The silence before the first word is now measured in the delivered
+mix and blocks on its own.
 
 Frame analysis is pure standard library (`sofia/reel/frames.py` reads binary
 PPM), so a black or flat opener is caught on any machine, with no numpy or PIL.

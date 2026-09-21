@@ -45,6 +45,9 @@ class AudioStats:
     silence_ratio: float
     pause_count: int
     longest_pause_s: float
+    #: Silence before the first word. Counted separately because the pause
+    #: statistics deliberately ignore it, so nothing else would ever see it.
+    leading_silence_s: float
     speech_segments: int
     speech_rate_sps: float
     dynamic_range_db: float
@@ -133,6 +136,10 @@ def analyse_wav(path: str | Path, *, silence_db: float = -45.0) -> AudioStats:
     silence_ratio = 1.0 - (sum(voiced) / len(voiced))
 
     pause_count, longest_pause, speech_segments = _segment(voiced, frame / rate)
+    first_voiced = next((i for i, v in enumerate(voiced) if v), None)
+    leading_silence = (
+        duration if first_voiced is None else first_voiced * (frame / rate)
+    )
     peaks = _count_energy_peaks(energies)
     speech_time = max(1e-6, duration * (1.0 - silence_ratio))
     speech_rate = peaks / speech_time
@@ -161,6 +168,7 @@ def analyse_wav(path: str | Path, *, silence_db: float = -45.0) -> AudioStats:
         silence_ratio=silence_ratio,
         pause_count=pause_count,
         longest_pause_s=longest_pause,
+        leading_silence_s=leading_silence,
         speech_segments=speech_segments,
         speech_rate_sps=speech_rate,
         dynamic_range_db=dyn,
