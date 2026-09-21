@@ -247,25 +247,57 @@ def test_audio_mix_blocks_without_stems(tmp_path):
 
 
 def test_audio_mix_fails_when_music_masks_the_voice(tmp_path):
+    """A bed that was never ducked is as loud between the phrases as under them."""
+    voice, music, mix = _mix_stems(tmp_path, bed_under_speech=0.16, bed_in_gaps=0.16)
+    outcome = AudioMixCritic(ReelThresholds()).review(
+        voice_stem=voice, music_stem=music, final_mix=mix
+    )
+    assert outcome.result.verdict is Verdict.FAIL
+    assert "ducking" in outcome.result.reason
+
+
+def test_the_mix_gate_reads_the_delivered_file_not_the_stems(tmp_path):
+    """The stems are the same in both mixes; only the delivered file differs.
+
+    Comparing stem levels was the old check, and it cannot tell these apart:
+    it describes what the mix was asked to be and stays true whether or not the
+    ducking step ever ran.
+    """
+    ducked = _mix_stems(tmp_path / "ducked")
+    raw = _mix_stems(tmp_path / "raw", bed_under_speech=0.16, bed_in_gaps=0.16)
+
+    from sofia.voice.audio import analyse_wav
+
+    def stem_headroom(stems):
+        return analyse_wav(stems[0]).rms_dbfs - analyse_wav(stems[1]).rms_dbfs
+
+    # Identical by the measurement the gate used to make.
+    assert stem_headroom(ducked) == pytest.approx(stem_headroom(raw), abs=0.01)
+
+    critic = AudioMixCritic(ReelThresholds())
+    good = critic.review(voice_stem=ducked[0], music_stem=ducked[1], final_mix=ducked[2])
+    bad = critic.review(voice_stem=raw[0], music_stem=raw[1], final_mix=raw[2])
+    assert good.result.verdict is Verdict.PASS
+    assert bad.result.verdict is Verdict.FAIL
+
+
+def test_a_mix_with_no_gap_cannot_be_judged(tmp_path):
+    """Wall-to-wall speech leaves nowhere to hear the bed alone."""
     import math
 
     from sofia.voice.audio import write_wav
 
-    def tone(name, amp):
-        return write_wav(
-            tmp_path / name,
-            [amp * math.sin(2 * math.pi * 200 * i / 22050) for i in range(22050)],
-            22050,
-        )
+    rate = 22050
+    tone = [0.2 * math.sin(2 * math.pi * 200 * i / rate) for i in range(rate * 3)]
+    voice = write_wav(tmp_path / "v.wav", tone, rate)
+    music = write_wav(tmp_path / "m.wav", [0.02 * t for t in tone], rate)
+    mix = write_wav(tmp_path / "mix.wav", [1.02 * t for t in tone], rate)
 
-    voice = tone("v.wav", 0.10)
-    music = tone("mu.wav", 0.09)  # only ~1 dB below the voice
-    mix = tone("mix.wav", 0.18)
     outcome = AudioMixCritic(ReelThresholds()).review(
         voice_stem=str(voice), music_stem=str(music), final_mix=str(mix)
     )
-    assert outcome.result.verdict is Verdict.FAIL
-    assert "ducking" in outcome.result.reason
+    assert outcome.result.verdict is Verdict.NOT_MEASURED
+    assert "gap" in outcome.result.reason
 
 
 # ---- cover / perceptual --------------------------------------------------
@@ -1155,11 +1187,35 @@ def _quiet_wav(path, amp=0.05, seconds=0.5):
     )
 
 
-def _mix_stems(tmp_path):
-    voice = _quiet_wav(tmp_path / "v.wav", amp=0.20)
-    music = _quiet_wav(tmp_path / "m.wav", amp=0.05)
-    mix = _quiet_wav(tmp_path / "mix.wav", amp=0.25)
-    return str(voice), str(music), str(mix)
+def _mix_stems(tmp_path, *, bed_under_speech=0.02, bed_in_gaps=0.05):
+    """A programme shaped like a real one: speech, pauses, and a bed.
+
+    The music *stem* is always the raw bed at full level — that is what the
+    mixer is handed. What changes between cases is the delivered mix: how much
+    of that bed it actually leaves under the speech and between the phrases.
+    """
+    import math
+
+    from sofia.voice.audio import write_wav
+
+    rate = 22050
+    raw_bed = 0.16
+    voice, music, mix = [], [], []
+    for i in range(int(rate * 6.0)):
+        t = i / rate
+        speaking = (t % 1.5) < 1.0
+        v = 0.20 * math.sin(2 * math.pi * 200 * t) if speaking else 0.0
+        bed = math.sin(2 * math.pi * 400 * t)
+        level = bed_under_speech if speaking else bed_in_gaps
+        voice.append(v)
+        music.append(raw_bed * bed)
+        mix.append(max(-1.0, min(1.0, v + level * bed)))
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    return (
+        str(write_wav(tmp_path / "v.wav", voice, rate)),
+        str(write_wav(tmp_path / "m.wav", music, rate)),
+        str(write_wav(tmp_path / "mix.wav", mix, rate)),
+    )
 
 
 def test_no_sfx_is_not_a_gap(tmp_path):

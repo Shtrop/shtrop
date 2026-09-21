@@ -207,11 +207,15 @@ def test_subtitles_are_burned_in_above_the_safe_zone(devkit_run):
     assert top >= 0.14
 
 
-def test_ducking_is_verified_on_the_real_stems(devkit_run):
+def test_ducking_is_verified_in_the_delivered_mix(devkit_run):
+    """Measured in the encoded file, in the gaps where the bed is audible alone."""
     _studio_, result, _ = devkit_run
     mix = result.report.by_name("reel.audio_mix")
     assert mix.verdict is Verdict.PASS
     assert mix.measurement.value >= 9.0
+    detail = mix.measurement.detail
+    assert detail["gap_windows"] >= 1
+    assert detail["speech_windows"] >= 3
 
 
 # ---- fault / resume ------------------------------------------------------

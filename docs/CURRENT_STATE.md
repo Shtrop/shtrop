@@ -255,6 +255,29 @@ under the same owner name, so it reclaims its own Reel after a reboot; only a
 The logic is imprecise but causes no real failure, so it was left alone rather
 than padded with boot-id detection.
 
+## "Ducking is verified, not assumed" was assumed
+
+`AudioMixCritic` computed voice RMS minus music RMS over the whole programme,
+from the two **input** stems. That quantity is a property of the source
+material: it is identical whether the ducking step ran, failed, or was never
+called, so the gate could not detect a mix where ducking never happened. And
+the whole-file average hides a local defect — measured, a bed 3.5 dB *louder*
+than the voice for one second of a 22-second Reel reported "voice 9.7 dB over
+music, PASS".
+
+It now measures the delivered mix: speech windows against the loudest gap
+between phrases, where the bed is audible on its own. No source separation
+needed, because only the *timing* comes from the voice stem. A mix with no gap
+at all is `NOT_MEASURED`.
+
+The first attempt was to cancel the voice out of the mix by least squares. It
+works on synthetic mixes and does **not** survive a real ffmpeg chain: on a
+measured devkit mix the residual came out three times larger than the music
+stem could account for (the encoder's 4.8 ms filter delay and gain changes are
+only part of it), so it could not distinguish a loud bed from a mix it had
+failed to decompose. It was dropped rather than shipped with a guard that
+would have had to guess.
+
 ## A challenger was not held to every metric the champion is
 
 `REQUIRED_METRICS` in the Champion/Challenger trial carried the comment "a

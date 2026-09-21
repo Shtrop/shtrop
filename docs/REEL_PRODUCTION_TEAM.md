@@ -175,6 +175,34 @@ cover is a **known-bad** answer and is reported as `FAIL`, not as an unknown.
 Checking only the model-dependent half — as this gate originally did — let a
 black cover sail through as merely unmeasured.
 
+## Ducking is measured in the file that will play
+
+`reel.audio_mix` used to verify ducking by comparing the **stems**: voice RMS
+minus music RMS over the whole programme. That number describes what the mix
+was asked to be. It is unchanged by whether the ducking step ran at all, and
+averaging it over the programme hides a bed that swells over one second of it —
+measured: a bed 3.5 dB *louder* than the voice for a full second of a
+22-second Reel reported "voice 9.7 dB over music, PASS".
+
+The measurement now reads the delivered mix, and needs no source separation to
+do it. The voice track says *when* someone is speaking; the mix is read in
+those windows and in the gaps between phrases. A gap holds the bed and nothing
+else, so
+
+```
+median speech level / loudest gap level
+```
+
+is how far the voice sits above the bed a listener actually hears. The loudest
+gap is used, not the average, so one swell is what the gate sees. Wall-to-wall
+speech leaves no gap to read, and that is `NOT_MEASURED` — not a pass.
+
+Only the *timing* comes from the voice stem, which survives encoding. Cancelling
+the voice out of the mix by least squares was tried first, and does not survive
+a real ffmpeg chain: on a measured devkit mix the residual came out three times
+larger than the music stem could account for, so it could not tell a loud bed
+from a mix it had failed to decompose. A gate must not guess between those.
+
 ## SFX
 
 SFX are optional by design; the brief asks for them only where they strengthen

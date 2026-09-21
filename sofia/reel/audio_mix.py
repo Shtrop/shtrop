@@ -2,15 +2,16 @@
 
 The voice track is laid out on the Reel's timeline from the individual verified
 clips, and the music bed is ducked under it. Ducking is then *verified* by
-measuring the stems (see :class:`~sofia.reel.critics.AudioMixCritic`) rather
-than assumed from the filter graph.
+measuring the *delivered* mix (see :func:`measure_ducking`) rather than assumed
+from the filter graph or inferred from the stems.
 """
 
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Optional, Sequence
 
 from sofia.voice.audio import read_wav_mono, write_wav
 
@@ -107,3 +108,108 @@ def duck_offline(
         scale = 0.95 / peak
         out = [s * scale for s in out]
     return write_wav(out_path, out, rate)
+
+
+@dataclass(frozen=True)
+class Ducking:
+    """How far the voice sits over the bed, in the file that will play."""
+
+    headroom_db: float
+    loudest_gap_at_s: float
+    speech_windows: int
+    gap_windows: int
+
+    def to_dict(self) -> dict:
+        return {
+            "headroom_db": round(self.headroom_db, 2),
+            "loudest_gap_at_s": round(self.loudest_gap_at_s, 2),
+            "speech_windows": self.speech_windows,
+            "gap_windows": self.gap_windows,
+        }
+
+
+#: With no bed audible in any gap the ratio goes to infinity, and "60 dB clear"
+#: already means nothing is fighting the voice.
+MAX_HEADROOM_DB = 60.0
+
+
+def measure_ducking(
+    voice_path: str | Path,
+    mix_path: str | Path,
+    *,
+    window_s: float = 0.25,
+    silence_db: float = -45.0,
+    speech_floor_db: float = 20.0,
+) -> Optional[Ducking]:
+    """Measure voice-over-bed separation in the delivered mix.
+
+    Comparing the voice and music *stems* says what the mix was asked to be and
+    stays true whether or not the ducking step ran, so it cannot verify
+    anything. This reads the delivered file instead, and needs no source
+    separation to do it: the voice track says *when* someone is speaking, and
+    the mix is read in those windows and in the gaps between them. A gap holds
+    the bed and nothing else, so
+
+        median speech level  /  loudest gap level
+
+    is how far the voice sits above the bed that a listener hears. The loudest
+    gap is used rather than the average so a single moment where the bed swells
+    is what the gate sees.
+
+    The voice stem is used only for timing, which survives encoding — unlike
+    the samples themselves. (Cancelling the voice out of the mix by least
+    squares was tried first and does not survive a real ffmpeg chain: on a
+    measured devkit mix the residual came out three times larger than the music
+    stem could account for, so it could not tell a loud bed from a mix it had
+    failed to decompose.)
+
+    Returns ``None`` when the mix cannot be judged this way — different sample
+    rates, almost no speech, or no gap in which the bed is audible on its own.
+    The caller reports that as NOT_MEASURED.
+    """
+
+    voice, v_rate = read_wav_mono(voice_path)
+    mix, m_rate = read_wav_mono(mix_path)
+    if not voice or not mix or v_rate != m_rate:
+        return None
+    n = min(len(voice), len(mix))
+    frame = max(1, int(window_s * v_rate))
+    if n < frame * 4:
+        return None
+
+    def rms(signal: Sequence[float], start: int) -> float:
+        return math.sqrt(
+            sum(s * s for s in signal[start : start + frame]) / frame
+        )
+
+    floor = 10.0 ** (silence_db / 20.0)
+    starts = range(0, n - frame + 1, frame)
+    voice_levels = {start: rms(voice, start) for start in starts}
+    active = sorted(v for v in voice_levels.values() if v > floor)
+    if not active:
+        return None
+    # "Speaking" means within `speech_floor_db` of this voice's own speech
+    # level, not merely above an absolute floor: the decay tail of a word is
+    # above the floor, and a bed that is louder than a dying syllable is not a
+    # defect.
+    reference = active[len(active) // 2] * 10.0 ** (-speech_floor_db / 20.0)
+
+    speech: list[float] = []
+    gaps: list[tuple[float, float]] = []
+    for start, level in voice_levels.items():
+        if level > reference:
+            speech.append(rms(mix, start))
+        elif level <= floor:
+            gaps.append((rms(mix, start), start / v_rate))
+    if len(speech) < 3 or not gaps:
+        return None
+
+    loudest_gap, at = max(gaps)
+    speech.sort()
+    median_speech = speech[len(speech) // 2]
+    headroom = (
+        MAX_HEADROOM_DB
+        if loudest_gap <= 1e-9
+        else min(MAX_HEADROOM_DB, 20.0 * math.log10(median_speech / loudest_gap))
+    )
+    return Ducking(headroom, at, len(speech), len(gaps))

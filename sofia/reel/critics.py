@@ -17,6 +17,7 @@ from sofia.core.errors import BackendUnavailableError
 from sofia.core.gates import GateReport, GateResult, evaluate_gates, threshold_gate
 from sofia.core.verdict import Evidence, Measurement, Verdict
 from sofia.reel.backends import ReelBackends
+from sofia.reel.audio_mix import measure_ducking
 from sofia.reel.measurements import LIPSYNC_MEASUREMENTS
 from sofia.reel.contracts import (
     ReelAssets,
@@ -767,29 +768,40 @@ class AudioMixCritic:
                     )
                 )
 
-        headroom: Optional[float] = None
-        if voice_stem and music_stem and Path(voice_stem).exists() and Path(music_stem).exists():
-            try:
-                voice = analyse_wav(voice_stem)
-                music = analyse_wav(music_stem)
-                headroom = voice.rms_dbfs - music.rms_dbfs
-            except Exception:  # noqa: BLE001 - stems optional, mix already checked
-                headroom = None
-        if headroom is None:
+        if not (
+            voice_stem
+            and music_stem
+            and Path(voice_stem).exists()
+            and Path(music_stem).exists()
+        ):
             return _blocked(
                 self.name,
-                "voice and music stems are required to verify ducking; "
+                "the voice and music stems are required to verify ducking; "
                 "a mixed-down file alone cannot prove the voice is clear",
                 ReelDefect.MUSIC,
             )
+
+        # Worst window, not the whole-file average: a bed that sits politely
+        # under most of a Reel and swallows one second of it averages out to a
+        # comfortable margin, and that second is the defect.
+        ducking = measure_ducking(voice_stem, final_mix)
+        if ducking is None:
+            return _blocked(
+                self.name,
+                "the delivered mix has no gap in which the bed can be heard on "
+                "its own, so how far the voice sits above it is unknown",
+                ReelDefect.MUSIC,
+            )
+        headroom = ducking.headroom_db
         if headroom < self.thresholds.min_voice_over_music_db:
             diagnoses.append(
                 ReelDiagnosis(
                     ReelDefect.MUSIC,
                     detail=(
-                        f"voice sits only {headroom:.1f} dB over the music bed "
+                        f"voice sits only {headroom:.1f} dB over the bed "
+                        f"(loudest at {ducking.loudest_gap_at_s:.1f}s) "
                         f"(need {self.thresholds.min_voice_over_music_db:.0f} dB); "
-                        "ducking is insufficient"
+                        "ducking is insufficient there"
                     ),
                     critic=self.role,
                 )
@@ -800,7 +812,8 @@ class AudioMixCritic:
             headroom,
             Evidence.MEASURED_LOCAL,
             unit="dB",
-            source="stdlib-pcm",
+            source="stdlib-pcm (delivered mix, speech vs loudest gap)",
+            detail=ducking.to_dict(),
         )
         if diagnoses:
             return CriticOutcome(
