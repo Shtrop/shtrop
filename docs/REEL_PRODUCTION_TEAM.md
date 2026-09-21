@@ -266,6 +266,18 @@ live unless its owning process is provably gone).
 | `VOICE` — synthesis | needs a GPU, yields to production |
 | `HEAVY` — video, lip-sync, experiments | **waits** for production |
 
+"Experiments wait" was the half of that rule with nothing behind it.
+`run_trial` — the Champion/Challenger benchmark, which is *the* heavy
+experiment here — rendered every arm over every talking shot without ever
+asking the arbiter. On the studio machine a benchmark would have taken the GPU
+out from under a production render.
+
+A trial now waits per shot (`GpuArbiter.wait_for`, which existed and was called
+by nothing) and, if it never gets the GPU, records the shot as a failure rather
+than starting anyway. An arm with failures is never promoted, so a starved
+trial measures nothing instead of measuring badly. Run it through
+`Studio.lipsync_trial`, which attaches the arbiter so it cannot be forgotten.
+
 ## Growth connection
 
 The director does not invent its trend. While publishing is on HOLD the Growth

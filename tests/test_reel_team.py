@@ -1263,3 +1263,73 @@ def test_the_overall_score_survives_the_two_unmeasurable_categories():
     from sofia.reel.scorecard import score_categories
 
     assert score_categories(_passing_report())["OVERALL"] == 8.0
+
+
+# ---- the GPU rule applies to experiments too -----------------------------
+def test_a_trial_waits_for_production_instead_of_competing_with_it():
+    """A Champion/Challenger trial is exactly the heavy experiment that waits.
+
+    ``run_trial`` rendered every arm without asking the arbiter at all, so on
+    the studio machine a benchmark would have taken the GPU out from under a
+    production render.
+    """
+    import tempfile
+    from pathlib import Path
+
+    from sofia.reel.challenger import run_trial
+
+    class Backend:
+        name = "fake"
+
+        def sync(self, video, audio, out):  # pragma: no cover - must not run
+            raise AssertionError("a trial started while production held the GPU")
+
+    class BusyGpu:
+        def __init__(self):
+            self.asked = 0
+
+        def wait_for(self, work, *, vram_gb=0.0, timeout_s=0.0, poll_s=15.0):
+            self.asked += 1
+            assert work is WorkClass.HEAVY
+            return False, "production holds the GPU (gpu_render); heavy work waits"
+
+    shots = [s for s in _shots() if s.shot_type.needs_lipsync]
+    gpu = BusyGpu()
+    report = run_trial(
+        Backend(),
+        {"challenger": Backend()},
+        shots,
+        {s.index: "/dev/null" for s in shots},
+        Path(tempfile.mkdtemp()),
+        lambda path, shot: {},
+        gpu=gpu,
+    )
+
+    assert gpu.asked == 2 * len(shots)
+    assert report.champion.failures and "production holds the GPU" in report.champion.failures[0]
+    # A starved trial measures nothing, so it can never recommend a promotion.
+    verdict, _ = report.recommendation(report.challengers[0])
+    assert verdict is Verdict.NOT_MEASURED
+
+
+def test_a_trial_with_no_arbiter_still_runs():
+    """The arbiter is opt-in: tests and offline analysis do not need a GPU."""
+    import tempfile
+    from pathlib import Path
+
+    from sofia.reel.challenger import run_trial
+
+    class Backend:
+        name = "fake"
+
+        def sync(self, video, audio, out):
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(b"x")
+            return out
+
+    shots = [s for s in _shots() if s.shot_type.needs_lipsync][:1]
+    report = run_trial(
+        Backend(), {}, shots, {s.index: "/dev/null" for s in shots},
+        Path(tempfile.mkdtemp()), lambda path, shot: {"identity": 0.9},
+    )
+    assert report.champion.failures == []

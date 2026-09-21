@@ -602,3 +602,31 @@ def test_the_repair_budget_is_per_reel_not_per_director(tmp_path):
     except Exception:  # noqa: BLE001 - no backends here; produce is expected to stop
         pass
     assert director._repair_round == 0
+
+
+def test_a_trial_run_through_the_studio_cannot_forget_the_arbiter(tmp_path):
+    """The GPU rule is only real if the one heavy experiment obeys it."""
+    studio = _studio(tmp_path, devkit=False)
+    asked = {"n": 0}
+
+    def wait_for(work, *, vram_gb=0.0, timeout_s=0.0, poll_s=15.0):
+        asked["n"] += 1
+        return False, "production holds the GPU (gpu_render); heavy work waits"
+
+    studio.gpu.wait_for = wait_for
+
+    from sofia.reel.contracts import Shot, ShotType, StoryBeat
+
+    shots = [
+        Shot(
+            index=1,
+            beat=StoryBeat.DEVELOPMENT,
+            shot_type=ShotType.TALKING,
+            description="talking",
+            duration_s=2.0,
+            voice_line="строка",
+        )
+    ]
+    report = studio.lipsync_trial({}, shots, {1: "/dev/null"}, lambda p, s: {})
+    assert asked["n"] == 1
+    assert "production holds the GPU" in report.champion.failures[0]

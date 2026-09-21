@@ -10,13 +10,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping, Optional
+from typing import Any, Mapping, Optional, Sequence
 
 from sofia.agents.base import AgentContext, AgentResult, AgentSpec, Capability
 from sofia.agents.factory import AgentFactory
 from sofia.agents.runner import AgentRunner
 from sofia.core.durable import atomic_write_json
 from sofia.reel.backends import ReelBackends, detect_reel_backends
+from sofia.reel.challenger import TrialReport, run_trial
+from sofia.reel.contracts import Shot
 from sofia.reel.critics import ReelThresholds
 from sofia.reel.director import ReelDirector, ReelDirectorConfig
 from sofia.reel.gpu import GpuArbiter
@@ -75,6 +77,34 @@ class Studio:
 
     def save_audit(self, path: str | Path) -> Path:
         return atomic_write_json(path, self.audit())
+
+    def lipsync_trial(
+        self,
+        challengers: Mapping[str, object],
+        shots: Sequence[Shot],
+        audio_for: Mapping[Any, str],
+        measure: Any,
+        *,
+        gpu_timeout_s: float = 1800.0,
+    ) -> TrialReport:
+        """Run a Champion/Challenger trial behind the GPU arbiter.
+
+        A trial is the heavy experiment the priority rule exists for. Going
+        through the studio rather than calling ``run_trial`` directly is what
+        makes the arbiter impossible to forget: production keeps the GPU, and a
+        trial that never gets it measures nothing rather than taking it.
+        """
+
+        return run_trial(
+            self.reel_backends.lipsync,
+            challengers,
+            shots,
+            audio_for,
+            self.workdir,
+            measure,
+            gpu=self.gpu,
+            gpu_timeout_s=gpu_timeout_s,
+        )
 
 
 def build_studio(

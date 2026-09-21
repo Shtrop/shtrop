@@ -255,6 +255,20 @@ under the same owner name, so it reclaims its own Reel after a reboot; only a
 The logic is imprecise but causes no real failure, so it was left alone rather
 than padded with boot-id detection.
 
+## The heavy experiment did not wait for the GPU
+
+"Production first, heavy experiments wait" was enforced for the director and
+for nothing else. `run_trial`, the Champion/Challenger benchmark, is the heavy
+experiment the rule was written for, and it rendered every arm over every
+talking shot without consulting the arbiter at all — on the studio machine it
+would have competed with a production render for the same card.
+
+`GpuArbiter.wait_for` already existed and was called by nothing. A trial now
+waits on it per shot and, when the wait times out, records that shot as a
+failure rather than starting anyway; an arm with failures can never be
+promoted, so a starved trial measures nothing instead of measuring badly.
+`Studio.lipsync_trial` attaches the arbiter so a caller cannot forget it.
+
 ## The repair router routed nothing
 
 Same class of defect as the two dead thresholds, found by the same scan for

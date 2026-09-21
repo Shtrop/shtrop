@@ -21,6 +21,7 @@ from sofia.core.errors import BackendUnavailableError
 from sofia.core.paths import safe_component
 from sofia.core.verdict import Evidence, Measurement, Verdict
 from sofia.reel.contracts import Shot
+from sofia.reel.gpu import GpuArbiter, WorkClass
 
 #: A challenger must be measured on every metric the champion is held to.
 REQUIRED_METRICS: tuple[str, ...] = (
@@ -195,6 +196,9 @@ def run_trial(
     audio_for: Mapping[Any, str],
     workdir: Path,
     measure: MeasureFn,
+    *,
+    gpu: Optional[GpuArbiter] = None,
+    gpu_timeout_s: float = 0.0,
 ) -> TrialReport:
     """Run every arm over the same shots and measure each identically.
 
@@ -209,12 +213,18 @@ def run_trial(
 
     talking = [s for s in shots if s.shot_type.needs_lipsync]
     report = TrialReport(
-        champion=_run_arm(champion, "champion", True, talking, audio_for, workdir, measure),
+        champion=_run_arm(
+            champion, "champion", True, talking, audio_for, workdir, measure,
+            gpu=gpu, gpu_timeout_s=gpu_timeout_s,
+        ),
         shots=len(talking),
     )
     for name, backend in challengers.items():
         report.challengers.append(
-            _run_arm(backend, name, False, talking, audio_for, workdir, measure)
+            _run_arm(
+                backend, name, False, talking, audio_for, workdir, measure,
+                gpu=gpu, gpu_timeout_s=gpu_timeout_s,
+            )
         )
     return report
 
@@ -227,6 +237,9 @@ def _run_arm(
     audio_for: Mapping[Any, str],
     workdir: Path,
     measure: MeasureFn,
+    *,
+    gpu: Optional[GpuArbiter] = None,
+    gpu_timeout_s: float = 0.0,
 ) -> ArmResult:
     arm = ArmResult(
         name=label,
@@ -247,6 +260,15 @@ def _run_arm(
             / safe_component(label, fallback="arm")
             / f"shot{shot.index}.mp4"
         )
+        if gpu is not None:
+            # A trial is the heavy experiment the GPU rule exists for: it waits
+            # for production rather than competing with it. Timing out is not a
+            # reason to start anyway — the shot is recorded as unmeasured, and
+            # an arm with failures can never be promoted.
+            cleared, reason = gpu.wait_for(WorkClass.HEAVY, timeout_s=gpu_timeout_s)
+            if not cleared:
+                arm.failures.append(f"shot {shot.index}: GPU not available — {reason}")
+                continue
         try:
             synced = backend.sync(Path(shot.video_path or ""), Path(audio), out)
             values = measure(Path(synced), shot)
