@@ -682,6 +682,26 @@ class ReelDirector:
                 restored += 1
         return restored
 
+    def _delivered_runtime(self, final_path: Optional[str]) -> Optional[float]:
+        """The runtime of the file that will actually play, or ``None``.
+
+        ``None`` is returned rather than the planned duration, so a caller that
+        cannot read the file reports "not measured" instead of quietly checking
+        the plan against itself.
+        """
+
+        if not final_path or not Path(final_path).exists():
+            return None
+        probe = getattr(self.backends.editor, "probe", None)
+        if not callable(probe):
+            return None
+        try:
+            info = probe(Path(final_path))
+        except Exception:  # noqa: BLE001 - an unreadable file is not a runtime
+            return None
+        duration = float(info.get("format", {}).get("duration", 0.0) or 0.0)
+        return duration or None
+
     def _usable_video(self, path: Optional[str]) -> bool:
         """Whether a rendered clip is complete enough to reuse."""
         probe = getattr(self.backends.editor, "probe", None)
@@ -974,6 +994,11 @@ class ReelDirector:
         collect(self.video_critic.review(assets.shots))
         results.append(_voice_gate(voice_results))
         collect(self.lipsync_critic.review(assets.shots))
+        # The runtime that actually plays, read from the file. Everything that
+        # reasons from the shot list is checked against this, so a dropped clip
+        # or a truncated encode cannot leave the gates measuring a programme
+        # that was never assembled.
+        delivered_s = self._delivered_runtime(assets.final)
         collect(
             self.editor_critic.review(
                 final_path=assets.final,
@@ -982,6 +1007,7 @@ class ReelDirector:
                 editor=self.backends.editor,
                 workdir=self.workdir,
                 music_bpm=getattr(self.music_backend, "bpm", None),
+                delivered_runtime_s=delivered_s,
             )
         )
 
@@ -994,7 +1020,7 @@ class ReelDirector:
             for v in voice_results.values()
             if v.artifact
         )
-        duration = sum(s.duration_s for s in assets.shots)
+        # Not the planned total: cues have to fit the file that will play.
         # Measured placement of the burned-in text, not the declared intention.
         extent = getattr(
             self,
@@ -1006,7 +1032,7 @@ class ReelDirector:
                 assets.subtitles,
                 spoken_text=spoken,
                 language=brief.language,
-                video_duration_s=duration,
+                video_duration_s=delivered_s,
                 text_top=extent[0],
                 text_bottom=extent[1],
                 verified=verified_speech,

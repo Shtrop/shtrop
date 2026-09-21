@@ -1367,3 +1367,46 @@ def test_a_reel_that_opens_on_silence_is_a_late_hook(tmp_path):
     prompt = EditIssues()
     check_dead_time(mix(0.2, "prompt.wav"), EditThresholds(), prompt)
     assert prompt.dead_time == []
+
+
+def test_an_edit_that_lost_a_shot_is_caught_by_the_delivered_runtime():
+    """Pacing reasons from the shot list; the file is what people watch.
+
+    A Reel that loses one shot in assembly is still inside the allowed
+    15–30 s, so the decode gate passes it, and every pacing number then
+    describes a programme that was never assembled.
+    """
+    from sofia.reel.edit_qa import EditIssues, EditThresholds, check_runtime
+
+    shots = _shots()
+    planned = sum(s.duration_s for s in shots)
+
+    intact = EditIssues()
+    check_runtime(shots, planned, EditThresholds(), intact)
+    assert intact.pacing == []
+    assert intact.measurements["runtime_drift_s"] == 0.0
+
+    lost = EditIssues()
+    check_runtime(shots, planned - shots[2].duration_s, EditThresholds(), lost)
+    assert any("did not assemble the programme" in m for m in lost.pacing)
+
+    unknown = EditIssues()
+    check_runtime(shots, None, EditThresholds(), unknown)
+    assert unknown.pacing == []
+    assert any("could not be read" in m for m in unknown.not_measured)
+
+
+def test_subtitles_are_checked_against_the_delivered_video_not_the_plan(tmp_path):
+    """An unknown runtime used to skip the overrun check in silence."""
+    from sofia.reel.subtitles import Cue, verify_cues
+
+    cues = [Cue(1, 0.0, 3.0, ["раз два три"])]
+    known = verify_cues(
+        cues, spoken_text="раз два три", language=Language.RU, video_duration_s=2.0
+    )
+    assert any("past the" in m for m in known.timing)
+
+    unknown = verify_cues(cues, spoken_text="раз два три", language=Language.RU)
+    assert unknown.timing == []
+    assert unknown.not_measured, "a skipped check must not read as a clean track"
+    assert unknown.ok is False

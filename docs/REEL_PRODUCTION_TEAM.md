@@ -132,7 +132,17 @@ plan:
 | Fast hook | opening shot ≤ 3 s, **and** speech starts within 0.75 s in the delivered mix | yes |
 | Dead time | longest silence in the actual mix | yes |
 | Pacing | shot count, cuts per 10 s, longest-shot share of runtime | yes |
+| Delivered runtime | probed duration against the planned total (±0.5 s) | yes |
 | Beat sync | cut points against the music grid | **no** — advisory |
+
+Everything in this table except the first frame reasons from the shot list —
+the *plan*. That is only sound if the file is the programme that was planned,
+so the delivered runtime is probed and compared. A Reel that loses one shot in
+assembly is still inside the allowed 15–30 s, so the decode gate passes it, and
+every pacing number then describes a programme nobody will watch. The subtitle
+gate is given the same probed runtime: cues are checked against the file that
+will play, and if the runtime cannot be read the overrun check reports
+`NOT_MEASURED` instead of silently passing.
 
 "Fast hook" used to mean only "the first cut lands within 3 s", which is a
 statement about the plan. The pause statistics ignore leading silence on

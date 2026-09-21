@@ -524,7 +524,7 @@ class SubtitleCritic:
                     ),
                 ),
             )
-        if not issues.ok:
+        if issues.all_issues():
             return CriticOutcome(
                 GateResult(
                     name=self.name,
@@ -538,6 +538,23 @@ class SubtitleCritic:
                         ReelDefect.SUBTITLES, detail=msg, critic=self.role
                     )
                     for msg in issues.all_issues()
+                ),
+            )
+        if issues.not_measured:
+            # A check that could not run is not a defect, and not a pass.
+            return CriticOutcome(
+                GateResult(
+                    name=self.name,
+                    verdict=Verdict.NOT_MEASURED,
+                    critical=True,
+                    reason="; ".join(issues.not_measured[:3]),
+                    measurement=measurement,
+                ),
+                tuple(
+                    ReelDiagnosis(
+                        ReelDefect.NOT_MEASURED, detail=msg, critic=self.role
+                    )
+                    for msg in issues.not_measured
                 ),
             )
         return CriticOutcome(
@@ -577,6 +594,7 @@ class EditorCritic:
         editor,
         workdir,
         music_bpm: Optional[float] = None,
+        delivered_runtime_s: Optional[float] = None,
     ) -> CriticOutcome:
         from pathlib import Path as _Path
 
@@ -595,6 +613,7 @@ class EditorCritic:
             workdir=_Path(workdir),
             music_bpm=music_bpm,
             thresholds=self.thresholds,
+            delivered_runtime_s=delivered_runtime_s,
         )
         measurement = Measurement(
             "edit_issues",
@@ -603,6 +622,24 @@ class EditorCritic:
             source="edit-qa",
             detail=issues.to_dict(),
         )
+
+        # A defect that was measured outranks a check that could not run: both
+        # block, but the reason the owner reads should name what is actually
+        # wrong rather than what was merely unknown.
+        if issues.blocking:
+            return CriticOutcome(
+                GateResult(
+                    name=self.name,
+                    verdict=Verdict.FAIL,
+                    critical=True,
+                    reason="; ".join(issues.blocking[:4]),
+                    measurement=measurement,
+                ),
+                tuple(
+                    ReelDiagnosis(ReelDefect.EDIT, detail=msg, critic=self.role)
+                    for msg in issues.blocking
+                ),
+            )
 
         if issues.not_measured:
             return CriticOutcome(
@@ -618,21 +655,6 @@ class EditorCritic:
                         ReelDefect.NOT_MEASURED, detail=msg, critic=self.role
                     )
                     for msg in issues.not_measured
-                ),
-            )
-
-        if issues.blocking:
-            return CriticOutcome(
-                GateResult(
-                    name=self.name,
-                    verdict=Verdict.FAIL,
-                    critical=True,
-                    reason="; ".join(issues.blocking[:4]),
-                    measurement=measurement,
-                ),
-                tuple(
-                    ReelDiagnosis(ReelDefect.EDIT, detail=msg, critic=self.role)
-                    for msg in issues.blocking
                 ),
             )
 

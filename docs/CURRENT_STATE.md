@@ -255,6 +255,27 @@ under the same owner name, so it reclaims its own Reel after a reboot; only a
 The logic is imprecise but causes no real failure, so it was left alone rather
 than padded with boot-id detection.
 
+## The gates measured the plan and called it the delivery
+
+The editing and subtitle gates reasoned from the shot list: pacing, cut rate,
+hook speed, and the video duration that subtitle cues are checked against. That
+is only sound while the delivered file *is* the planned programme. Nothing
+checked that. A Reel that lost one shot during assembly is still inside the
+allowed 15–30 s, so the decode gate passes it, the pacing numbers describe a
+programme nobody will watch, and the cues are verified against a runtime the
+file does not have.
+
+The director now probes the final file once and both gates use that number. The
+edit gate blocks when the delivered runtime drifts more than 0.5 s from the
+plan, and `verify_cues` reports `NOT_MEASURED` when the runtime is unknown
+instead of skipping the overrun check in silence — it used to accept
+``video_duration_s=None`` and return a clean subtitle track.
+
+While fixing this the editing gate's verdict order was corrected to match the
+cover gate: a measured defect outranks a check that could not run. Both block
+either way, but the reason the owner reads should name what is wrong rather
+than what was unknown.
+
 ## A Reel could open on silence and pass the hook check
 
 `check_pacing` enforced "the first cut lands within 3 s" — a fact about the

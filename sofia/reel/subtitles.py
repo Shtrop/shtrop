@@ -172,6 +172,8 @@ class SubtitleIssues:
     readability: list[str] = field(default_factory=list)
     line_breaks: list[str] = field(default_factory=list)
     safe_zone: list[str] = field(default_factory=list)
+    #: Checks that could not run at all. Not defects — but not a pass either.
+    not_measured: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -182,6 +184,7 @@ class SubtitleIssues:
                 self.readability,
                 self.line_breaks,
                 self.safe_zone,
+                self.not_measured,
             )
         )
 
@@ -202,6 +205,7 @@ class SubtitleIssues:
             "readability": list(self.readability),
             "line_breaks": list(self.line_breaks),
             "safe_zone": list(self.safe_zone),
+            "not_measured": list(self.not_measured),
         }
 
 
@@ -240,6 +244,14 @@ def verify_cues(
         )
 
     # --- timing -----------------------------------------------------------
+    if video_duration_s is None:
+        # Without the delivered runtime there is nothing to check the cues
+        # against; silently skipping would report a clean subtitle track that
+        # may well run past the end of the video.
+        issues.not_measured.append(
+            "the delivered video duration is unknown, so cues could not be "
+            "checked against the file that will actually play"
+        )
     previous_end = -1.0
     for cue in cues:
         if cue.duration_s < MIN_CUE_S:

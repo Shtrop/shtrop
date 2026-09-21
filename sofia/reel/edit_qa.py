@@ -46,6 +46,9 @@ class EditThresholds:
     #: Silence before the first word. A short-form Reel spends its hook in the
     #: opening moment; dead air there is the most expensive kind.
     max_silence_before_speech_s: float = 0.75
+    #: How far the delivered runtime may differ from the planned one before the
+    #: edit is assumed to have lost or duplicated material.
+    max_runtime_drift_s: float = 0.5
     #: A first frame must clear these or it is not worth stopping for.
     min_first_frame_contrast: float = 0.06
     min_first_frame_sharpness: float = 0.010
@@ -279,6 +282,39 @@ def check_beat_sync(
         )
 
 
+def check_runtime(
+    shots: Sequence[Shot],
+    delivered_s: Optional[float],
+    t: EditThresholds,
+    issues: EditIssues,
+) -> None:
+    """The delivered file must be the programme that was planned.
+
+    Everything else in this module reasons from the shot list: pacing, cut
+    rate, the hook. If the editor dropped a clip or truncated the encode, those
+    numbers describe a Reel nobody will watch — and the decode gate would not
+    notice either, because a Reel that lost one shot is still within the
+    allowed 15-30s. So the two runtimes are compared directly.
+    """
+
+    planned = sum(s.duration_s for s in shots)
+    if delivered_s is None:
+        issues.not_measured.append(
+            "the delivered runtime could not be read, so pacing and the hook "
+            "were measured against the plan rather than the file"
+        )
+        return
+    issues.measurements["delivered_runtime_s"] = round(delivered_s, 2)
+    drift = delivered_s - planned
+    issues.measurements["runtime_drift_s"] = round(drift, 2)
+    if abs(drift) > t.max_runtime_drift_s:
+        issues.pacing.append(
+            f"delivered runtime {delivered_s:.2f}s against a planned "
+            f"{planned:.2f}s ({drift:+.2f}s); the edit did not assemble the "
+            "programme that was measured"
+        )
+
+
 def analyse_edit(
     *,
     final_path: Optional[str],
@@ -288,12 +324,14 @@ def analyse_edit(
     workdir: Path,
     music_bpm: Optional[float] = None,
     thresholds: Optional[EditThresholds] = None,
+    delivered_runtime_s: Optional[float] = None,
 ) -> EditIssues:
     """Run every editing check and return what it found."""
 
     t = thresholds or EditThresholds()
     issues = EditIssues()
     check_pacing(shots, t, issues)
+    check_runtime(shots, delivered_runtime_s, t, issues)
     check_first_frame(final_path, editor, workdir, t, issues)
     check_dead_time(mix_path, t, issues)
     check_beat_sync(shots, music_bpm, t, issues)
