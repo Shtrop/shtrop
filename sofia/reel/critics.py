@@ -590,6 +590,7 @@ class EditorCritic:
         workdir,
         music_bpm: Optional[float] = None,
         delivered_runtime_s: Optional[float] = None,
+        voice_spans: Optional[Sequence[tuple[str, float, float]]] = None,
     ) -> CriticOutcome:
         from pathlib import Path as _Path
 
@@ -609,6 +610,7 @@ class EditorCritic:
             music_bpm=music_bpm,
             thresholds=self.thresholds,
             delivered_runtime_s=delivered_runtime_s,
+            voice_spans=voice_spans,
         )
         measurement = Measurement(
             "edit_issues",

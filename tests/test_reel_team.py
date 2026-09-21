@@ -1505,3 +1505,45 @@ def test_late_audio_is_a_regression_even_with_a_better_mouth():
     verdict, reason = report.recommendation(late)
     assert verdict is Verdict.FAIL
     assert "av_offset_ms" in reason
+
+
+def test_a_voice_clip_that_overruns_its_slot_plays_over_the_next_one():
+    """Clips are summed onto the timeline, so an overrun is two voices at once.
+
+    Nothing else would see it: it is not dead air, every word is still in the
+    subtitles, and the mix level looks normal.
+    """
+    from sofia.reel.edit_qa import EditIssues, EditThresholds, check_voice_timeline
+
+    # shot 0 gets 3s and returns 4.1s of speech; shot 1 starts at 3s.
+    spans = [("shot0.wav", 0.0, 4.1), ("shot1.wav", 3.0, 2.5)]
+    issues = EditIssues()
+    check_voice_timeline(spans, 10.0, EditThresholds(), issues)
+    assert any("two voices play at once" in m for m in issues.voice_timeline)
+    assert issues.blocking
+
+    fitting = EditIssues()
+    check_voice_timeline(
+        [("shot0.wav", 0.0, 2.9), ("shot1.wav", 3.0, 2.5)],
+        10.0,
+        EditThresholds(),
+        fitting,
+    )
+    assert fitting.voice_timeline == []
+
+
+def test_speech_running_past_the_end_of_the_reel_is_caught():
+    from sofia.reel.edit_qa import EditIssues, EditThresholds, check_voice_timeline
+
+    issues = EditIssues()
+    check_voice_timeline([("last.wav", 18.0, 5.0)], 21.5, EditThresholds(), issues)
+    assert any("past the end" in m for m in issues.voice_timeline)
+
+
+def test_unreported_voice_placement_is_not_a_clean_timeline():
+    from sofia.reel.edit_qa import EditIssues, EditThresholds, check_voice_timeline
+
+    issues = EditIssues()
+    check_voice_timeline(None, 21.5, EditThresholds(), issues)
+    assert issues.voice_timeline == []
+    assert any("could not be ruled out" in m for m in issues.not_measured)

@@ -255,6 +255,24 @@ under the same owner name, so it reclaims its own Reel after a reboot; only a
 The logic is imprecise but causes no real failure, so it was left alone rather
 than padded with boot-id detection.
 
+## Two voices could play at once and no gate would see it
+
+A voice clip is generated for its shot's duration, but a real text-to-speech
+model returns whatever length the words take, and the prosody gate tolerates a
+drift of a third. The clips are then laid on the timeline at their shots' start
+times and **summed**, so a clip that overruns does not push the next one along
+— it plays over it.
+
+Nothing could detect that. It is not dead air, every word is still present in
+the subtitles, and the mix level looks normal. The devkit hides it too: its
+procedural voice returns exactly the requested length every time, so the
+end-to-end run has never produced an overlap.
+
+The clips are now measured as placed, from the clips themselves, and an overlap
+beyond 0.05 s blocks the edit gate — as does speech running past the end of the
+reel. If the placement is not reported at all, that is `NOT_MEASURED`, not a
+clean timeline.
+
 ## "Ducking is verified, not assumed" was assumed
 
 `AudioMixCritic` computed voice RMS minus music RMS over the whole programme,

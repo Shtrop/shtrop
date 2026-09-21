@@ -76,6 +76,7 @@ from sofia.reel.subtitles import (
     write_ass,
     write_srt,
 )
+from sofia.voice.audio import analyse_wav
 from sofia.voice.contracts import Language, VoiceVerdict
 from sofia.voice.pipeline import VoiceTeam
 
@@ -887,6 +888,18 @@ class ReelDirector:
         self._subtitle_extent = (top, bottom)
 
         # --- audio: voice track, music bed, verified ducking ----------------
+        # What was actually laid on the timeline, measured from the clips. A
+        # generated clip is asked for the shot's length but comes back however
+        # long the words take, and an overrun plays over the next clip rather
+        # than pushing it along.
+        self._voice_spans = []
+        for clip, start in placed:
+            try:
+                length = analyse_wav(clip).duration_s
+            except Exception:  # noqa: BLE001 - an unreadable clip is caught by the voice gate
+                continue
+            self._voice_spans.append((Path(clip).name, start, length))
+
         audio_track: Optional[str] = None
         if placed:
             voice_track = build_voice_track(
@@ -1008,6 +1021,7 @@ class ReelDirector:
                 workdir=self.workdir,
                 music_bpm=getattr(self.music_backend, "bpm", None),
                 delivered_runtime_s=delivered_s,
+                voice_spans=getattr(self, "_voice_spans", None),
             )
         )
 

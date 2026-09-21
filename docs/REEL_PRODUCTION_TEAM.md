@@ -133,7 +133,16 @@ plan:
 | Dead time | longest silence in the actual mix | yes |
 | Pacing | shot count, cuts per 10 s, longest-shot share of runtime | yes |
 | Delivered runtime | probed duration against the planned total (±0.5 s) | yes |
+| Voice timeline | each placed clip's real length against the next clip's slot | yes |
 | Beat sync | cut points against the music grid | **no** — advisory |
+
+A voice clip is asked for its shot's length and comes back however long the
+words take — the prosody gate tolerates a drift of a third — and the clips are
+then summed onto the timeline at their shots' start times. So an overrun does
+not push the next clip along, it plays **over** it. No other gate can see two
+voices at once: it is not dead air, every word is still in the subtitles, and
+the mix level looks normal. The clips are therefore measured as placed, and an
+overlap blocks.
 
 Everything in this table except the first frame reasons from the shot list —
 the *plan*. That is only sound if the file is the programme that was planned,

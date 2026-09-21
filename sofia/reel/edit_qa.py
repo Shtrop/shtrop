@@ -9,6 +9,8 @@ them:
 * **first frame** — decoded and analysed, so a black or flat opener is caught;
 * **dead time** — the longest silence in the actual mix, and the silence
   before the first word, which the pause statistics skip by design;
+* **voice timeline** — clips must fit their slots; a clip that overruns plays
+  over the next one rather than pushing it along;
 * **pacing** — shot-length distribution and cut rate from the real shot list;
 * **aspect** — the delivered frame must be vertical;
 * **beat sync** — cut points against the music grid.
@@ -49,6 +51,9 @@ class EditThresholds:
     #: How far the delivered runtime may differ from the planned one before the
     #: edit is assumed to have lost or duplicated material.
     max_runtime_drift_s: float = 0.5
+    #: One voice clip may run this far into the next one's slot before they are
+    #: two people talking at once.
+    max_voice_overlap_s: float = 0.05
     #: A first frame must clear these or it is not worth stopping for.
     min_first_frame_contrast: float = 0.06
     min_first_frame_sharpness: float = 0.010
@@ -65,6 +70,7 @@ class EditIssues:
     first_frame: list[str] = field(default_factory=list)
     pacing: list[str] = field(default_factory=list)
     dead_time: list[str] = field(default_factory=list)
+    voice_timeline: list[str] = field(default_factory=list)
     framing: list[str] = field(default_factory=list)
     not_measured: list[str] = field(default_factory=list)
     #: Craft signals that are reported but never fail the gate.
@@ -73,7 +79,13 @@ class EditIssues:
 
     @property
     def blocking(self) -> list[str]:
-        return self.first_frame + self.pacing + self.dead_time + self.framing
+        return (
+            self.first_frame
+            + self.pacing
+            + self.dead_time
+            + self.voice_timeline
+            + self.framing
+        )
 
     @property
     def ok(self) -> bool:
@@ -85,6 +97,7 @@ class EditIssues:
             "first_frame": list(self.first_frame),
             "pacing": list(self.pacing),
             "dead_time": list(self.dead_time),
+            "voice_timeline": list(self.voice_timeline),
             "framing": list(self.framing),
             "not_measured": list(self.not_measured),
             "advisory": list(self.advisory),
@@ -315,6 +328,54 @@ def check_runtime(
         )
 
 
+def check_voice_timeline(
+    spans: Optional[Sequence[tuple[str, float, float]]],
+    runtime_s: Optional[float],
+    t: EditThresholds,
+    issues: EditIssues,
+) -> None:
+    """Voice clips must fit the slots they were placed in.
+
+    A clip is generated for a shot's duration, but real TTS returns whatever
+    length the words take, and the prosody gate tolerates a drift of a third.
+    The clips are then laid on the timeline at their shots' start times and
+    summed, so a clip that overruns does not push the next one along — it plays
+    *over* it. Two voices at once is not something any other gate would see: it
+    is not dead air, the words are all present in the subtitles, and the mix
+    level looks normal.
+
+    ``spans`` is ``(label, start_s, duration_s)`` per placed clip, measured from
+    the clips themselves. ``None`` means nobody reported them, which is not a
+    pass.
+    """
+
+    if spans is None:
+        issues.not_measured.append(
+            "the voice clips as placed on the timeline were not reported, so "
+            "overlapping speech could not be ruled out"
+        )
+        return
+    ordered = sorted(spans, key=lambda span: span[1])
+    for (label, start, duration), (next_label, next_start, _) in zip(
+        ordered, ordered[1:]
+    ):
+        overlap = (start + duration) - next_start
+        if overlap > t.max_voice_overlap_s:
+            issues.voice_timeline.append(
+                f"voice clip {label} runs {overlap:.2f}s into {next_label}; "
+                "two voices play at once"
+            )
+    if ordered and runtime_s is not None:
+        label, start, duration = ordered[-1]
+        spill = (start + duration) - runtime_s
+        if spill > t.max_voice_overlap_s:
+            issues.voice_timeline.append(
+                f"voice clip {label} runs {spill:.2f}s past the end of the reel"
+            )
+    if ordered:
+        issues.measurements["voice_clips_placed"] = len(ordered)
+
+
 def analyse_edit(
     *,
     final_path: Optional[str],
@@ -325,6 +386,7 @@ def analyse_edit(
     music_bpm: Optional[float] = None,
     thresholds: Optional[EditThresholds] = None,
     delivered_runtime_s: Optional[float] = None,
+    voice_spans: Optional[Sequence[tuple[str, float, float]]] = None,
 ) -> EditIssues:
     """Run every editing check and return what it found."""
 
@@ -332,6 +394,7 @@ def analyse_edit(
     issues = EditIssues()
     check_pacing(shots, t, issues)
     check_runtime(shots, delivered_runtime_s, t, issues)
+    check_voice_timeline(voice_spans, delivered_runtime_s, t, issues)
     check_first_frame(final_path, editor, workdir, t, issues)
     check_dead_time(mix_path, t, issues)
     check_beat_sync(shots, music_bpm, t, issues)
