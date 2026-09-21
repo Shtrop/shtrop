@@ -176,6 +176,13 @@ A restarted session rehydrates finished renders from the checkpoint and does
 not pay for them twice. Voice takes are reused too — reuse skips *generation*,
 never *verification*.
 
+**Presence is not completeness.** A host that loses power mid-write leaves a
+file that exists and is not empty, and resume used to accept exactly that. Each
+rehydrated artifact is now decoded before it is trusted: a WAV must contain
+every frame its header declares (a truncated one otherwise decodes short and
+silently), a video must decode to a non-zero duration, and anything that cannot
+be verified is re-done rather than assumed good.
+
 ## GPU priority
 
 Production has priority. `GpuArbiter` reads live device state plus the studio's

@@ -88,3 +88,119 @@ def test_corrupt_checkpoint_raises_rather_than_silently_restarting(tmp_path):
 def test_next_stage_terminates():
     assert next_stage(StageState.FINAL_QA) is StageState.READY_FOR_OWNER_REVIEW
     assert next_stage(StageState.READY_FOR_OWNER_REVIEW) is None
+
+
+# ---- artifact integrity after an interrupted run -------------------------
+# A host that loses power mid-write leaves a file that exists and is not empty.
+# Presence is not completeness, and reusing a fragment silently corrupts a Reel.
+
+
+def _wav(path, seconds=1.0, rate=22050):
+    import math
+
+    from sofia.voice.audio import write_wav
+
+    return write_wav(
+        path,
+        [0.2 * math.sin(2 * math.pi * 220 * i / rate) for i in range(int(rate * seconds))],
+        rate,
+    )
+
+
+def test_a_truncated_wav_is_not_usable(tmp_path):
+    from sofia.core.artifacts import is_usable
+
+    good = _wav(tmp_path / "good.wav")
+    assert is_usable(good, kind="wav")
+
+    cut = tmp_path / "cut.wav"
+    cut.write_bytes(good.read_bytes()[: int(good.stat().st_size * 0.5)])
+    # It exists and is far from empty — presence alone would pass it.
+    assert cut.exists() and cut.stat().st_size > 1000
+    assert not is_usable(cut, kind="wav")
+
+
+def test_a_barely_truncated_wav_is_still_caught(tmp_path):
+    """The dangerous case: 1% missing decodes almost-right and looks fine."""
+    from sofia.core.artifacts import is_usable
+
+    good = _wav(tmp_path / "good.wav", seconds=5.0)
+    cut = tmp_path / "cut.wav"
+    cut.write_bytes(good.read_bytes()[: int(good.stat().st_size * 0.99)])
+    assert not is_usable(cut, kind="wav")
+
+
+def test_analysing_a_truncated_wav_raises_rather_than_returning_short_audio(tmp_path):
+    """wave trusts the header, so a cut file otherwise decodes silently."""
+    import pytest
+
+    from sofia.core.artifacts import ArtifactInvalid
+    from sofia.voice.audio import analyse_wav
+
+    good = _wav(tmp_path / "good.wav", seconds=4.0)
+    cut = tmp_path / "cut.wav"
+    cut.write_bytes(good.read_bytes()[: int(good.stat().st_size * 0.25)])
+    with pytest.raises(ArtifactInvalid):
+        analyse_wav(cut)
+
+
+def test_a_truncated_ppm_is_not_usable(tmp_path):
+    from sofia.core.artifacts import is_usable
+
+    width, height = 20, 20
+    full = tmp_path / "f.ppm"
+    full.write_bytes(
+        f"P6\n{width} {height}\n255\n".encode() + bytes(width * height * 3)
+    )
+    assert is_usable(full, kind="ppm")
+
+    cut = tmp_path / "c.ppm"
+    cut.write_bytes(full.read_bytes()[: len(full.read_bytes()) // 2])
+    assert not is_usable(cut, kind="ppm")
+
+
+def test_video_without_a_probe_is_treated_as_unusable(tmp_path):
+    """Unverifiable is not the same as good — refuse to assume."""
+    from sofia.core.artifacts import is_usable
+
+    v = tmp_path / "v.mp4"
+    v.write_bytes(b"\x00" * 5000)
+    assert not is_usable(v, kind="video", probe=None)
+
+
+def test_a_video_that_does_not_decode_is_not_usable(tmp_path):
+    from sofia.core.artifacts import is_usable
+
+    def probe(path):
+        raise RuntimeError("moov atom not found")
+
+    v = tmp_path / "v.mp4"
+    v.write_bytes(b"\x00" * 5000)
+    assert not is_usable(v, kind="video", probe=probe)
+
+
+def test_a_video_decoding_to_zero_duration_is_not_usable(tmp_path):
+    from sofia.core.artifacts import is_usable
+
+    v = tmp_path / "v.mp4"
+    v.write_bytes(b"\x00" * 5000)
+    assert not is_usable(
+        v,
+        kind="video",
+        probe=lambda p: {"format": {"duration": "0"}, "streams": [{"codec_type": "video"}]},
+    )
+
+
+def test_a_complete_video_is_usable(tmp_path):
+    from sofia.core.artifacts import is_usable
+
+    v = tmp_path / "v.mp4"
+    v.write_bytes(b"\x00" * 5000)
+    assert is_usable(
+        v,
+        kind="video",
+        probe=lambda p: {
+            "format": {"duration": "21.5"},
+            "streams": [{"codec_type": "video"}, {"codec_type": "audio"}],
+        },
+    )

@@ -40,7 +40,7 @@ not a defect.
 | Component | State | Evidence |
 |---|---|---|
 | Fail-closed gate engine | `PASS` | `sofia/core/gates.py`, 13 tests |
-| Atomic checkpoint + resume | `PASS` | `sofia/core/checkpoint.py`, 9 tests |
+| Atomic checkpoint + resume | `PASS` | `sofia/core/checkpoint.py`; survives a host killed mid-write |
 | AgentRegistry / Factory / Runner / ownership | `PASS` | 25 agents registered, 0 spec-only, 0 capability gaps |
 | Voice Team (7 roles) | `PASS` (wiring) | `sofia/voice/`, 27 tests |
 | Reel Production Team (17 roles) | `PASS` (wiring) | `sofia/reel/`, 41 tests |
@@ -184,6 +184,31 @@ tests:
 15. **Growth bookkeeping failures were swallowed silently**, making a broken
     analytics sink look like a studio that produced nothing. They are recorded
     and surfaced in `director.status()`.
+
+## Resume is safe against an interrupted host
+
+The owner's studio machine reported `GOVERNOR [CRITICAL] host_unstable_safe_hold
+— Kernel-Power 41` on 2026-09-19: the host loses power mid-operation. That is a
+hardware fault on their side, unrelated to this branch, but it names a failure
+mode this code had to survive and did not.
+
+Resume decided a piece of work was finished if its file **existed and was not
+empty**. A run killed mid-write leaves exactly that. Measured on real artifacts:
+
+- **MP4** — any truncation makes the file undecodable (`moov atom not found`),
+  yet it is present and large, so resume reused it. A Reel would be assembled
+  from a fragment.
+- **WAV** — worse, because it fails *silently*: the RIFF header still declares
+  the original length, so a 2%-truncated voice clip decoded to 0.43 s instead
+  of 21.5 s with no error at all. At 1% truncation the duration looks almost
+  right and nothing downstream would notice.
+
+`sofia/core/artifacts.py` now answers "is this complete", not "is this
+present": a WAV must contain every frame its header declares, a PPM must hold a
+full pixel buffer, and a video must decode to a non-zero duration with a video
+stream. An artifact that cannot be verified at all is treated as unusable
+rather than as good. `analyse_wav` validates too, so a truncated clip is caught
+by the critics and not only on resume.
 
 ## Security review
 

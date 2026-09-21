@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from sofia.core.artifacts import is_usable
 from sofia.core.errors import BackendUnavailableError
 from sofia.core.paths import safe_component
 from sofia.voice.backends import VoiceBackends
@@ -45,7 +46,7 @@ class VoiceGenerator:
         # Resume: an existing take is reused rather than re-synthesised, but it
         # is still put through every critic — reuse skips generation, never
         # verification.
-        reused = reuse and out.exists() and out.stat().st_size > 0
+        reused = reuse and is_usable(out, kind="wav")
         if not reused:
             self.backends.tts.synthesize(brief, out)
         elapsed = time.monotonic() - started

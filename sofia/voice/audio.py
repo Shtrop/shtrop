@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
+from sofia.core.artifacts import validate_wav
+
 
 #: Amplitude at or above which a sample counts as clipped.
 CLIP_THRESHOLD = 0.998
@@ -95,6 +97,10 @@ def analyse_wav(path: str | Path, *, silence_db: float = -45.0) -> AudioStats:
         raise FileNotFoundError(f"audio artifact does not exist: {p}")
     if p.stat().st_size == 0:
         raise ValueError(f"audio artifact is empty: {p}")
+    # A WAV cut short mid-write still declares its original length in the
+    # header, so decoding it silently yields a shorter clip. Refuse it here so
+    # every critic sees the problem, not just a resumed run.
+    validate_wav(p)
 
     samples, rate = read_wav_mono(p)
     if not samples:

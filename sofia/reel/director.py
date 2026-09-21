@@ -21,6 +21,7 @@ from typing import Any, Callable, Mapping, Optional, Sequence
 from sofia.agents.base import AgentContext, Capability
 from sofia.agents.ownership import OwnershipRegistry
 from sofia.agents.runner import AgentRunner
+from sofia.core.artifacts import is_usable
 from sofia.core.checkpoint import CheckpointStore, StageState
 from sofia.core.errors import BackendUnavailableError, OwnershipError
 from sofia.core.gates import GateResult, evaluate_gates
@@ -421,8 +422,9 @@ class ReelDirector:
     ) -> int:
         """Reattach artifacts from the last checkpoint that still exist on disk.
 
-        Only files that are actually present are restored; a checkpoint that
-        references a deleted render simply re-renders it.
+        Only artifacts that are *complete* are restored. A file left half
+        written by an interrupted run exists and is not empty, so a presence
+        check would happily reuse a fragment; each one is decoded instead.
         """
 
         checkpoint = self.checkpoints.load(reel_id)
@@ -434,14 +436,19 @@ class ReelDirector:
             prior = previous.get(shot.index, {})
             for field in ("video_path", "lipsync_path"):
                 path = prior.get(field)
-                if path and Path(path).exists() and Path(path).stat().st_size > 0:
+                if self._usable_video(path):
                     setattr(shot, field, path)
                     restored += 1
         for key, path in checkpoint.payload.get("artifacts", {}).items():
-            if key.startswith("voice.") and path and Path(path).exists():
+            if key.startswith("voice.") and is_usable(path, kind="wav"):
                 assets.voice_clips.setdefault(key.split(".", 1)[1], path)
                 restored += 1
         return restored
+
+    def _usable_video(self, path: Optional[str]) -> bool:
+        """Whether a rendered clip is complete enough to reuse."""
+        probe = getattr(self.backends.editor, "probe", None)
+        return is_usable(path, kind="video", probe=probe if callable(probe) else None)
 
     def _stage(
         self,
@@ -513,9 +520,9 @@ class ReelDirector:
     def _render_shots(self, reel_id: str, shots: Sequence[Shot]) -> None:
         for shot in shots:
             out = self.workdir / "shots" / f"{self._slug(reel_id)}.shot{shot.index}.mp4"
-            if shot.video_path and Path(shot.video_path).exists():
-                continue  # resumed: this shot is already rendered
-            if out.exists() and out.stat().st_size > 0:
+            if self._usable_video(shot.video_path):
+                continue  # resumed: this shot is already rendered and decodes
+            if self._usable_video(str(out)):
                 shot.video_path = str(out)
                 continue
             profile = profile_for(shot.shot_type)
@@ -537,9 +544,9 @@ class ReelDirector:
             if not shot.shot_type.needs_lipsync:
                 continue
             synced = self.workdir / "lipsync" / f"{self._slug(reel_id)}.shot{shot.index}.mp4"
-            if shot.lipsync_path and Path(shot.lipsync_path).exists():
+            if self._usable_video(shot.lipsync_path):
                 continue
-            if synced.exists() and synced.stat().st_size > 0:
+            if self._usable_video(str(synced)):
                 shot.lipsync_path = str(synced)
                 continue
             audio = assets.voice_clips.get(str(shot.index))

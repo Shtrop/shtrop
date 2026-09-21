@@ -309,3 +309,29 @@ def test_a_broken_growth_engine_never_changes_a_verdict(tmp_path):
     assert studio.director.growth_errors
     assert "analytics sink is down" in studio.director.growth_errors[0]
     assert studio.director.status("reel-broken-growth")["growth_errors"]
+
+
+@needs_ffmpeg
+def test_resume_re_renders_a_shot_left_half_written(tmp_path):
+    """The failure mode of a host that loses power mid-render.
+
+    A truncated shot exists and is not empty, so a presence check would reuse
+    it and ship a Reel built on a fragment that does not even decode.
+    """
+    studio = _studio(tmp_path)
+    studio.director.produce("reel-torn", _growth(), diagnostic=True)
+
+    shots = sorted((tmp_path / "shots").glob("reel-torn*.mp4"))
+    assert shots
+    victim = shots[0]
+    intact = victim.read_bytes()
+    victim.write_bytes(intact[: int(len(intact) * 0.6)])
+    torn_size = victim.stat().st_size
+    assert torn_size > 0  # exists and non-empty: presence alone would pass it
+
+    # A fresh studio attaches to the same workdir, as a restarted session would.
+    revived = _studio(tmp_path)
+    revived.director.produce("reel-torn", _growth(), diagnostic=True)
+
+    assert victim.stat().st_size != torn_size, "the torn shot was reused, not re-rendered"
+    assert revived.director._usable_video(str(victim))
