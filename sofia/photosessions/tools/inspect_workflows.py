@@ -56,7 +56,9 @@ def inspect(path: Path) -> dict:
 
 
 def main() -> int:
-    targets = [Path(a) for a in sys.argv[1:]] or [Path.cwd()]
+    argv = [a for a in sys.argv[1:] if a != "--pick"]
+    pick_only = "--pick" in sys.argv     # печатать только путь годного фото-графа
+    targets = [Path(a) for a in argv] or [Path.cwd()]
     files: list[Path] = []
     for target in targets:
         if target.is_dir():
@@ -71,20 +73,31 @@ def main() -> int:
         return 2
 
     usable = []
-    print(f"Осмотрено файлов: {len(files)}\n")
+    if not pick_only:
+        print(f"Осмотрено файлов: {len(files)}\n")
     for path in files:
         info = inspect(path)
         if not info["api"]:
-            print(f"[--] {path.name}\n     {info['note']}")
+            if not pick_only:
+                print(f"[--] {path.name}\n     {info['note']}")
             continue
-        verdict = "ГОДЕН" if not info["missing"] else f"не хватает: {', '.join(info['missing'])}"
-        flag = "ok" if not info["missing"] else "!!"
-        print(f"[{flag}] {path.name}  ({info['kind']}, узлов {info['nodes']})")
-        print(f"     {info['binding'].describe()}")
-        print(f"     {verdict}")
-        print(f"     {path}")
+        if not pick_only:
+            verdict = "ГОДЕН" if not info["missing"] else f"не хватает: {', '.join(info['missing'])}"
+            flag = "ok" if not info["missing"] else "!!"
+            print(f"[{flag}] {path.name}  ({info['kind']}, узлов {info['nodes']})")
+            print(f"     {info['binding'].describe()}")
+            print(f"     {verdict}")
+            print(f"     {path}")
         if not info["missing"]:
             usable.append(info)
+
+    if pick_only:
+        photo = [i for i in usable if i["kind"] == "фото"]
+        if not photo:
+            print("фото-workflow не найден", file=sys.stderr)
+            return 3
+        print(photo[0]["path"])
+        return 0
 
     print()
     photo = [i for i in usable if i["kind"] == "фото"]

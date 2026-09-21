@@ -271,6 +271,8 @@ def main() -> int:
     ap.add_argument("--variants", type=int, help="переопределить число вариантов на кадр")
     ap.add_argument("--timeout", type=int, default=900, help="ожидание одного кадра, с")
     ap.add_argument("--dry-run", action="store_true", help="показать план и выйти")
+    ap.add_argument("--redo", action="store_true",
+                    help="перегенерировать даже те кадры, что уже лежат в каталоге")
     ap.add_argument("--list-nodes", action="store_true",
                     help="показать узлы workflow и выйти (диагностика привязки)")
     ap.add_argument("--positive", help="узел позитива вручную, например 6:text")
@@ -354,13 +356,17 @@ def main() -> int:
 
     args.out.mkdir(parents=True, exist_ok=True)
     client_id = str(uuid.uuid4())
-    manifest, failed = [], []
+    manifest, failed, skipped = [], [], 0
 
     for job in jobs:
         variants = args.variants or job["batch"]
         print(f"  {job['id']} — {variants} вариант(ов), базовый seed {job['seed']}")
         for v in range(variants):
             seed = job["seed"] * 100 + v
+            # возобновление: уже отрисованный вариант не гоняем заново
+            if not args.redo and any(args.out.glob(f"{job['id']}_seed{seed}_*.png")):
+                skipped += 1
+                continue
             try:
                 queued = post(args.server, "/prompt",
                               {"prompt": patch(graph, binding, job, seed,
@@ -377,9 +383,11 @@ def main() -> int:
     report = args.out / "run_manifest.json"
     report.write_text(json.dumps(
         {"session_id": batch["session_id"], "slug": batch["slug"], "published": False,
-         "generated": manifest, "failed": failed},
+         "generated": manifest, "failed": failed, "skipped_existing": skipped},
         ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
+    if skipped:
+        print(f"\nПропущено уже готовых вариантов: {skipped} (перегенерировать: --redo)")
     print(f"\nГотово: {len(manifest)} изображений, сбоев {len(failed)}")
     print(f"Манифест: {report}")
     print("Публикация НЕ выполнялась — только запись на диск.")

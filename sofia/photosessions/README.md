@@ -18,7 +18,9 @@ sofia/photosessions/
 ├── sessions/22..31_*.json            # S22–S31 — бельевая линия, по 8 кадров
 ├── tools/build_prompts.py        # сборка финальных промптов
 ├── tools/run_session.py          # прогон одной сессии через ComfyUI
+├── tools/autopilot.ps1           # автопилот: граф -> прогон -> контактный лист
 ├── tools/run_all.ps1             # один запуск: все сессии -> Рабочий стол\Фотосессия
+├── tools/contact_sheet.py        # HTML-лист со всеми отрисованными кадрами
 ├── tools/inspect_workflows.py    # какой из workflow ComfyUI годится для фото
 ├── REALISM.md                    # как убрать пластик: настройки графа и формулировки
 └── build/                        # результат сборки (брифы, .txt промпты, batch.json)
@@ -52,9 +54,35 @@ S05 намеренно берёт изумруд из канон-палитры 
 
 Внутри сессии: 2 hero-кадра (по 8 сид-вариантов на отбор), остальные core/filler по 4 варианта.
 
-## Самый короткий путь: одна команда
+## Автопилот: одна команда на весь цикл
 
 На машине студии, где подняты ComfyUI и Sofia LoRA:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\autopilot.ps1
+```
+
+Что он делает сам: проверяет ComfyUI → находит фото-workflow в API-формате (и отличает его от
+видео-пайплайнов) → прогоняет все сессии с настройками против пластика и за сходство
+(`guidance 2.2`, `steps 40`, identity 0.9, LoRA 0.8, детейлер выключен) → складывает кадры в
+`<Рабочий стол>\Фотосессия\<сессия>\` → собирает `index.html` со всеми превью и открывает его.
+
+Прогон **возобновляемый**: уже отрисованные кадры пропускаются, так что после обрыва достаточно
+запустить ту же команду. Перегенерировать принудительно — `-Redo`.
+
+Подобрать параметры перед большим прогоном:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\autopilot.ps1 -Grid -Sessions corset_cellar
+```
+
+Прогонит один кадр во всех сочетаниях guidance × identity, соберёт по ним контактный лист и
+откроет его. Выбранные значения потом передать как `-Guidance` и `-Identity`.
+
+Ключи автопилота: `-Sessions a,b,c`, `-Variants N`, `-Workflow <путь>`, `-OutRoot <путь>`,
+`-Server host:port`, `-KeepDetailer` (не глушить детейлер), `-NoOpen`, `-Redo`.
+
+### Нижний уровень
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\run_all.ps1

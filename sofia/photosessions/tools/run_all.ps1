@@ -30,6 +30,7 @@ param(
     [double]   $Identity,
     [double]   $Lora,
     [switch]   $NoDetailer,
+    [switch]   $Redo,
     [switch]   $DryRun
 )
 
@@ -165,6 +166,7 @@ foreach ($batch in $batches) {
     if ($Identity)   { $params += @('--identity', $Identity) }
     if ($Lora)       { $params += @('--lora', $Lora) }
     if ($NoDetailer) { $params += '--no-detailer' }
+    if ($Redo)       { $params += '--redo' }
     if ($DryRun)     { $params += '--dry-run' }
 
     & $Python $Runner @params
