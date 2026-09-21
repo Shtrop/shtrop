@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "radar_date": "2026-09-15",
+  "radar_date": "2026-09-21",
   "window_days": 14,
   "collected_by": "web research (open sources)",
   "evidence_label": "AI ANALYSIS",
@@ -15,10 +15,10 @@
     },
     {
       "id": "rank-watch-time-total-seconds",
-      "title": "Watch time считается суммой секунд с повторами",
-      "detail": "15-секундный Reel, просмотренный 3 раза, ранжируется выше 60-секундного с одним просмотром. Отсюда преимущество коротких петлевых роликов 7-15 с.",
+      "title": "Watch completion — главная метрика Reels",
+      "detail": "Уточнение сентября: решает доля досмотров, а не сумма секунд. Ролик, который 1000 человек досмотрели и пересмотрели, обгоняет ролик, где 10000 отвалились на 3-й секунде.",
       "confidence": "high",
-      "source": "https://blckalpaca.at/en/knowledge-base/social-media/social-media-algorithms-distribution/instagram-algorithm-2026"
+      "source": "https://www.usefastlane.ai/blog/instagram-algorithm-2026"
     },
     {
       "id": "rank-skip-rate",
@@ -36,10 +36,10 @@
     },
     {
       "id": "rank-originality-penalty",
-      "title": "Оригинальный контент получает +40-60% дистрибуции; репосты штрафуются",
-      "detail": "10+ репостов за 30 дней исключают аккаунт из рекомендаций. Для Sofia риск низкий, но действует на reuse чужих аудио/клипов.",
-      "confidence": "medium",
-      "source": "https://orangemonke.com/blogs/instagram-algorithm/"
+      "title": "Оригинальный контент получает до 3x дистрибуции",
+      "detail": "Обновление сентября: оригинал, сделанный под Instagram, получает до 3x распространения против репостов и переработок. Водяные знаки TikTok и переиспользование старых постов без существенных добавлений понижаются в выдаче.",
+      "confidence": "high",
+      "source": "https://leeseohits.com/blog/industry-news/instagram-algorithm-update-2026-new-ranking-factors"
     },
     {
       "id": "rank-longer-reels-reach",
@@ -54,6 +54,20 @@
       "detail": "Оптимизировать контент под «переслать другу», а не под дискуссию в комментариях.",
       "confidence": "medium",
       "source": "https://postproval.com/instagram-algorithm-2026-the-3-ranking-metrics-that-matter-most/"
+    },
+    {
+      "id": "rank-small-account-boost",
+      "title": "Платформа стала подталкивать небольшие аккаунты",
+      "detail": "В 2026 добавлен буст малых аккаунтов: размер аудитории меньше мешает попасть в рекомендации, если удержание и пересылки в норме. Для Sofia это значит, что низкий охват объясняется контентом и поверхностью, а не размером аккаунта.",
+      "confidence": "medium",
+      "source": "https://heropost.io/instagram-algorithm-changes-2026/"
+    },
+    {
+      "id": "rank-saves-alongside-sends",
+      "title": "Сохранения поднялись до уровня пересылок",
+      "detail": "Сентябрьские обзоры ставят saves и shares двумя сильнейшими сигналами вовлечения, лайки — слабейшим. Раньше saves шли заметно ниже sends.",
+      "confidence": "medium",
+      "source": "https://buffer.com/resources/instagram-algorithms/"
     }
   ],
   "format_signals": [
@@ -119,6 +133,24 @@
       "production_cost": "low",
       "confidence": "medium",
       "source": "https://make-influencer.ai/guides/ai-influencer-instagram"
+    },
+    {
+      "id": "fmt-episodic-series",
+      "title": "Эпизодические серии вместо разовых трендов",
+      "detail": "Возвращаемость и досматриваемость выше у контента с продолжением: зритель приходит за следующей частью, а не за одним роликом.",
+      "sofia_fit": "high",
+      "production_cost": "medium",
+      "confidence": "medium",
+      "source": "https://manychat.com/blog/instagram-trends-for-creators-2026/"
+    },
+    {
+      "id": "fmt-original-audio",
+      "title": "Оригинальное аудио вместо трендовых треков",
+      "detail": "Своё аудио сигнализирует алгоритму о свежем контенте и не попадает под понижение за переиспользование. Для студии с XTTS это дешёвый ход.",
+      "sofia_fit": "high",
+      "production_cost": "low",
+      "confidence": "medium",
+      "source": "https://thesocialcontentfactory.com/reel-trends"
     }
   ],
   "audience_signals": [
@@ -153,6 +185,15 @@
       "impact_on_sofia": "planning",
       "confidence": "low",
       "source": "https://improvado.io/blog/instagram-growth-strategies"
+    },
+    {
+      "id": "aud-ai-profile-label-policy",
+      "title": "Instagram ограничивает охват нераскрытых AI-профилей",
+      "detail": "Meta объявила 31 августа 2026: аккаунты, построенные вокруг AI-персоны без раскрытия, получают пониженную дистрибуцию в рекомендациях, включая Reels и Explore. Метка 'AI creator' заменена на явную 'AI-generated profile'. Корректно раскрытый AI-профиль сохраняет обычный охват без штрафа.",
+      "impact_on_sofia": "critical",
+      "confidence": "high",
+      "source": "https://www.affiversemedia.com/instagram-undisclosed-ai-profile-reach-limits/"
     }
-  ]
+  ],
+  "previous_radar_date": "2026-09-15"
 }
