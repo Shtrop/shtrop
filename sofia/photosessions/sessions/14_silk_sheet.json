@@ -1,0 +1,113 @@
+{
+  "session_id": "S14",
+  "slug": "silk_sheet",
+  "title": "Champagne Silk",
+  "title_ru": "Шёлковая простыня",
+  "reference_source": "Максимальный гламурный регистр в рамках одетого кадра",
+  "mood_ru": "Отель, раннее утро, тяжёлый шёлк. Открытая спина, закрытый кадр.",
+  "base_seed": 114000,
+  "aspect": "4:5",
+  "allure": "covered-front editorial glamour, bare back and shoulders with the heavy silk held across her front so nothing is exposed, long unbroken line of the spine, soft morning gaze back over the shoulder",
+  "wardrobe": {
+    "code": "N",
+    "notes_ru": "Открытая спина, шёлк держится спереди рукой — ничего не обнажено.",
+    "prompt": "champagne silk sheet drawn across her front and held in place with one hand, bare back and shoulders, nothing exposed, silver star pendant, loose bed hair"
+  },
+  "location": {
+    "notes_ru": "Отельная кровать ранним утром, тяжёлые шторы приоткрыты.",
+    "prompt": "hotel bed in the early morning, heavy champagne silk sheets, thick curtains half drawn, a blade of city light across the bed, dark wood headboard, brass lamp"
+  },
+  "shots": [
+    {
+      "title_ru": "Открытая спина у окна",
+      "pose": "standing at the gap in the heavy curtains with the silk gathered and held at her front, entire bare back to the camera, weight on one hip, head turned in profile into the light",
+      "camera": "50mm lens, eye level, back view, full body vertical framing",
+      "light": "one cool blade of morning light down her spine, warm lamp glow on the far shoulder",
+      "id": "S14-01",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "title_ru": "На животе, взгляд через плечо",
+      "pose": "lying on her stomach across the silk, propped on both forearms with the sheet drawn across her front, bare back and shoulders, ankles crossed in the air, looking back over her shoulder",
+      "camera": "35mm lens, low camera at bed level, back three-quarter angle, full body framing",
+      "light": "soft directional morning light along the curve of her back, deep shadow in the folds of silk",
+      "id": "S14-02",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "id": "S14-03",
+      "priority": "core",
+      "title_ru": "Прогиб, взгляд через плечо",
+      "pose": "kneeling back on her heels on the champagne silk of the bed, spine deeply arched, one hand planted beside her, head turned over the shoulder holding direct eye contact with the lens",
+      "camera": "35mm lens, slightly above eye level, back three-quarter angle, full body vertical framing",
+      "light": "a single blade of cool morning light through the curtain gap, warm brass lamp glow on her far shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S14-04",
+      "priority": "core",
+      "title_ru": "Отражение",
+      "pose": "standing close to the dark hotel mirror across the room, one hand resting on the surface, hip pushed out, chin lowered, holding her own gaze while the camera catches her and the reflection at once",
+      "camera": "50mm lens, eye level, over-the-shoulder into the reflection, thigh-up framing",
+      "light": "a single blade of cool morning light through the curtain gap, warm brass lamp glow on her far shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S14-05",
+      "priority": "core",
+      "title_ru": "Силуэт против света",
+      "pose": "standing at the gap in the heavy curtains with one forearm raised against the frame, weight settled on one hip, back to the camera, long line of the spine on show, looking away into the light",
+      "camera": "35mm lens, eye level, back view, full body vertical framing",
+      "light": "a single blade of cool morning light through the curtain gap, warm brass lamp glow on her far shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S14-06",
+      "priority": "core",
+      "title_ru": "Полулёжа, нога вытянута",
+      "pose": "reclining back on the champagne silk of the bed propped on both elbows, one knee raised and the other leg stretched long, ribcage lifted, chin up, half-lidded gaze straight down the lens",
+      "camera": "35mm lens, low camera at surface level, three-quarter front angle, full body framing",
+      "light": "a single blade of cool morning light through the curtain gap, warm brass lamp glow on her far shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S14-07",
+      "priority": "filler",
+      "title_ru": "Деталь",
+      "pose": "cropped detail composition of the silk gathered in her fist and the line of her bare shoulder blade, face out of frame, fingers relaxed and naturally posed",
+      "camera": "85mm lens, close detail framing, very shallow depth of field",
+      "light": "a single blade of cool morning light through the curtain gap, warm brass lamp glow on her far shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S14-08",
+      "priority": "core",
+      "title_ru": "Вид сверху",
+      "pose": "lying on her back on the champagne silk of the bed, one arm thrown above her head, the other hand resting on her waist, hair fanned out, knees softly bent, eyes lifted to the lens",
+      "camera": "35mm lens, directly overhead top-down angle, full body framing",
+      "light": "a single blade of cool morning light through the curtain gap, warm brass lamp glow on her far shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S14-09",
+      "priority": "core",
+      "title_ru": "В рост, рука в волосах",
+      "pose": "standing tall beside the bed with the sheet trailing behind her, one hand pushing back through her hair with the elbow raised, weight shifted onto one leg so the hip breaks the line, chin down and eyes up into the lens",
+      "camera": "50mm lens, slightly low angle, frontal, full body framing",
+      "light": "a single blade of cool morning light through the curtain gap, warm brass lamp glow on her far shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S14-10",
+      "priority": "core",
+      "title_ru": "Общий план",
+      "pose": "seen small across the space on the far side of the big hotel bed, caught mid-movement and not looking at the camera, the room itself carrying the mood",
+      "camera": "24mm wide lens, eye level, wide environmental full-body shot",
+      "light": "a single blade of cool morning light through the curtain gap, warm brass lamp glow on her far shoulder",
+      "headphones": false
+    }
+  ],
+  "film": "shot on Kodak Portra 800, warm grain in the shadow side"
+}

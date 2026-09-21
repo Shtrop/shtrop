@@ -1,0 +1,113 @@
+{
+  "session_id": "S08",
+  "slug": "pool_sunset",
+  "title": "Poolside Sunset",
+  "title_ru": "Бассейн на закате",
+  "reference_source": "Максимальный гламурный регистр в рамках одетого кадра",
+  "mood_ru": "Вилла, инфинити-бассейн, закат над океаном. Мокрая кожа и золото.",
+  "base_seed": 108000,
+  "aspect": "4:5",
+  "allure": "swimwear glamour, tiny high-cut bikini, long legs and toned waist fully on show, wet golden skin, confident unhurried sensuality",
+  "wardrobe": {
+    "code": "H",
+    "notes_ru": "Чёрное бикини на завязках, высокая посадка. Мокрая кожа, мокрые волосы.",
+    "prompt": "tiny black string bikini with high-cut bottoms, opaque fabric, wet skin, wet hair pushed back from her face, thin gold anklet, silver star pendant, no shoes"
+  },
+  "location": {
+    "notes_ru": "Терраса виллы, инфинити-бассейн, океан. Только естественный закатный свет.",
+    "prompt": "infinity pool on a villa terrace at sunset, warm travertine deck, palm shadows across the stone, wet footprints, rolled white towel, glass on the pool edge, ocean horizon glowing orange"
+  },
+  "shots": [
+    {
+      "title_ru": "Выходит из воды",
+      "pose": "rising out of the pool on the steps with water streaming off her body, one hand sweeping the wet hair back, hip pushed out, head tipped and holding direct eye contact",
+      "camera": "50mm lens, low angle from the deck, frontal, thigh-up framing",
+      "light": "low golden sun blazing off the wet skin, shimmering water reflections from below",
+      "id": "S08-01",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "title_ru": "На бортике, прогиб",
+      "pose": "lying back along the warm travertine edge propped on both elbows, one knee raised high and the other leg stretched into the water, ribcage lifted, face turned up to the sun then to the lens",
+      "camera": "35mm lens, low camera at deck level, three-quarter angle, full body framing",
+      "light": "raking sunset light along the whole length of her body, warm bounce off the pale stone",
+      "id": "S08-02",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "id": "S08-03",
+      "priority": "core",
+      "title_ru": "Прогиб, взгляд через плечо",
+      "pose": "kneeling back on her heels on the warm travertine pool edge, spine deeply arched, one hand planted beside her, head turned over the shoulder holding direct eye contact with the lens",
+      "camera": "35mm lens, slightly above eye level, back three-quarter angle, full body vertical framing",
+      "light": "low golden sun raking across her body, shimmering light reflected up off the pool water",
+      "headphones": false
+    },
+    {
+      "id": "S08-04",
+      "priority": "core",
+      "title_ru": "Отражение",
+      "pose": "standing close to the still mirror-like water surface, one hand resting on the surface, hip pushed out, chin lowered, holding her own gaze while the camera catches her and the reflection at once",
+      "camera": "50mm lens, eye level, over-the-shoulder into the reflection, thigh-up framing",
+      "light": "low golden sun raking across her body, shimmering light reflected up off the pool water",
+      "headphones": false
+    },
+    {
+      "id": "S08-05",
+      "priority": "core",
+      "title_ru": "Силуэт против света",
+      "pose": "standing at the infinity edge of the pool with one forearm raised against the frame, weight settled on one hip, back to the camera, long line of the spine on show, looking away into the light",
+      "camera": "35mm lens, eye level, back view, full body vertical framing",
+      "light": "low golden sun raking across her body, shimmering light reflected up off the pool water",
+      "headphones": false
+    },
+    {
+      "id": "S08-06",
+      "priority": "core",
+      "title_ru": "Полулёжа, нога вытянута",
+      "pose": "reclining back on the warm travertine pool edge propped on both elbows, one knee raised and the other leg stretched long, ribcage lifted, chin up, half-lidded gaze straight down the lens",
+      "camera": "35mm lens, low camera at surface level, three-quarter front angle, full body framing",
+      "light": "low golden sun raking across her body, shimmering light reflected up off the pool water",
+      "headphones": false
+    },
+    {
+      "id": "S08-07",
+      "priority": "filler",
+      "title_ru": "Деталь",
+      "pose": "cropped detail composition of water beading on her hip and the bikini tie at her side, face out of frame, fingers relaxed and naturally posed",
+      "camera": "85mm lens, close detail framing, very shallow depth of field",
+      "light": "low golden sun raking across her body, shimmering light reflected up off the pool water",
+      "headphones": false
+    },
+    {
+      "id": "S08-08",
+      "priority": "core",
+      "title_ru": "Вид сверху",
+      "pose": "lying on her back on the warm travertine pool edge, one arm thrown above her head, the other hand resting on her waist, hair fanned out, knees softly bent, eyes lifted to the lens",
+      "camera": "35mm lens, directly overhead top-down angle, full body framing",
+      "light": "low golden sun raking across her body, shimmering light reflected up off the pool water",
+      "headphones": false
+    },
+    {
+      "id": "S08-09",
+      "priority": "core",
+      "title_ru": "В рост, рука в волосах",
+      "pose": "standing tall waist-deep on the pool steps, one hand pushing back through her hair with the elbow raised, weight shifted onto one leg so the hip breaks the line, chin down and eyes up into the lens",
+      "camera": "50mm lens, slightly low angle, frontal, full body framing",
+      "light": "low golden sun raking across her body, shimmering light reflected up off the pool water",
+      "headphones": false
+    },
+    {
+      "id": "S08-10",
+      "priority": "core",
+      "title_ru": "Общий план",
+      "pose": "seen small across the space at the far end of the long pool, caught mid-movement and not looking at the camera, the room itself carrying the mood",
+      "camera": "24mm wide lens, eye level, wide environmental full-body shot",
+      "light": "low golden sun raking across her body, shimmering light reflected up off the pool water",
+      "headphones": false
+    }
+  ],
+  "film": "shot on Kodak Gold 200, sun-bleached warm tones and visible grain"
+}

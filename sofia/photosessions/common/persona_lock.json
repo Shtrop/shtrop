@@ -1,0 +1,80 @@
+{
+  "schema_version": "1.0",
+  "persona": {
+    "name": "Sofia",
+    "age_canon": 26,
+    "status": "fictional AI persona (not a real person, no real-person likeness)",
+    "identity_prompt": "Sofia, 26-year-old woman, athletic hourglass figure",
+    "signature_markers": {
+      "hair_default": "messy high bun with loose face-framing strands",
+      "jewelry": "thin silver chain with small star pendant",
+      "palette": "cappuccino + emerald accents (persona canon)",
+      "headphones_on_neck_ratio_target": 0.7
+    },
+    "identity_source_of_truth": "D:\\AI_CONTENT\\Sofia\\CLAUDE.md + actual persona/config files",
+    "note_ru": "Точные LoRA/PuLID параметры НЕ выдуманы здесь — подставить из актуальных persona/config файлов студии перед прогоном.",
+    "lora_trigger": "",
+    "identity_mode": "lora_first",
+    "identity_variants": {
+      "lora_first": "Sofia, 26-year-old woman, athletic hourglass figure",
+      "descriptive": "Sofia, 26-year-old woman, warm olive skin, dark brown almost-black hair, defined dark brows, hazel-green eyes, straight nose, full lips, soft oval face with high cheekbones, athletic hourglass figure, tiny beauty mark placement per persona config"
+    },
+    "identity_notes_ru": "Режим lora_first: лицо описывает LoRA, а не текст. Подробное описание глаз, носа и губ усредняет черты и роняет сходство. Режим descriptive включать только если LoRA слабая."
+  },
+  "tech_defaults": {
+    "pipeline": "ComfyUI + FLUX + Sofia LoRA/PuLID",
+    "base_resolution": "896x1152",
+    "upscale": "1.5x latent + face detailer pass",
+    "aspect": "4:5 vertical (Instagram feed)",
+    "steps": 30,
+    "guidance": 3.5,
+    "sampler": "TODO_FROM_STUDIO_WORKFLOW",
+    "lora_weight": "TODO_FROM_PERSONA_CONFIG",
+    "pulid_weight": "TODO_FROM_PERSONA_CONFIG",
+    "seed_policy": "per-session base seed, +1 per shot; hero shots get 4 seed variants",
+    "batch_per_shot": 4,
+    "gpu": "RTX 5090 32GB — один GPU job за раз, проверять gpu_resource_scheduler"
+  },
+  "quality_tail": "candid unretouched photograph, shot on a full-frame camera with a fast prime lens wide open, available light only, true-to-life muted colour, slight lens vignetting, mild chromatic aberration towards the edges, fine film grain, imperfect focus falloff, natural motion in the hands and hair",
+  "negative_prompt": "deformed hands, extra fingers, missing fingers, fused fingers, extra limbs, malformed anatomy, asymmetric eyes, crossed eyes, plastic skin, waxy skin, airbrushed skin, over-smoothed, doll-like, uncanny valley, cgi render, 3d render, cartoon, anime, illustration, painting, watermark, text artifacts, logo, signature, jpeg artifacts, oversaturated, blown highlights, harsh direct flash, distorted face, warped background lines, floating objects, duplicated limbs, mismatched earrings, inconsistent jewelry, nudity, explicit content, see-through fabric, minors, shapeless baggy silhouette, flat lifeless posing, shy closed-off body language, beauty filter, skin smoothing filter, instagram filter, porcelain skin, glossy plastic sheen, overprocessed hdr, oversharpened, digital painting, hyperrealistic render, airbrush retouch, perfectly symmetrical face, flawless skin, mannequin, wax figure, ai generated look, blurred smooth skin, unnaturally even skin tone, glamour retouching, liquify reshaping, cgi lighting",
+  "content_policy": {
+    "rating": "Suggestive glamour lifestyle / fitness (clothed, non-explicit)",
+    "rules_ru": [
+      "Подача откровенная и соблазнительная, как на референсах, но одежда всегда надета и непрозрачная: спортивный топ, пижама, худи/халат. Декольте, талия, ноги, изгиб спины — допустимые акценты.",
+      "Никакого explicit-контента, никакого namёka на несовершеннолетних — персона канонически 26 лет.",
+      "Не использовать внешность реальных публичных людей: только каноническая Sofia LoRA.",
+      "Caption/публикация проходят штатный Master Publish Gate — этот пакет только локальные промпты."
+    ]
+  },
+  "qa_gates": [
+    "identity_guardian: совпадение лица с каноном Sofia >= порог из persona config",
+    "photo_qa: руки, пальцы, украшения, симметрия глаз, артефакты фона",
+    "continuity: один и тот же наряд и причёска внутри сессии, одна и та же цепочка со звездой",
+    "brand_safety: SFW, без логотипов брендов и читаемого текста в кадре",
+    "photo_regen: авто-перегенерация кадра при FAIL, не подмена соседним кадром"
+  ],
+  "allure_tail": "suggestive glamour editorial, sensual magazine styling, body-conscious flattering framing, confident alluring presence",
+  "realism_tail": "real human skin with visible pores and fine peach fuzz, small blemishes and uneven tone left unretouched, faint redness at the knuckles, elbows and knees, shine only where skin is really oily, fine creases at the wrists and the inside of the elbow, a few stray hairs out of place, makeup that reads as applied by hand rather than airbrushed, the proportions of a real athletic woman",
+  "realism_notes_ru": [
+    "Пластик даёт не модель, а формулировки: glossy/dewy/flawless skin, sculpting light, 4k detail, HDR.",
+    "Вместо них — язык реальной камеры: доступный свет, зерно, виньетка, промахи фокуса.",
+    "realism_tail — про кожу и тело, он безопасен для сходства.",
+    "face_realism_tail трогает черты лица и по умолчанию ВЫКЛЮЧЕН: он может ронять сходство. Включать только когда identity уже держится.",
+    "camera_flaws раздаются по кадрам по кругу: каждый снимок получает свой огрех живой съёмки.",
+    "Сходство и пластик — РАЗНЫЕ рычаги. Сходство: вес PuLID/LoRA вверх. Пластик: guidance вниз, детейлер выключить, denoise апскейла вниз. Не путать их между собой."
+  ],
+  "camera_flaws": [
+    "handheld frame tilted a degree or two off level",
+    "slightly underexposed, shadows crushed a little",
+    "one highlight blown out where the light hits hardest",
+    "focus landing a touch behind the eyes, sharpest on the ear",
+    "faint haze from a smudge on the front element",
+    "slight motion blur in one hand from a slow shutter",
+    "subject a little off-centre with one shoulder cropped by the frame edge",
+    "mild flare washing one corner of the frame",
+    "grain heavier in the shadows where the exposure was pushed",
+    "colour a touch cool and uncorrected straight out of camera"
+  ],
+  "face_realism_tail": "fine lines at the corners of the eyes, natural asymmetry between the two halves of the face, faint freckles across the nose",
+  "face_realism_enabled": false
+}

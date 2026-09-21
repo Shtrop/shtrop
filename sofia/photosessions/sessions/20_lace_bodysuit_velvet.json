@@ -1,0 +1,113 @@
+{
+  "session_id": "S20",
+  "slug": "lace_bodysuit_velvet",
+  "title": "Lace Bodysuit in Velvet",
+  "title_ru": "Кружевное боди в бархате",
+  "reference_source": "Серия в кружевном белье — гламурный будуарный регистр",
+  "mood_ru": "Бархатный будуар, свечи, шёлковый халат сползает с плеч. Самый тёплый и мягкий сет.",
+  "base_seed": 120000,
+  "aspect": "4:5",
+  "allure": "lace lingerie editorial glamour, delicate lace set with full opaque lining, sculpted waist and long legs, soft boudoir light gliding over the lace, assured sensual gaze, sheer-panelled lace bodysuit under a silk robe sliding off both shoulders",
+  "wardrobe": {
+    "code": "T",
+    "notes_ru": "Кружевное боди с подкладкой + шёлковый халат, сползающий с плеч.",
+    "prompt": "black lace bodysuit with full opaque lining and delicate lace panels, deep plunging neckline, champagne silk robe worn open and sliding off both shoulders, silver star pendant, hair loose and tousled, bare feet"
+  },
+  "location": {
+    "notes_ru": "Тёмный бархатный будуар, свечи, тяжёлые ткани, старое зеркало.",
+    "prompt": "dark boudoir room, deep burgundy velvet sofa, dozens of lit candles, heavy draped fabrics, antique gilt mirror, low brass table, worn parquet floor, warm shadowed corners"
+  },
+  "shots": [
+    {
+      "title_ru": "Халат падает с плеч",
+      "pose": "standing in the candlelit room letting the silk robe slide down off both shoulders to her elbows, revealing the lace bodysuit, chin lifted, steady sensual eye contact",
+      "camera": "50mm lens, eye level, frontal, thigh-up framing",
+      "light": "clustered candles low and close, warm falloff into the dark velvet behind her",
+      "id": "S20-01",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "title_ru": "На бархатном диване",
+      "pose": "lying back along the velvet sofa propped on one elbow, robe open and spilling to the floor, one knee raised, the other leg stretched long, languid look down the lens",
+      "camera": "35mm lens, low camera at sofa level, three-quarter front angle, full body framing",
+      "light": "candle key from the floor, deep warm shadows folding into the velvet",
+      "id": "S20-02",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "id": "S20-03",
+      "priority": "core",
+      "title_ru": "Прогиб, взгляд через плечо",
+      "pose": "kneeling back on her heels on the burgundy velvet sofa, spine deeply arched, one hand planted beside her, head turned over the shoulder holding direct eye contact with the lens",
+      "camera": "35mm lens, slightly above eye level, back three-quarter angle, full body vertical framing",
+      "light": "clustered candlelight close and low on her skin, one warm shaft of light through the drapes along her shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S20-04",
+      "priority": "core",
+      "title_ru": "Отражение",
+      "pose": "standing close to the antique gilt mirror, one hand resting on the surface, hip pushed out, chin lowered, holding her own gaze while the camera catches her and the reflection at once",
+      "camera": "50mm lens, eye level, over-the-shoulder into the reflection, thigh-up framing",
+      "light": "clustered candlelight close and low on her skin, one warm shaft of light through the drapes along her shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S20-05",
+      "priority": "core",
+      "title_ru": "Силуэт против света",
+      "pose": "standing at the heavily draped window with one shaft of light with one forearm raised against the frame, weight settled on one hip, back to the camera, long line of the spine on show, looking away into the light",
+      "camera": "35mm lens, eye level, back view, full body vertical framing",
+      "light": "clustered candlelight close and low on her skin, one warm shaft of light through the drapes along her shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S20-06",
+      "priority": "core",
+      "title_ru": "Полулёжа, нога вытянута",
+      "pose": "reclining back on the burgundy velvet sofa propped on both elbows, one knee raised and the other leg stretched long, ribcage lifted, chin up, half-lidded gaze straight down the lens",
+      "camera": "35mm lens, low camera at surface level, three-quarter front angle, full body framing",
+      "light": "clustered candlelight close and low on her skin, one warm shaft of light through the drapes along her shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S20-07",
+      "priority": "filler",
+      "title_ru": "Деталь",
+      "pose": "cropped detail composition of the lace panel over her ribs and the silk pooling at her elbow, face out of frame, fingers relaxed and naturally posed",
+      "camera": "85mm lens, close detail framing, very shallow depth of field",
+      "light": "clustered candlelight close and low on her skin, one warm shaft of light through the drapes along her shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S20-08",
+      "priority": "core",
+      "title_ru": "Вид сверху",
+      "pose": "lying on her back on the burgundy velvet sofa, one arm thrown above her head, the other hand resting on her waist, hair fanned out, knees softly bent, eyes lifted to the lens",
+      "camera": "35mm lens, directly overhead top-down angle, full body framing",
+      "light": "clustered candlelight close and low on her skin, one warm shaft of light through the drapes along her shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S20-09",
+      "priority": "core",
+      "title_ru": "В рост, рука в волосах",
+      "pose": "standing tall among the candles in the middle of the room, one hand pushing back through her hair with the elbow raised, weight shifted onto one leg so the hip breaks the line, chin down and eyes up into the lens",
+      "camera": "50mm lens, slightly low angle, frontal, full body framing",
+      "light": "clustered candlelight close and low on her skin, one warm shaft of light through the drapes along her shoulder",
+      "headphones": false
+    },
+    {
+      "id": "S20-10",
+      "priority": "core",
+      "title_ru": "Общий план",
+      "pose": "seen small across the space across the candlelit velvet room, caught mid-movement and not looking at the camera, the room itself carrying the mood",
+      "camera": "24mm wide lens, eye level, wide environmental full-body shot",
+      "light": "clustered candlelight close and low on her skin, one warm shaft of light through the drapes along her shoulder",
+      "headphones": false
+    }
+  ],
+  "film": "shot on Kodak Portra 800 pushed one stop, candle halation, coarse warm grain"
+}

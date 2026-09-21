@@ -1,0 +1,95 @@
+{
+  "session_id": "S29",
+  "slug": "powder_pink_rug",
+  "title": "Powder Pink",
+  "title_ru": "Пудровый розовый",
+  "reference_source": "Бельевая линия — максимальный гламурный регистр, 8 кадров, без наушников",
+  "mood_ru": "Много света, белая комната, пушистый ковёр. Пудрово-розовый сет с бантами.",
+  "base_seed": 129000,
+  "aspect": "4:5",
+  "allure": "lingerie editorial glamour at its boldest, set with full opaque lining, deep neckline and high-cut briefs, sculpted waist and long legs fully on show, unhurried commanding sensuality, direct gaze, powder pink set with tiny satin bows, soft high-key light on bare skin",
+  "film": "shot on Kodak Portra 400, high-key airy grain",
+  "wardrobe": {
+    "code": "AC",
+    "notes_ru": "Пудрово-розовый комплект с подкладкой и атласными бантиками.",
+    "prompt": "powder pink lingerie set with full opaque lining, soft triangle cups with tiny satin bows, matching high-leg briefs with a bow at each hip, silver star pendant, loose soft waves, bare feet"
+  },
+  "location": {
+    "notes_ru": "Светлая пустая комната, огромное окно, глубокий белый ковёр.",
+    "prompt": "bright airy empty room, huge window with no curtains, deep white shag rug, pale plaster walls, one low white chair, a vase of pale roses, blond wood floor, soft overexposed light"
+  },
+  "shots": [
+    {
+      "title_ru": "На пушистом ковре",
+      "pose": "lying on her front on the deep white rug with ankles crossed in the air and propped on both forearms, back arched, chin on her hands then lifted to the lens with a soft look",
+      "camera": "35mm lens, low camera at floor level, frontal, full body framing",
+      "light": "broad soft daylight from the big window filling every shadow",
+      "id": "S29-01",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "title_ru": "Сидя на пятках, спина",
+      "pose": "kneeling back on her heels on the rug with her back to the camera, both hands lifting her hair off her neck, spine arched, looking over her shoulder into the lens",
+      "camera": "50mm lens, slightly above eye level, back view, full body framing",
+      "light": "soft window light along her back, gentle warm bounce off the pale rug",
+      "id": "S29-02",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "id": "S29-03",
+      "priority": "core",
+      "title_ru": "Прогиб, взгляд через плечо",
+      "pose": "kneeling back on her heels on the deep white shag rug, spine deeply arched, one hand planted beside her, head turned over the shoulder holding direct eye contact with the lens",
+      "camera": "35mm lens, slightly above eye level, back three-quarter angle, full body vertical framing",
+      "light": "broad soft high-key daylight from the huge window, warm bounce off the pale rug under her",
+      "headphones": false
+    },
+    {
+      "id": "S29-04",
+      "priority": "core",
+      "title_ru": "Отражение",
+      "pose": "standing close to the big leaning floor mirror, one hand flat on the surface, hip pushed out, chin lowered, meeting the camera past her own reflection",
+      "camera": "50mm lens, eye level, over-the-shoulder into the reflection, thigh-up framing",
+      "light": "broad soft high-key daylight from the huge window, warm bounce off the pale rug under her",
+      "headphones": false
+    },
+    {
+      "id": "S29-05",
+      "priority": "core",
+      "title_ru": "Против света",
+      "pose": "standing at the huge curtainless window with one forearm raised against the frame, weight settled on one hip, the long line of her back and legs read against the light, head turned just enough to find the lens",
+      "camera": "35mm lens, eye level, back three-quarter angle, full body vertical framing",
+      "light": "broad soft high-key daylight from the huge window, warm bounce off the pale rug under her",
+      "headphones": false
+    },
+    {
+      "id": "S29-06",
+      "priority": "core",
+      "title_ru": "Полулёжа, нога вытянута",
+      "pose": "reclining back on the deep white shag rug propped on both elbows, one knee raised and the other leg stretched long, ribcage lifted, chin up, half-lidded gaze straight down the lens",
+      "camera": "35mm lens, low camera at surface level, three-quarter front angle, full body framing",
+      "light": "broad soft high-key daylight from the huge window, warm bounce off the pale rug under her",
+      "headphones": false
+    },
+    {
+      "id": "S29-07",
+      "priority": "core",
+      "title_ru": "В рост, рука в волосах",
+      "pose": "standing tall barefoot in the middle of the bright empty room, one hand pushing back through her hair with the elbow raised, weight on one leg so the hip breaks the line, chin down and eyes up into the lens",
+      "camera": "50mm lens, slightly low angle, frontal, full body framing",
+      "light": "broad soft high-key daylight from the huge window, warm bounce off the pale rug under her",
+      "headphones": false
+    },
+    {
+      "id": "S29-08",
+      "priority": "filler",
+      "title_ru": "Деталь",
+      "pose": "cropped detail composition of the satin bow at her hip and her fingertips resting beside it, face out of frame, fingers relaxed and naturally posed",
+      "camera": "85mm lens, close detail framing, very shallow depth of field",
+      "light": "broad soft high-key daylight from the huge window, warm bounce off the pale rug under her",
+      "headphones": false
+    }
+  ]
+}

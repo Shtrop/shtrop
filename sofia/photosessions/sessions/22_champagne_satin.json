@@ -1,0 +1,95 @@
+{
+  "session_id": "S22",
+  "slug": "champagne_satin",
+  "title": "Champagne Satin",
+  "title_ru": "Сатиновая комбинация",
+  "reference_source": "Бельевая линия — максимальный гламурный регистр, 8 кадров, без наушников",
+  "mood_ru": "Отель утром, тяжёлый сатин цвета шампань, свет из-за шторы. Медленно и дорого.",
+  "base_seed": 122000,
+  "aspect": "4:5",
+  "allure": "lingerie editorial glamour at its boldest, set with full opaque lining, deep neckline and high-cut briefs, sculpted waist and long legs fully on show, unhurried commanding sensuality, direct gaze, liquid satin catching the morning light as it slips",
+  "film": "shot on Kodak Portra 800, warm grain in the shadow side",
+  "wardrobe": {
+    "code": "V",
+    "notes_ru": "Короткая сатиновая комбинация цвета шампань на тонких бретелях, плотная подкладка.",
+    "prompt": "short champagne satin slip with thin adjustable straps and a lace trim hem, heavy opaque satin with a liquid sheen, matching satin briefs, silver star pendant, loose bed hair, bare feet"
+  },
+  "location": {
+    "notes_ru": "Отельный номер утром, смятая постель, тяжёлая шторa приоткрыта.",
+    "prompt": "hotel room in the morning, unmade bed with heavy white linen, thick curtain open a hand's width, dark wood furniture, brass lamp, coffee tray, city haze outside"
+  },
+  "shots": [
+    {
+      "title_ru": "Бретель сползает с плеча",
+      "pose": "standing beside the unmade bed in the short satin slip, one hand lifting her hair off her neck while the other strap slides down her arm, back arched, chin lowered, eyes up into the lens",
+      "camera": "50mm lens, eye level, frontal, thigh-up framing",
+      "light": "one soft blade of morning light from the curtain gap across her chest and face",
+      "id": "S22-01",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "title_ru": "На животе, взгляд назад",
+      "pose": "lying on her stomach across the bed with ankles crossed in the air, propped on both forearms so the satin rides high on her thighs, back deeply arched, looking back over her shoulder",
+      "camera": "35mm lens, low camera at bed level, back three-quarter angle, full body framing",
+      "light": "warm side light raking along the satin, deep folds of shadow in the sheets",
+      "id": "S22-02",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "id": "S22-03",
+      "priority": "core",
+      "title_ru": "Прогиб, взгляд через плечо",
+      "pose": "kneeling back on her heels on the unmade hotel bed, spine deeply arched, one hand planted beside her, head turned over the shoulder holding direct eye contact with the lens",
+      "camera": "35mm lens, slightly above eye level, back three-quarter angle, full body vertical framing",
+      "light": "a single warm blade of morning light through the curtain gap, soft bounce off the white linen filling the shadows",
+      "headphones": false
+    },
+    {
+      "id": "S22-04",
+      "priority": "core",
+      "title_ru": "Отражение",
+      "pose": "standing close to the tall mirror by the wardrobe, one hand flat on the surface, hip pushed out, chin lowered, meeting the camera past her own reflection",
+      "camera": "50mm lens, eye level, over-the-shoulder into the reflection, thigh-up framing",
+      "light": "a single warm blade of morning light through the curtain gap, soft bounce off the white linen filling the shadows",
+      "headphones": false
+    },
+    {
+      "id": "S22-05",
+      "priority": "core",
+      "title_ru": "Против света",
+      "pose": "standing at the gap in the heavy hotel curtain with one forearm raised against the frame, weight settled on one hip, the long line of her back and legs read against the light, head turned just enough to find the lens",
+      "camera": "35mm lens, eye level, back three-quarter angle, full body vertical framing",
+      "light": "a single warm blade of morning light through the curtain gap, soft bounce off the white linen filling the shadows",
+      "headphones": false
+    },
+    {
+      "id": "S22-06",
+      "priority": "core",
+      "title_ru": "Полулёжа, нога вытянута",
+      "pose": "reclining back on the unmade hotel bed propped on both elbows, one knee raised and the other leg stretched long, ribcage lifted, chin up, half-lidded gaze straight down the lens",
+      "camera": "35mm lens, low camera at surface level, three-quarter front angle, full body framing",
+      "light": "a single warm blade of morning light through the curtain gap, soft bounce off the white linen filling the shadows",
+      "headphones": false
+    },
+    {
+      "id": "S22-07",
+      "priority": "core",
+      "title_ru": "В рост, рука в волосах",
+      "pose": "standing tall in the middle of the hotel room floor, one hand pushing back through her hair with the elbow raised, weight on one leg so the hip breaks the line, chin down and eyes up into the lens",
+      "camera": "50mm lens, slightly low angle, frontal, full body framing",
+      "light": "a single warm blade of morning light through the curtain gap, soft bounce off the white linen filling the shadows",
+      "headphones": false
+    },
+    {
+      "id": "S22-08",
+      "priority": "filler",
+      "title_ru": "Деталь",
+      "pose": "cropped detail composition of the satin strap fallen to her upper arm and the pendant on her collarbone, face out of frame, fingers relaxed and naturally posed",
+      "camera": "85mm lens, close detail framing, very shallow depth of field",
+      "light": "a single warm blade of morning light through the curtain gap, soft bounce off the white linen filling the shadows",
+      "headphones": false
+    }
+  ]
+}
