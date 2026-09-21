@@ -635,7 +635,59 @@ def main() -> int:
         check("BLOCKERS", len(history["snapshots"]) == 2,
               "история накапливает снимки для отслеживания динамики")
 
-        print(f"\n=== 17. Изоляция: репозиторий не загрязнён ===")
+        print(f"\n=== 17. Автопилот: прогон без человека ===")
+        ap_root = work / "autopilot"
+        ap_studio = ap_root / "studio"
+        ap_studio.mkdir(parents=True)
+        ap_media = ap_root / "media"
+        ap_media.mkdir(parents=True)
+
+        conn = sqlite3.connect(ap_studio / "content_queue.db")
+        conn.execute("CREATE TABLE content_items (id INTEGER, created_at TEXT, "
+                     "published_at TEXT, type TEXT, status TEXT, instagram_media_id TEXT)")
+        ap_rows, ap_index = [], 0
+        for kind, state, count, has_id in [("story", "published", 6, True),
+                                           ("reel", "review_needed", 7, False),
+                                           ("post", "approved", 3, False)]:
+            for _ in range(count):
+                ap_index += 1
+                ap_rows.append((ap_index, "2026-08-01",
+                                "2026-09-08" if has_id else None, kind, state,
+                                f"1787477115356{ap_index:04d}" if has_id else None))
+        conn.executemany("INSERT INTO content_items VALUES (?,?,?,?,?,?)", ap_rows)
+        conn.commit()
+        conn.close()
+        write_png(ap_media / "sofia_reel_bad.png", 1080, 1220)
+
+        ap_status = ap_root / "status.json"
+        ap_log = ap_root / "log.json"
+        result = run([str(TOOLS / "autopilot.py"), "--studio", str(ap_studio),
+                      "--media-dir", str(ap_media), "--report-dir", str(ap_root / "reports"),
+                      "--status", str(ap_status), "--log", str(ap_log),
+                      "--blocker-history", str(ap_root / "blockers.json"),
+                      "--snapshots", str(ap_root / "snapshots.json"),
+                      "--memory", str(ap_root / "memory.json")], expect=(0, 1, 2))
+        check("AUTOPILOT", ap_status.exists() and ap_log.exists(),
+              "прогон оставляет статус и журнал — тихий сбой будет виден")
+        ap = json.loads(ap_status.read_text(encoding="utf-8"))
+        check("AUTOPILOT", ap["blockers_verdict"] == "BLOCKED" and ap["reels_published"] == 0,
+              "операционный статус снимает вердикт блокеров и счётчики Reels")
+        check("AUTOPILOT", ap["media_ratio_violations"] == 1,
+              "нарушения формата попадают в статус")
+        check("AUTOPILOT", all(key not in ap for key in
+                               ("followers", "reach", "followers_baseline")),
+              "метрик аудитории в операционном статусе нет: репозиторий может быть публичным")
+        reports = list((ap_root / "reports").glob("cycle_*.md"))
+        check("AUTOPILOT", len(reports) == 1 and "Growth Engine" in
+              reports[0].read_text(encoding="utf-8"),
+              "полный отчёт сохранён локально отдельным файлом")
+        runs = json.loads(ap_log.read_text(encoding="utf-8"))["runs"]
+        check("AUTOPILOT", len(runs) == 1 and "blockers_verdict" in runs[0],
+              "журнал накапливает прогоны для контроля автоматики")
+        check("AUTOPILOT", "--push" not in result.stdout and "Push:" not in result.stdout,
+              "без --push ничего не отправляется: по умолчанию только локальные файлы")
+
+        print(f"\n=== 18. Изоляция: репозиторий не загрязнён ===")
         real_snapshots = BASE / "data" / "followers_snapshots.json"
         check("ISOLATION", not real_snapshots.exists() or "SYNTHETIC" not in
               real_snapshots.read_text(encoding="utf-8"),
@@ -645,6 +697,12 @@ def main() -> int:
               "тестовые планы не записаны в plans/")
         check("ISOLATION", not (BASE / "data" / "blocker_status.json").exists(),
               "история блокеров из тестов не попала в data/")
+        check("ISOLATION", not (BASE / "data" / "autopilot_status.json").exists()
+              and not (BASE / "reports" / "autopilot").exists(),
+              "артефакты автопилота из тестов не попали в репозиторий")
+        stored_memory = json.loads((BASE / "data" / "growth_memory.json").read_text(encoding="utf-8"))
+        check("ISOLATION", not stored_memory.get("entries") and not stored_memory.get("baseline"),
+              "growth memory в репозитории не затронута прогонами тестов")
 
     print("\n" + "=" * 60)
     print(f"PASS: {len(PASSED)}   FAIL: {len(FAILED)}")

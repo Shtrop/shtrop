@@ -17,7 +17,8 @@
 
 | Путь | Что |
 |---|---|
-| `tools/growth_cycle.py` | **Весь недельный цикл одной командой** |
+| `tools/autopilot.py` | **Цикл без участия человека: отчёт, статус, журнал** |
+| `tools/growth_cycle.py` | Весь недельный цикл одной командой |
 | `tools/ingest_insights.py` | Собирает реальные выгрузки Insights в единый снимок |
 | `tools/growth_kpi.py` | KPI, rolling-окна, лучшие/худшие посты, атрибуция, growth memory |
 | `tools/trend_radar.py` | Ранжирует тренды в backlog; измеренное побеждает априорное |
@@ -28,7 +29,8 @@
 | `tools/publish_doctor.py` | Диагноз по каждому блокеру и конкретное исправление |
 | `tools/blocker_status.py` | Сдвинулись ли блокеры с прошлого прогона |
 | `tools/verify_insights.py` | Сверяет media_id выгрузки с журналом публикаций |
-| `tests/run_e2e.py` | Проверка всей цепочки на синтетике (93 проверки) |
+| `tests/run_e2e.py` | Проверка всей цепочки на синтетике (102 проверки) |
+| `autopilot/install_task.ps1` | Регистрация автопилота в планировщике Windows |
 | `tests/make_fixtures.py` | Генератор синтетических источников для E2E |
 | `docs/DATA_SOURCES.md` | **Как дать движку реальные метрики** — начинать отсюда |
 | `data/followers_snapshots.json` | Реальные снимки аккаунта (создаётся ingest-скриптом) |
@@ -106,6 +108,21 @@ python3 sofia_growth/tools/plan_builder.py --days 14
 
 Измеренный результат всегда важнее эвристики: формат с подтверждёнными
 данными ранжируется выше догадки, даже если априорный score у догадки выше.
+
+## Автопилот
+
+Чтобы цикл шёл сам, без запуска руками:
+
+```powershell
+.\sofia_growth\autopilot\install_task.ps1 -MediaDir "D:\AI_CONTENT\Sofia\video_ready"
+```
+
+Подробности и разделение локальных и коммитимых артефактов —
+[`autopilot/README.md`](autopilot/README.md).
+
+Автопилот **ничего не публикует**: он не снимает `HOLD` и `FROZEN`, не трогает
+canonical state студии и ничего не удаляет. Публикация остаётся решением
+владельца и проходит через Master Publish Gate отдельно.
 
 ## Недельный ритм
 
