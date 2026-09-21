@@ -53,6 +53,7 @@ from sofia.reel.critics import (
     VideoQACritic,
 )
 from sofia.reel.gpu import GpuArbiter, GpuBusy, WorkClass
+from sofia.reel.scorecard import score_categories, world_class
 from sofia.reel.repair_router import RepairDecision, RepairRouter
 from sofia.reel.shots import profile_for
 from sofia.reel.stages import (
@@ -809,7 +810,8 @@ class ReelDirector:
             )
 
         report = self.final_gate.evaluate(results)
-        scores = _score_categories(report)
+        scores = score_categories(report)
+        claim = world_class(scores, self.thresholds)
 
         if report.passed and not diagnostic:
             self._checkpoint(reel_id, StageState.FINAL_QA)
@@ -822,6 +824,7 @@ class ReelDirector:
                 assets=assets,
                 report=report,
                 scores=scores,
+                quality_claim=claim,
                 reason=(
                     f"all {len(FINAL_GATE_CATEGORIES)} critical categories passed; "
                     f"state={TERMINAL_APPROVED_STATE} (publishing remains on HOLD)"
@@ -849,6 +852,7 @@ class ReelDirector:
             diagnoses=diagnoses,
             repairs=repairs,
             scores=scores,
+            quality_claim=claim,
             reason=(
                 "blocking: "
                 + ", ".join(f"{r.name}={r.verdict.value}" for r in report.blocking)
@@ -944,39 +948,3 @@ def _blocked_verdict(report) -> Verdict:
     return Verdict.FAIL
 
 
-#: Which FinalGate categories map onto the owner-facing 0-10 scorecard.
-_SCORE_MAP = {
-    "STORY": ("reel.story",),
-    "IDENTITY": ("reel.video",),
-    "VOICE": ("reel.voice",),
-    "LIPSYNC": ("reel.lipsync",),
-    "EDITING": ("reel.edit", "reel.subtitles", "reel.audio_mix"),
-    "COVER": ("reel.cover",),
-    "REALISM": ("reel.perceptual",),
-}
-
-
-def _score_categories(report) -> dict[str, Optional[float]]:
-    """Honest scorecard: a category that could not be measured scores ``None``.
-
-    It is never rendered as 0 and never as a passing number.
-    """
-
-    scores: dict[str, Optional[float]] = {}
-    for label, gates in _SCORE_MAP.items():
-        found = [report.by_name(g) for g in gates]
-        found = [f for f in found if f is not None]
-        if not found or any(
-            f.verdict in (Verdict.NOT_MEASURED, Verdict.MISSING, Verdict.ERROR)
-            for f in found
-        ):
-            scores[label] = None
-        elif all(f.verdict is Verdict.PASS for f in found):
-            scores[label] = 8.0  # floor for "passed every hard gate"
-        else:
-            scores[label] = 4.0
-    measured = [v for v in scores.values() if v is not None]
-    scores["OVERALL"] = (
-        round(sum(measured) / len(measured), 1) if len(measured) == len(_SCORE_MAP) else None
-    )
-    return scores

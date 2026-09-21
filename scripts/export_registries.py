@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sofia.agents.base import Capability
 from sofia.core.checkpoint import pipeline_stages
 from sofia.reel.critics import FINAL_GATE_CATEGORIES
+from sofia.reel.scorecard import AUDIENCE_CATEGORIES, LOCAL_CATEGORIES
 from sofia.reel.repair_router import ROUTES
 from sofia.reel.shots import PROFILES
 from sofia.studio import build_studio
@@ -94,6 +95,10 @@ def main() -> int:
                         "APPROVAL", "QUEUE",
                     ],
                     "final_gate_categories": list(FINAL_GATE_CATEGORIES),
+                    "scorecard": {
+                        "measured_locally": list(LOCAL_CATEGORIES),
+                        "needs_published_analytics": dict(AUDIENCE_CATEGORIES),
+                    },
                     "terminal_state_on_pass": "READY_FOR_OWNER_REVIEW",
                     "publishing": "HOLD (no publish path exists in code)",
                 },

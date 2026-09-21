@@ -255,6 +255,28 @@ under the same owner name, so it reclaims its own Reel after a reboot; only a
 The logic is imprecise but causes no real failure, so it was left alone rather
 than padded with boot-id detection.
 
+## Two thresholds that were declared and never read
+
+`ReelThresholds` is headed "Hard floors. Never lower one to make a Reel pass."
+Two of its fields — `min_hook_score` and `min_category_score`, the brief's rule
+that no critical category may score under 8/10 — were read by nothing in the
+codebase. The rule was documented and unenforced.
+
+They are enforced now, in `sofia/reel/scorecard.py`, which also separates two
+claims the pipeline had been making with one word. `PASS` means every hard gate
+held; *world-class* means every category scores 8+. `HOOK` and `RETENTION` have
+no local instrument (hook strength and retention are audience outcomes, and
+publishing is on HOLD), so they are reported as `--` and the world-class claim
+comes back `NOT_MEASURED` rather than `False` — and never as `True`. A category
+that was measured and fell below its floor outranks that and reports `FAIL`.
+
+The devkit end-to-end run now prints both lines, e.g.:
+
+```
+SCORES:  STORY=8.0 IDENTITY=-- VOICE=4.0 LIPSYNC=-- EDITING=-- COVER=-- REALISM=4.0 HOOK=-- RETENTION=-- OVERALL=--
+WORLD-CLASS: FAIL — below the floor: REALISM=4.0 (floor 8.0), VOICE=4.0 (floor 8.0)
+```
+
 ## Security review
 
 An independent review pass over the whole branch found **no HIGH or MEDIUM

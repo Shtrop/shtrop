@@ -20,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from sofia.core.durable import atomic_write_json
 from sofia.reel.critics import PerceptualSample
 from sofia.reel.stages import AuthoredPlan
 from sofia.studio import build_studio
@@ -159,9 +160,13 @@ def main() -> int:
     }
     report_path = Path(args.report or (workdir / f"{args.reel_id}.report.json"))
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    atomic_write_json(report_path, payload)
+
+    scorecard = " ".join(
+        f"{label}={'--' if value is None else format(value, '.1f')}"
+        for label, value in result.scores.items()
     )
+    claim = result.quality_claim
 
     print(f"VERDICT: {result.verdict.value}")
     print(f"STAGE:   {getattr(result.stage, 'value', result.stage)}")
@@ -169,6 +174,8 @@ def main() -> int:
     print(f"FINAL:   {result.assets.final}")
     print(f"COVER:   {result.assets.cover}")
     print(f"SUBS:    {result.assets.subtitles}")
+    print(f"SCORES:  {scorecard}")
+    print(f"WORLD-CLASS: {claim.get('verdict')} — {claim.get('reason')}")
     print(f"REPORT:  {report_path}")
     return 0 if result.verdict.value == "PASS" else 2
 

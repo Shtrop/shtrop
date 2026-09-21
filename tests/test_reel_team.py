@@ -1196,3 +1196,70 @@ def test_a_well_behaved_sfx_passes(tmp_path):
         voice_stem=voice, music_stem=music, final_mix=mix, sfx=(str(cue),)
     )
     assert outcome.result.verdict is Verdict.PASS
+
+
+# ---- scorecard and the world-class claim ---------------------------------
+def _passing_report():
+    from sofia.core.gates import evaluate_gates
+
+    return evaluate_gates(
+        [GateResult(name, Verdict.PASS, True) for name in FINAL_GATE_CATEGORIES],
+        required_critical=FINAL_GATE_CATEGORIES,
+    )
+
+
+def test_passing_every_gate_is_not_a_claim_to_be_world_class():
+    """No defect found is a weaker statement than 8+/10 in every category.
+
+    Hook strength and retention are audience outcomes. Nothing here can measure
+    them while publishing is on HOLD, so the claim stays NOT_MEASURED however
+    clean the gates are.
+    """
+    from sofia.reel.scorecard import score_categories, world_class
+
+    scores = score_categories(_passing_report())
+    assert scores["STORY"] == 8.0
+    assert scores["HOOK"] is None and scores["RETENTION"] is None
+
+    claim = world_class(scores, ReelThresholds())
+    assert claim["world_class"] is False
+    assert claim["verdict"] == Verdict.NOT_MEASURED.value
+    assert sorted(claim["not_measured"]) == ["HOOK", "RETENTION"]
+    assert "publishing is on HOLD" in claim["why_not_measurable"]["RETENTION"]
+
+
+def test_a_measured_category_below_the_floor_outranks_an_unmeasured_one():
+    """A known defect is a stronger finding than an unknown."""
+    from sofia.reel.scorecard import world_class
+
+    claim = world_class(
+        {"STORY": 4.0, "IDENTITY": 8.0, "VOICE": None, "HOOK": None},
+        ReelThresholds(),
+    )
+    assert claim["verdict"] == Verdict.FAIL.value
+    assert claim["below_floor"] == ["STORY=4.0 (floor 8.0)"]
+
+
+def test_world_class_is_claimable_only_with_every_category_measured():
+    """The floors are the brief's, and they are enforced, not merely declared."""
+    from sofia.reel.scorecard import (
+        AUDIENCE_CATEGORIES,
+        LOCAL_CATEGORIES,
+        world_class,
+    )
+
+    scores = {label: 8.0 for label in LOCAL_CATEGORIES}
+    scores.update({label: 8.0 for label in AUDIENCE_CATEGORIES})
+    assert world_class(scores, ReelThresholds())["world_class"] is True
+
+    scores["HOOK"] = 7.9
+    claim = world_class(scores, ReelThresholds())
+    assert claim["world_class"] is False
+    assert claim["below_floor"] == ["HOOK=7.9 (floor 8.0)"]
+
+
+def test_the_overall_score_survives_the_two_unmeasurable_categories():
+    """OVERALL averages what was measured locally; it is not dragged to None."""
+    from sofia.reel.scorecard import score_categories
+
+    assert score_categories(_passing_report())["OVERALL"] == 8.0

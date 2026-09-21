@@ -154,6 +154,21 @@
         "reel.cover",
         "reel.perceptual"
       ],
+      "scorecard": {
+        "measured_locally": [
+          "STORY",
+          "IDENTITY",
+          "VOICE",
+          "LIPSYNC",
+          "EDITING",
+          "COVER",
+          "REALISM"
+        ],
+        "needs_published_analytics": {
+          "HOOK": "hook strength is an audience outcome (how many keep watching past the first seconds); the gates can check that a hook exists and is in the opening shot, not that it works",
+          "RETENTION": "retention is measurable only from platform analytics on a published Reel, and publishing is on HOLD"
+        }
+      },
       "terminal_state_on_pass": "READY_FOR_OWNER_REVIEW",
       "publishing": "HOLD (no publish path exists in code)"
     },

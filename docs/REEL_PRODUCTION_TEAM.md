@@ -83,6 +83,40 @@ numeric gates passed: the burned-in subtitles were rendering inside the bottom
 platform-UI safe zone, because the renderer invents its own script resolution
 when burning an `.srt`. Fixed by emitting ASS with explicit `PlayRes`.
 
+## The scorecard, and what "world-class" would take
+
+`PASS` and *world-class* are two different claims and are reported separately.
+`PASS` means every hard gate held — no defect was found — and the Reel goes to
+owner review. The brief's bar for world-class is stronger: every critical
+category at 8/10 or better.
+
+The 0–10 scores are derived from the gates, so they say what the gates can say:
+8.0 for a category where every hard gate passed, 4.0 where one blocked, and
+**`--` (null) where nothing could be measured** — never 0, which would read as
+a measurement of badness.
+
+Two categories the brief asks for have no local instrument at all:
+
+| Category | Why it cannot be measured here |
+| --- | --- |
+| `HOOK` | Hook *strength* is an audience outcome. The gates check that a hook exists and is in the opening shot; whether it holds anyone is not visible without viewers. |
+| `RETENTION` | Readable only from platform analytics on a published Reel, and publishing is on HOLD. |
+
+They are listed in the scorecard as `--` rather than dropped: a scorecard that
+quietly omits the two hardest numbers reads as if everything was covered.
+
+Consequently `world_class` reports `NOT_MEASURED` — not `False` — however clean
+the gates are, and says which categories are missing. A category that *was*
+measured and came in under its floor outranks that: a known defect is a
+stronger finding than an unknown, so the claim becomes `FAIL` and names it.
+`OVERALL` still averages the locally measured categories, so it stays useful on
+a real studio run.
+
+Both floors (`min_category_score`, `min_hook_score`) live in `ReelThresholds`
+and are now enforced by `sofia/reel/scorecard.py`. Until this they were
+declared under the comment "Hard floors. Never lower one to make a Reel pass."
+and read by nothing at all.
+
 ## Editing is measured, not assumed
 
 `EditorAgent` is asked for a strong first frame, a fast hook, no dead time,

@@ -230,6 +230,10 @@ class ReelResult:
     diagnoses: Sequence[ReelDiagnosis] = ()
     repairs: Sequence[Mapping[str, Any]] = ()
     scores: Mapping[str, Optional[float]] = field(default_factory=dict)
+    #: Whether this Reel may be called world-class, and why not if it may not.
+    #: Deliberately separate from ``verdict``: passing every gate means no
+    #: defect was found, which is a weaker statement.
+    quality_claim: Mapping[str, Any] = field(default_factory=dict)
     reason: str = ""
     owner: str = ""
 
@@ -250,4 +254,5 @@ class ReelResult:
             "diagnoses": [d.to_dict() for d in self.diagnoses],
             "repairs": [dict(r) for r in self.repairs],
             "scores": dict(self.scores),
+            "quality_claim": dict(self.quality_claim),
         }
