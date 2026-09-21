@@ -200,6 +200,43 @@ and the last good checkpoint to resume from:
 | `STORY_CONTINUITY` | ReelDirector | `BRIEF_DONE` |
 | `NOT_MEASURED` | infrastructure | **not repairable** — fix the verifier |
 
+### Repairs are executed, not only routed
+
+The router computes the narrowest fix; `ReelDirector` now runs it. After a
+blocking FinalGate the director re-runs **only** the stages the routed
+component needs, plus what consumes them — a re-rendered shot is re-lip-synced
+and re-cut, or the final file still carries the old take:
+
+| Component | Stages re-run |
+| --- | --- |
+| `VideoAgent` | video → lipsync → edit |
+| `VoiceTeam` | voice → lipsync → edit |
+| `LipSyncAgent` | lipsync → edit |
+| `EditorAgent` / `SubtitleAgent` / `Music/SFX` / `CoverAgent` | edit |
+
+Only the routed shots are regenerated: every stage skips a shot whose artifact
+is already usable, so clearing one shot's path is what makes it — and only it —
+get paid for again.
+
+Four rules keep this from becoming a retry loop that launders failures:
+
+- **A repair never re-decides a verdict.** It rebuilds a component and asks the
+  same gates again.
+- **`NOT_MEASURED` is never repaired.** No amount of re-rendering makes a
+  missing verifier appear, so an unmeasurable gate stops the loop immediately
+  (`RepairDecision.full_stop`) instead of burning the round budget.
+- **The creative plan is not regenerated.** `BAD_HOOK`, `BAD_SCRIPT` and
+  `BAD_SOURCE` route to agents that, with an authored plan, would hand back the
+  same plan; they are reported as needing a human.
+- **The budget is `max_repair_rounds` (default 2), per Reel.** When it runs out
+  the Reel is held for the owner and the report says so.
+
+Each round tags its artifacts `.rN`, so a repair writes *beside* the take it
+replaces. NO-DELETE covers the evidence of a failed attempt too.
+
+A diagnostic run never repairs: it walked past blocks deliberately, so
+repairing them would be chasing defects on purpose.
+
 ## Checkpoint and resume
 
 Stages: `CREATED → BRIEF_DONE → SCRIPT_DONE → SHOTS_DONE → VOICE_DONE →

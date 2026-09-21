@@ -158,16 +158,23 @@ class ReelDirector:
         self.cover_critic = CoverCritic()
         self.editor_critic = EditorCritic()
         self.perceptual_gate = PerceptualReviewGate()
+        #: Which repair round is being rendered. It tags every artifact path,
+        #: so a repair writes alongside the take it replaces instead of over
+        #: it — NO-DELETE applies to the evidence of a failed attempt too.
+        self._repair_round = 0
 
     # ---- lifecycle -------------------------------------------------------
     @staticmethod
-    def _slug(reel_id: str) -> str:
-        """The on-disk form of a reel id.
+    def _slug(reel_id: str, repair_round: int = 0) -> str:
+        """The on-disk form of a reel id, tagged with the repair round.
 
         Checkpoints and leases already sanitise their own filenames; artifact
         paths must do the same or a crafted id would write outside workdir.
+        The ``.rN`` tag keeps each repair round's output separate: the take
+        that failed stays on disk as the evidence for why it was repaired.
         """
-        return safe_component(reel_id, fallback="reel")
+        base = safe_component(reel_id, fallback="reel")
+        return base if repair_round == 0 else f"{base}.r{repair_round}"
 
     def claim(self, reel_id: str) -> None:
         """Take exclusive ownership. A second director is rejected."""
@@ -214,6 +221,9 @@ class ReelDirector:
         """
 
         self.claim(reel_id)
+        # Per Reel, not per director: the round budget and the artifact tag
+        # belong to this production, not to whatever ran before it.
+        self._repair_round = 0
         assets = ReelAssets()
         started = StageState.CREATED if not resume else self.resume_point(reel_id)
         diagnoses: list[ReelDiagnosis] = []
@@ -386,18 +396,244 @@ class ReelDirector:
             ), diagnostic=diagnostic)
 
         # -- FINAL QA ------------------------------------------------------
-        return self._final_qa(
-            reel_id,
-            brief,
-            plan,
-            assets,
-            voice_results,
-            perceptual_samples=perceptual_samples,
-            cover_measurements=cover_measurements or {},
+        def run_final_qa() -> ReelResult:
+            return self._final_qa(
+                reel_id,
+                brief,
+                plan,
+                assets,
+                voice_results,
+                perceptual_samples=perceptual_samples,
+                cover_measurements=cover_measurements or {},
+                repairs=repairs,
+                diagnostic=diagnostic,
+                carried_diagnoses=diagnoses,
+            )
+
+        result = run_final_qa()
+        if diagnostic:
+            # A diagnostic run reports what it found; repairing it would be
+            # chasing defects that were deliberately walked past.
+            return result
+        return self._repair_until_settled(
+            result,
+            run_final_qa,
+            reel_id=reel_id,
+            brief=brief,
+            plan=plan,
+            shots=shots,
+            assets=assets,
+            voice_results=voice_results,
             repairs=repairs,
-            diagnostic=diagnostic,
-            carried_diagnoses=diagnoses,
         )
+
+    # ---- repair ----------------------------------------------------------
+    def _repair_until_settled(
+        self,
+        result: ReelResult,
+        run_final_qa: Callable[[], ReelResult],
+        *,
+        reel_id: str,
+        brief: Optional[ReelBrief],
+        plan: Optional[ContentPlan],
+        shots: Sequence[Shot],
+        assets: ReelAssets,
+        voice_results: Mapping[int, VoiceVerdict],
+        repairs: list[dict],
+    ) -> ReelResult:
+        """Regenerate what the router named, up to the configured round budget.
+
+        A repair only rebuilds a component and asks the same gates again — it
+        never re-decides a verdict, so this loop cannot turn a failing Reel into
+        a passing one by itself. It stops on the first round that has nothing
+        regenerable to try, which includes every unmeasurable gate: no amount
+        of re-rendering makes a missing verifier appear.
+        """
+
+        while (
+            result.verdict is not Verdict.PASS
+            and self._repair_round < self.config.max_repair_rounds
+        ):
+            decision = self.repair_router.route(result.diagnoses)
+            stages, skipped = self._repairable(decision)
+            if not decision.actionable or not stages:
+                repairs.append(
+                    {
+                        "round": self._repair_round + 1,
+                        "regenerated": [],
+                        "reason": self._why_not_repairable(decision, skipped),
+                    }
+                )
+                return result
+
+            self._repair_round += 1
+            repairs.append(
+                {
+                    "round": self._repair_round,
+                    "components": list(decision.components),
+                    "stages": list(stages),
+                    "shots": list(decision.shot_indices),
+                    "rolled_back_to": decision.resume_from.value,
+                    "skipped": skipped,
+                }
+            )
+            self._checkpoint(
+                reel_id,
+                decision.resume_from,
+                allow_regression=True,
+                payload={"repair_round": self._repair_round},
+            )
+            try:
+                voice_results = self._regenerate(
+                    reel_id,
+                    stages,
+                    brief=brief,
+                    plan=plan,
+                    shots=shots,
+                    assets=assets,
+                    voice_results=voice_results,
+                    shot_indices=decision.shot_indices,
+                )
+            except (BackendUnavailableError, GpuBusy) as exc:
+                repairs.append(
+                    {
+                        "round": self._repair_round,
+                        "aborted": f"{type(exc).__name__}: {exc}",
+                    }
+                )
+                return result
+            result = run_final_qa()
+
+        if result.verdict is not Verdict.PASS:
+            repairs.append(
+                {
+                    "round": self._repair_round,
+                    "reason": (
+                        f"repair budget exhausted after {self._repair_round} "
+                        "round(s); the Reel is held for the owner rather than "
+                        "retried indefinitely"
+                    ),
+                }
+            )
+        return result
+
+    # ---- repair ----------------------------------------------------------
+    #: Which stages have to be re-run to clear a defect in each component.
+    #: Downstream stages are included because they consume what was repaired:
+    #: a re-rendered shot has to be lip-synced and re-cut, or the final file
+    #: still carries the old take.
+    _REPAIR_STAGES: Mapping[str, tuple[str, ...]] = {
+        "VideoAgent": ("video", "lipsync", "edit"),
+        "VoiceTeam": ("voice", "lipsync", "edit"),
+        "LipSyncAgent": ("lipsync", "edit"),
+        "EditorAgent": ("edit",),
+        "SubtitleAgent": ("edit",),
+        "Music/SFX Agent": ("edit",),
+        "CoverAgent": ("edit",),
+    }
+    _STAGE_ORDER: tuple[str, ...] = ("voice", "video", "lipsync", "edit")
+
+    def _repairable(
+        self, decision: RepairDecision
+    ) -> tuple[tuple[str, ...], list[str]]:
+        """Split a decision into stages this director can re-run, and the rest.
+
+        A defect in the creative plan routes to HookAgent, ScriptAgent or the
+        ShotDirector. With an authored creative source those agents would hand
+        back the same plan they handed back the first time, so re-running them
+        is not a repair — it is a loop. Those components are reported as needing
+        a human, not retried.
+        """
+
+        wanted: set[str] = set()
+        skipped: list[str] = []
+        for component in decision.components:
+            stages = self._REPAIR_STAGES.get(component)
+            if stages is None:
+                skipped.append(component)
+                continue
+            wanted.update(stages)
+        return tuple(s for s in self._STAGE_ORDER if s in wanted), skipped
+
+    @staticmethod
+    def _why_not_repairable(decision: RepairDecision, skipped: Sequence[str]) -> str:
+        if decision.full_stop:
+            return (
+                "not repairable by regenerating anything: "
+                + "; ".join(decision.unrepairable[:3])
+            )
+        if skipped:
+            return (
+                f"{', '.join(skipped)} would have to re-author the creative plan, "
+                "which is a human decision here"
+            )
+        if not decision.routes:
+            return "no defect carried a repair route"
+        return "nothing left to regenerate"
+
+    def _regenerate(
+        self,
+        reel_id: str,
+        stages: Sequence[str],
+        *,
+        brief: ReelBrief,
+        plan: Optional[ContentPlan],
+        shots: Sequence[Shot],
+        assets: ReelAssets,
+        voice_results: Mapping[int, VoiceVerdict],
+        shot_indices: Sequence[int],
+    ) -> dict[int, VoiceVerdict]:
+        """Re-run only the named stages, and only for the affected shots.
+
+        Clearing an artifact path is what makes the stage redo the work: every
+        stage skips a shot whose artifact is already usable, so the shots that
+        were fine keep their takes and only the routed ones are paid for again.
+        """
+
+        affected = set(shot_indices)
+        targets = [s for s in shots if not affected or s.index in affected]
+        results = dict(voice_results)
+
+        if "voice" in stages:
+            for shot in targets:
+                assets.voice_clips.pop(str(shot.index), None)
+            results.update(
+                self._invoke(
+                    Capability.VOICE_GENERATION,
+                    reel_id,
+                    shots=targets,
+                    assets=assets,
+                    strict=False,
+                )
+            )
+        if "video" in stages:
+            for shot in targets:
+                shot.video_path = None
+                shot.lipsync_path = None
+            self._invoke(
+                Capability.VIDEO_GENERATION, reel_id, shots=targets, gpu_cleared=True
+            )
+        if "lipsync" in stages:
+            for shot in targets:
+                shot.lipsync_path = None
+            self._invoke(
+                Capability.LIPSYNC,
+                reel_id,
+                shots=shots,
+                assets=assets,
+                gpu_cleared=True,
+            )
+        if "edit" in stages:
+            self._invoke(
+                Capability.EDIT,
+                reel_id,
+                brief=brief,
+                plan=plan,
+                shots=shots,
+                assets=assets,
+                voice_results=results,
+            )
+        return results
 
     def _invoke(self, capability: Capability, reel_id: str, **params: Any) -> Any:
         """Dispatch a role through the execution infrastructure.
@@ -520,7 +756,7 @@ class ReelDirector:
 
     def _render_shots(self, reel_id: str, shots: Sequence[Shot]) -> None:
         for shot in shots:
-            out = self.workdir / "shots" / f"{self._slug(reel_id)}.shot{shot.index}.mp4"
+            out = self.workdir / "shots" / f"{self._slug(reel_id, self._repair_round)}.shot{shot.index}.mp4"
             if self._usable_video(shot.video_path):
                 continue  # resumed: this shot is already rendered and decodes
             if self._usable_video(str(out)):
@@ -544,7 +780,7 @@ class ReelDirector:
         for shot in shots:
             if not shot.shot_type.needs_lipsync:
                 continue
-            synced = self.workdir / "lipsync" / f"{self._slug(reel_id)}.shot{shot.index}.mp4"
+            synced = self.workdir / "lipsync" / f"{self._slug(reel_id, self._repair_round)}.shot{shot.index}.mp4"
             if self._usable_video(shot.lipsync_path):
                 continue
             if self._usable_video(str(synced)):
@@ -612,13 +848,13 @@ class ReelDirector:
         # --- subtitles ------------------------------------------------------
         cues = build_cues(segments)
         assets.subtitles = str(
-            write_srt(cues, self.workdir / "subtitles" / f"{self._slug(reel_id)}.srt")
+            write_srt(cues, self.workdir / "subtitles" / f"{self._slug(reel_id, self._repair_round)}.srt")
         )
         # The burn-in copy carries explicit PlayRes/margins so what is rendered
         # matches what the subtitle critic verified.
         burn_in = write_ass(
             cues,
-            self.workdir / "subtitles" / f"{self._slug(reel_id)}.ass",
+            self.workdir / "subtitles" / f"{self._slug(reel_id, self._repair_round)}.ass",
             width=self.config.frame_width,
             height=self.config.frame_height,
             safe_bottom=self.config.subtitle_text_bottom,
@@ -634,16 +870,16 @@ class ReelDirector:
         audio_track: Optional[str] = None
         if placed:
             voice_track = build_voice_track(
-                placed, self.workdir / "audio" / f"{self._slug(reel_id)}.voice.wav", total_s=total
+                placed, self.workdir / "audio" / f"{self._slug(reel_id, self._repair_round)}.voice.wav", total_s=total
             )
             assets.voice_clips["_track"] = str(voice_track)
             if self.music_backend is not None:
                 music = self.music_backend.generate(
-                    self.workdir / "audio" / f"{self._slug(reel_id)}.music.wav", total
+                    self.workdir / "audio" / f"{self._slug(reel_id, self._repair_round)}.music.wav", total
                 )
                 assets.music = str(music)
                 mixer = getattr(self.backends.editor, "mix_audio", None)
-                out = self.workdir / "audio" / f"{self._slug(reel_id)}.mix.wav"
+                out = self.workdir / "audio" / f"{self._slug(reel_id, self._repair_round)}.mix.wav"
                 if callable(mixer):
                     audio_track = str(
                         mixer(
@@ -682,13 +918,13 @@ class ReelDirector:
                 "bottom": self.config.subtitle_text_bottom,
             },
         }
-        out = self.workdir / "edit" / f"{self._slug(reel_id)}.mp4"
+        out = self.workdir / "edit" / f"{self._slug(reel_id, self._repair_round)}.mp4"
         assets.edit = str(self.backends.editor.assemble(spec, out))
         assets.final = assets.edit
 
         # --- cover ----------------------------------------------------------
         cover_at = min(1.0, max(0.2, shots[0].duration_s * 0.5)) if shots else 0.5
-        slug = self._slug(reel_id)
+        slug = self._slug(reel_id, self._repair_round)
         assets.cover = str(
             self.backends.editor.extract_frame(
                 Path(assets.final), cover_at, self.workdir / "cover" / f"{slug}.jpg"

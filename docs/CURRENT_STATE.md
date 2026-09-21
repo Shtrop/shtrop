@@ -255,6 +255,21 @@ under the same owner name, so it reclaims its own Reel after a reboot; only a
 The logic is imprecise but causes no real failure, so it was left alone rather
 than padded with boot-id detection.
 
+## The repair router routed nothing
+
+Same class of defect as the two dead thresholds, found by the same scan for
+declared-and-never-read fields: `ReelDirectorConfig.max_repair_rounds` promised
+bounded repair rounds, and no repair round existed. The router computed a
+correct decision — narrowest component, last good checkpoint, shot indices —
+the director recorded it, and then held the Reel. Nothing was ever rebuilt.
+
+`ReelDirector` now executes the decision: it re-runs only the stages the routed
+component needs plus what consumes them, only for the routed shots, and asks
+the same gates again. It refuses to repair an unmeasurable gate, refuses to
+re-author a human's creative plan, tags each round's artifacts `.rN` so the
+failed take survives, and stops at the round budget with the reason recorded.
+See REEL_PRODUCTION_TEAM.md for the full table and rules.
+
 ## Two thresholds that were declared and never read
 
 `ReelThresholds` is headed "Hard floors. Never lower one to make a Reel pass."

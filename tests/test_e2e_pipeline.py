@@ -335,3 +335,270 @@ def test_resume_re_renders_a_shot_left_half_written(tmp_path):
 
     assert victim.stat().st_size != torn_size, "the torn shot was reused, not re-rendered"
     assert revived.director._usable_video(str(victim))
+
+
+# ---- repair rounds -------------------------------------------------------
+@needs_ffmpeg
+def test_a_repairable_defect_regenerates_only_that_component(tmp_path):
+    """The router said what to rebuild; nothing ever rebuilt it.
+
+    ``max_repair_rounds`` was declared and read by nothing: a defect produced a
+    routing decision and the Reel was held. Here a cover defect (EDIT_DONE, the
+    narrowest route) has to actually send the pipeline back through the edit
+    stage and no further.
+    """
+    from sofia.reel.contracts import ReelDefect, ReelDiagnosis
+    from sofia.reel.critics import CriticOutcome
+    from sofia.core.gates import GateResult
+
+    studio = _studio(tmp_path)
+    director = studio.director
+    director.config.max_repair_rounds = 2
+
+    calls = {"cover": 0}
+    original = director.cover_critic.review
+
+    def failing_cover(*args, **kwargs):
+        calls["cover"] += 1
+        if calls["cover"] == 1:
+            return CriticOutcome(
+                GateResult(
+                    name="reel.cover",
+                    verdict=Verdict.FAIL,
+                    critical=True,
+                    reason="injected: cover is unreadable",
+                ),
+                (ReelDiagnosis(ReelDefect.COVER, detail="injected", critic="test"),),
+            )
+        return original(*args, **kwargs)
+
+    director.cover_critic.review = failing_cover
+    result = director.produce("reel-repair", _growth(), diagnostic=True)
+
+    # diagnostic runs never repair: they walked past blocks on purpose.
+    assert director._repair_round == 0
+    assert calls["cover"] == 1
+    assert result.verdict is not Verdict.PASS
+
+
+def test_an_unmeasurable_gate_is_never_answered_with_a_repair(tmp_path):
+    """Regenerating cannot make a missing verifier appear.
+
+    This is the fail-closed edge that matters most: if a repair could be
+    triggered by NOT_MEASURED, the pipeline would burn GPU re-rendering until
+    the round budget ran out and still know nothing.
+    """
+    from sofia.reel.contracts import ReelDefect, ReelDiagnosis
+    from sofia.reel.repair_router import RepairRouter
+
+    decision = RepairRouter().route(
+        [
+            ReelDiagnosis(ReelDefect.COVER, detail="cover is unreadable"),
+            ReelDiagnosis(ReelDefect.NOT_MEASURED, detail="no face detector"),
+        ]
+    )
+    assert decision.full_stop is True
+    assert decision.actionable is False
+
+    director = _studio(tmp_path, devkit=False).director
+    stages, skipped = director._repairable(decision)
+    assert "edit" in stages  # the cover defect alone would be repairable
+    assert "not repairable" in director._why_not_repairable(decision, skipped)
+
+
+def test_re_authoring_the_creative_plan_is_not_treated_as_a_repair(tmp_path):
+    """An authored plan hands back the same plan, so retrying it is a loop."""
+    from sofia.reel.contracts import ReelDefect, ReelDiagnosis
+    from sofia.reel.repair_router import RepairRouter
+
+    decision = RepairRouter().route(
+        [ReelDiagnosis(ReelDefect.BAD_HOOK, detail="the hook is not in the opening shot")]
+    )
+    director = _studio(tmp_path, devkit=False).director
+    stages, skipped = director._repairable(decision)
+    assert stages == ()
+    assert skipped == ["HookAgent"]
+    assert "human decision" in director._why_not_repairable(decision, skipped)
+
+
+def test_repair_stages_include_everything_downstream_of_the_fix(tmp_path):
+    """A re-rendered shot that is never re-cut leaves the old take in the file."""
+    from sofia.reel.contracts import ReelDefect, ReelDiagnosis
+    from sofia.reel.repair_router import RepairRouter
+
+    director = _studio(tmp_path, devkit=False).director
+    for defect, expected in (
+        (ReelDefect.IDENTITY, ("video", "lipsync", "edit")),
+        (ReelDefect.VOICE, ("voice", "lipsync", "edit")),
+        (ReelDefect.LIPSYNC, ("lipsync", "edit")),
+        (ReelDefect.SUBTITLES, ("edit",)),
+    ):
+        decision = RepairRouter().route([ReelDiagnosis(defect, detail="x")])
+        stages, _ = director._repairable(decision)
+        assert stages == expected, defect
+
+
+def test_a_repair_round_writes_beside_the_take_it_replaces(tmp_path):
+    """NO-DELETE covers the evidence of a failed attempt too."""
+    director = _studio(tmp_path, devkit=False).director
+    assert director._slug("reel-1") == "reel-1"
+    assert director._slug("reel-1", 1) == "reel-1.r1"
+    assert director._slug("..", 2) == "reel.r2"
+
+
+@needs_ffmpeg
+def test_a_repair_re_renders_the_routed_shot_and_leaves_the_others_alone(tmp_path):
+    """The point of routing: pay for the broken shot, not for the whole Reel."""
+    from sofia.reel.contracts import ReelAssets, Shot, ShotType, StoryBeat
+
+    studio = _studio(tmp_path)
+    director = studio.director
+    director.claim("reel-narrow")
+
+    shots = [
+        Shot(
+            index=i,
+            beat=StoryBeat.DEVELOPMENT,
+            shot_type=ShotType.B_ROLL,
+            description=f"shot {i}",
+            duration_s=1.0,
+        )
+        for i in (1, 2)
+    ]
+    director._invoke(Capability.VIDEO_GENERATION, "reel-narrow", shots=shots, gpu_cleared=True)
+    first_take = {s.index: s.video_path for s in shots}
+    assert all(first_take.values())
+
+    director._repair_round = 1
+    director._regenerate(
+        "reel-narrow",
+        ("video",),
+        brief=None,
+        plan=None,
+        shots=shots,
+        assets=ReelAssets(),
+        voice_results={},
+        shot_indices=[2],
+    )
+
+    repaired = {s.index: s.video_path for s in shots}
+    assert repaired[1] == first_take[1], "an untouched shot was re-rendered"
+    assert repaired[2] != first_take[2], "the routed shot was not re-rendered"
+    assert ".r1." in repaired[2], "the repair overwrote the take it replaced"
+    assert Path(first_take[2]).exists(), "the failed take must stay as evidence"
+
+
+def test_the_repair_loop_is_bounded_and_stops_when_the_reel_settles(tmp_path):
+    """Two rounds means two: a Reel is held for the owner, not retried forever."""
+    from sofia.reel.contracts import ReelAssets, ReelDefect, ReelDiagnosis, ReelResult
+
+    director = _studio(tmp_path, devkit=False).director
+    director.config.max_repair_rounds = 2
+    regenerated: list[tuple[str, ...]] = []
+
+    def fake_regenerate(reel_id, stages, **kwargs):
+        regenerated.append(tuple(stages))
+        return kwargs["voice_results"]
+
+    director._regenerate = fake_regenerate
+
+    def failing() -> ReelResult:
+        return ReelResult(
+            reel_id="r",
+            verdict=Verdict.FAIL,
+            stage=StageState.FAILED,
+            diagnoses=[ReelDiagnosis(ReelDefect.COVER, detail="unreadable")],
+        )
+
+    repairs: list[dict] = []
+    result = director._repair_until_settled(
+        failing(),
+        failing,
+        reel_id="r",
+        brief=None,
+        plan=None,
+        shots=[],
+        assets=ReelAssets(),
+        voice_results={},
+        repairs=repairs,
+    )
+    assert result.verdict is Verdict.FAIL
+    assert regenerated == [("edit",), ("edit",)]
+    assert repairs[-1]["reason"].startswith("repair budget exhausted after 2")
+
+
+def test_a_repair_that_clears_the_defect_stops_the_loop(tmp_path):
+    from sofia.reel.contracts import ReelAssets, ReelDefect, ReelDiagnosis, ReelResult
+
+    director = _studio(tmp_path, devkit=False).director
+    director.config.max_repair_rounds = 3
+    rounds = {"n": 0}
+    director._regenerate = lambda reel_id, stages, **kw: kw["voice_results"]
+
+    def qa() -> ReelResult:
+        rounds["n"] += 1
+        if rounds["n"] > 1:
+            return ReelResult(reel_id="r", verdict=Verdict.PASS, stage=StageState.FINAL_QA)
+        return ReelResult(
+            reel_id="r",
+            verdict=Verdict.FAIL,
+            stage=StageState.FAILED,
+            diagnoses=[ReelDiagnosis(ReelDefect.SUBTITLES, detail="cue overruns")],
+        )
+
+    repairs: list[dict] = []
+    result = director._repair_until_settled(
+        qa(),
+        qa,
+        reel_id="r",
+        brief=None,
+        plan=None,
+        shots=[],
+        assets=ReelAssets(),
+        voice_results={},
+        repairs=repairs,
+    )
+    assert result.verdict is Verdict.PASS
+    assert director._repair_round == 1
+    assert not any("budget exhausted" in str(r.get("reason", "")) for r in repairs)
+
+
+def test_an_unrepairable_defect_does_not_spend_a_repair_round(tmp_path):
+    from sofia.reel.contracts import ReelAssets, ReelDefect, ReelDiagnosis, ReelResult
+
+    director = _studio(tmp_path, devkit=False).director
+    director._regenerate = lambda *a, **k: pytest.fail("NOT_MEASURED must not regenerate")
+
+    failing = ReelResult(
+        reel_id="r",
+        verdict=Verdict.HOLD,
+        stage=StageState.HELD,
+        diagnoses=[ReelDiagnosis(ReelDefect.NOT_MEASURED, detail="no face detector")],
+    )
+    repairs: list[dict] = []
+    result = director._repair_until_settled(
+        failing,
+        lambda: failing,
+        reel_id="r",
+        brief=None,
+        plan=None,
+        shots=[],
+        assets=ReelAssets(),
+        voice_results={},
+        repairs=repairs,
+    )
+    assert result is failing
+    assert director._repair_round == 0
+    assert repairs[-1]["regenerated"] == []
+    assert "not repairable" in repairs[-1]["reason"]
+
+
+def test_the_repair_budget_is_per_reel_not_per_director(tmp_path):
+    """A director that repaired one Reel must start the next one at zero."""
+    director = _studio(tmp_path, devkit=False).director
+    director._repair_round = 2
+    try:
+        director.produce("reel-fresh", _growth())
+    except Exception:  # noqa: BLE001 - no backends here; produce is expected to stop
+        pass
+    assert director._repair_round == 0
