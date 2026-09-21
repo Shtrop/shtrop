@@ -17,6 +17,7 @@ from sofia.core.errors import BackendUnavailableError
 from sofia.core.gates import GateReport, GateResult, evaluate_gates, threshold_gate
 from sofia.core.verdict import Evidence, Measurement, Verdict
 from sofia.reel.backends import ReelBackends
+from sofia.reel.measurements import LIPSYNC_MEASUREMENTS
 from sofia.reel.contracts import (
     ReelAssets,
     ReelBrief,
@@ -332,16 +333,9 @@ class LipSyncCritic:
 
     name = "reel.lipsync"
     role = "LipSyncAgent:qa"
-    REQUIRED = (
-        "phoneme_accuracy",
-        "mouth_quality",
-        "jaw_quality",
-        "teeth_quality",
-        "eye_quality",
-        "identity",
-        "face_drift",
-        "av_offset_ms",
-    )
+    #: From the one contract a backend is held to, so this list and the
+    #: Champion/Challenger trial's cannot drift apart.
+    REQUIRED = tuple(LIPSYNC_MEASUREMENTS)
 
     def __init__(self, backends: ReelBackends, thresholds: ReelThresholds) -> None:
         self.backends = backends

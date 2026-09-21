@@ -255,6 +255,24 @@ under the same owner name, so it reclaims its own Reel after a reboot; only a
 The logic is imprecise but causes no real failure, so it was left alone rather
 than padded with boot-id detection.
 
+## A challenger was not held to every metric the champion is
+
+`REQUIRED_METRICS` in the Champion/Challenger trial carried the comment "a
+challenger must be measured on every metric the champion is held to" above a
+hand-maintained copy of the lip-sync gate's list. The copy had drifted: it was
+missing `av_offset_ms`. A challenger with perfect mouth shapes at the wrong
+time measured clean on everything the trial looked at and could be recommended
+to the owner. `LOWER_IS_BETTER` still listed `av_offset_ms`, which is what a
+dropped entry looks like.
+
+Both lists now come from one contract, `sofia/reel/measurements.py`, so they
+cannot drift again — and that contract closes a second gap. Nothing in this
+package writes `Shot.measurements`; they come from the studio machine's models.
+The names the gates expect were written down nowhere, so an integrator wiring a
+real generator would have met a permanently blocked pipeline with nothing to
+fix. `preflight.py --measurement-contract` now prints them, and the exported
+registry carries them.
+
 ## The gates measured the plan and called it the delivery
 
 The editing and subtitle gates reasoned from the shot list: pacing, cut rate,

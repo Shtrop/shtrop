@@ -22,20 +22,13 @@ from sofia.core.paths import safe_component
 from sofia.core.verdict import Evidence, Measurement, Verdict
 from sofia.reel.contracts import Shot
 from sofia.reel.gpu import GpuArbiter, WorkClass
+from sofia.reel.measurements import LIPSYNC_MEASUREMENTS, LOWER_IS_BETTER
 
-#: A challenger must be measured on every metric the champion is held to.
-REQUIRED_METRICS: tuple[str, ...] = (
-    "phoneme_accuracy",
-    "mouth_quality",
-    "jaw_quality",
-    "teeth_quality",
-    "eye_quality",
-    "identity",
-    "face_drift",
-)
-
-#: Metrics where lower is better.
-LOWER_IS_BETTER: frozenset[str] = frozenset({"face_drift", "av_offset_ms"})
+#: A challenger must be measured on every metric the champion is held to —
+#: which is the lip-sync gate's own list, not a copy of it. The copy had
+#: drifted: it was missing ``av_offset_ms``, so a challenger with perfect mouth
+#: shapes at the wrong time could still be recommended to the owner.
+REQUIRED_METRICS: tuple[str, ...] = tuple(LIPSYNC_MEASUREMENTS)
 
 #: Identity may never regress, however good the mouth looks.
 IDENTITY_METRIC = "identity"

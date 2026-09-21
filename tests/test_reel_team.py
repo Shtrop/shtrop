@@ -484,7 +484,9 @@ def _arm(name, champion=False, **overrides):
     from sofia.reel.challenger import REQUIRED_METRICS, ArmResult
 
     metrics = {m: 0.90 for m in REQUIRED_METRICS}
+    # The two metrics that are not a 0-1 quality score, and where lower wins.
     metrics["face_drift"] = 0.05
+    metrics["av_offset_ms"] = 40.0
     metrics.update(overrides)
     return ArmResult(name=name, champion=champion, metrics=metrics)
 
@@ -494,6 +496,7 @@ def test_a_clearly_better_challenger_is_recommended_not_promoted():
 
     better = _arm("longcat", **{m: 0.95 for m in REQUIRED_METRICS})
     better.metrics["face_drift"] = 0.02
+    better.metrics["av_offset_ms"] = 25.0
     report = TrialReport(champion=_arm("champion", champion=True), challengers=[better])
     verdict, reason = report.recommendation(better)
     assert verdict is Verdict.PASS
@@ -657,9 +660,9 @@ def test_challengers_are_told_apart_by_their_registered_name():
     shots = [s for s in _shots() if s.shot_type.needs_lipsync]
 
     def measure(path, shot):
-        return {m: 0.9 for m in
-                ("phoneme_accuracy", "mouth_quality", "jaw_quality",
-                 "teeth_quality", "eye_quality", "identity", "face_drift")}
+        from sofia.reel.measurements import LIPSYNC_MEASUREMENTS
+
+        return {m: 0.9 for m in LIPSYNC_MEASUREMENTS}
 
     report = run_trial(
         SharedRunner(),
@@ -680,6 +683,7 @@ def test_challenger_accepts_voice_clips_keyed_by_string():
     import tempfile
 
     from sofia.reel.challenger import run_trial
+    from sofia.reel.measurements import LIPSYNC_MEASUREMENTS
 
     class Backend:
         name = "b"
@@ -694,9 +698,7 @@ def test_challenger_accepts_voice_clips_keyed_by_string():
         Backend(), {}, shots,
         {str(s.index): "/dev/null" for s in shots},  # string keys
         Path(tempfile.mkdtemp()),
-        lambda p, s: {m: 0.9 for m in
-                      ("phoneme_accuracy", "mouth_quality", "jaw_quality",
-                       "teeth_quality", "eye_quality", "identity", "face_drift")},
+        lambda p, s: {m: 0.9 for m in LIPSYNC_MEASUREMENTS},
     )
     assert report.champion.failures == []
     assert report.champion.measured
@@ -1410,3 +1412,40 @@ def test_subtitles_are_checked_against_the_delivered_video_not_the_plan(tmp_path
     assert unknown.timing == []
     assert unknown.not_measured, "a skipped check must not read as a clean track"
     assert unknown.ok is False
+
+
+def test_a_challenger_is_held_to_every_metric_the_gate_holds_the_champion_to():
+    """The trial's metric list had drifted from the gate's and lost A/V sync.
+
+    "A challenger must be measured on every metric the champion is held to" was
+    the comment above a hand-maintained copy that was missing ``av_offset_ms``.
+    A challenger with perfect mouth shapes at the wrong time measured clean.
+    """
+    from sofia.reel.challenger import REQUIRED_METRICS, TrialReport
+    from sofia.reel.critics import LipSyncCritic
+
+    assert set(REQUIRED_METRICS) == set(LipSyncCritic.REQUIRED)
+    assert "av_offset_ms" in REQUIRED_METRICS
+
+    deaf = _arm("challenger")
+    deaf.metrics["av_offset_ms"] = None
+    report = TrialReport(champion=_arm("champion", champion=True), challengers=[deaf])
+    assert deaf.measured is False
+    verdict, reason = report.recommendation(deaf)
+    assert verdict is Verdict.NOT_MEASURED
+    assert "av_offset_ms" in reason
+
+
+def test_late_audio_is_a_regression_even_with_a_better_mouth():
+    """``av_offset_ms`` is lower-is-better, so a bigger offset must not win."""
+    from sofia.reel.challenger import TrialReport
+
+    champion = _arm("champion", champion=True)
+    late = _arm("challenger", phoneme_accuracy=0.99, mouth_quality=0.99)
+    late.metrics["av_offset_ms"] = 120.0  # champion is at 40 ms
+
+    report = TrialReport(champion=champion, challengers=[late])
+    assert report.comparison(late)["av_offset_ms"] == "LOSS"
+    verdict, reason = report.recommendation(late)
+    assert verdict is Verdict.FAIL
+    assert "av_offset_ms" in reason

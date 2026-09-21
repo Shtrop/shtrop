@@ -154,6 +154,30 @@
         "reel.cover",
         "reel.perceptual"
       ],
+      "backend_measurement_contract": {
+        "video": {
+          "identity": "similarity of the rendered face to the Sofia reference, 0-1. Required on face-critical and talking shots; B-roll and detail shots are not asked for it, which is what keeps GPU cost and the identity-failure surface down.",
+          "face_drift": "how far identity moves across the shot, 0-1. A shot that starts as Sofia and ends as someone else passes a mean-identity check.",
+          "sharpness": "focus/detail of the rendered frames, 0-1.",
+          "ai_artifact_score": "how much the shot reads as generated, 0-1, lower is better: warped hands, melted edges, impossible motion."
+        },
+        "lipsync": {
+          "phoneme_accuracy": "how well mouth shapes match the spoken phonemes, 0-1.",
+          "mouth_quality": "mouth interior and lip rendering, 0-1.",
+          "jaw_quality": "jaw motion plausibility, 0-1.",
+          "teeth_quality": "teeth rendering, 0-1 — a classic lip-sync tell.",
+          "eye_quality": "eye life; dead eyes read as fake however good the mouth is.",
+          "identity": "face identity in the synced result, 0-1.",
+          "face_drift": "identity movement across the synced shot, 0-1.",
+          "av_offset_ms": "audio/video offset in milliseconds, lower is better. Perfect mouth shapes at the wrong time are still bad lip-sync."
+        },
+        "lower_is_better": [
+          "ai_artifact_score",
+          "av_offset_ms",
+          "face_drift"
+        ],
+        "note": "Attach these to Shot.measurements as sofia.core.verdict.Measurement values. A missing one is NOT_MEASURED and blocks the gate; it is never treated as a pass."
+      },
       "scorecard": {
         "measured_locally": [
           "STORY",

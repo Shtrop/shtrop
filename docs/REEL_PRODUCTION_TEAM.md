@@ -182,6 +182,30 @@ a scene, so an empty list passes. But a *declared* SFX is checked: the file must
 exist and must not peak above the programme ceiling. The field is either real or
 it is not there — a list nothing populates and nothing verifies is decoration.
 
+## What a real backend has to hand back
+
+Every per-shot number the gates read comes from `Shot.measurements`, and
+nothing in this package writes them: the identity model, the artifact detector
+and the A/V sync analyser live on the studio machine. A gate whose numbers
+never arrive is `NOT_MEASURED` and blocks — correct, but an integrator wiring a
+real generator would see a permanently blocked pipeline with no clue what was
+expected.
+
+The contract is therefore one object, `sofia/reel/measurements.py`, that the
+critics read, the Champion/Challenger trial is held to, the exported registry
+carries and `preflight.py` prints:
+
+```
+python scripts/preflight.py --measurement-contract
+```
+
+| Gate | Measurements |
+| --- | --- |
+| `reel.video` | `identity`, `face_drift`, `sharpness`, `ai_artifact_score` |
+| `reel.lipsync` | `phoneme_accuracy`, `mouth_quality`, `jaw_quality`, `teeth_quality`, `eye_quality`, `identity`, `face_drift`, `av_offset_ms` |
+
+`face_drift`, `ai_artifact_score` and `av_offset_ms` are lower-is-better.
+
 ## Champion vs Challenger
 
 A newer lip-sync model does not become champion by being newer. It enters as a

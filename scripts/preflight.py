@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sofia.reel.backends import detect_reel_backends
 from sofia.reel.gpu import GpuArbiter, WorkClass
+from sofia.reel.measurements import contract as measurement_contract
 from sofia.studio import build_studio
 from sofia.voice.backends import detect_backends
 from sofia.voice.contracts import Language
@@ -149,7 +150,30 @@ def main() -> int:
     ap.add_argument("--config", default="")
     ap.add_argument("--lock-dir", default="")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
+    ap.add_argument(
+        "--measurement-contract",
+        action="store_true",
+        help="print what a video / lip-sync backend must attach to each shot",
+    )
     args = ap.parse_args()
+
+    if args.measurement_contract:
+        contract = measurement_contract()
+        if args.json:
+            print(json.dumps(contract, ensure_ascii=False, indent=2))
+            return 0
+        print(
+            "Attach these to Shot.measurements. A gate whose numbers never "
+            "arrive is NOT_MEASURED and blocks:\n"
+        )
+        for gate in ("video", "lipsync"):
+            print(f"  {gate}:")
+            for name, why in contract[gate].items():
+                lower = " (lower is better)" if name in contract["lower_is_better"] else ""
+                print(f"    {name}{lower}")
+                print(f"        {why}")
+            print()
+        return 0
 
     config = Path(args.config) if args.config else None
     report = collect(config, args.lock_dir or None)

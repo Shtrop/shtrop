@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sofia.agents.base import Capability
 from sofia.core.checkpoint import pipeline_stages
 from sofia.reel.critics import FINAL_GATE_CATEGORIES
+from sofia.reel.measurements import contract as measurement_contract
 from sofia.reel.scorecard import AUDIENCE_CATEGORIES, LOCAL_CATEGORIES
 from sofia.reel.repair_router import ROUTES
 from sofia.reel.shots import PROFILES
@@ -95,6 +96,7 @@ def main() -> int:
                         "APPROVAL", "QUEUE",
                     ],
                     "final_gate_categories": list(FINAL_GATE_CATEGORIES),
+                    "backend_measurement_contract": measurement_contract(),
                     "scorecard": {
                         "measured_locally": list(LOCAL_CATEGORIES),
                         "needs_published_analytics": dict(AUDIENCE_CATEGORIES),
