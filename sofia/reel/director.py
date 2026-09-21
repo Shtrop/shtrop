@@ -884,6 +884,7 @@ class ReelDirector:
             "stage": cp.stage.value if cp else StageState.CREATED.value,
             "owner": lease.owner if lease else None,
             "journal": self.checkpoints.journal(reel_id),
+            "journal_integrity": self.checkpoints.journal_integrity(reel_id),
             "publishing": "HOLD" if PUBLISHING_HOLD else "OPEN",
             "growth_errors": list(self.growth_errors),
             "gpu": self.gpu.status(),

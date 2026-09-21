@@ -210,6 +210,23 @@ stream. An artifact that cannot be verified at all is treated as unusable
 rather than as good. `analyse_wav` validates too, so a truncated clip is caught
 by the critics and not only on resume.
 
+The same audit found a second defect: **an interrupted append destroyed the
+whole stage journal.** Appends are the only writer, so a power loss can tear
+only the last line — but `json.loads` on that fragment raised and took the
+entire history with it. The journal is preserved evidence under NO-DELETE, and
+losing all of it because one append was cut is worse than losing the cut entry.
+A torn tail is now tolerated and *reported* (`journal_integrity`, surfaced in
+`director.status()`), while corruption anywhere other than the tail still
+raises, because nothing in normal operation can produce that.
+
+One hypothesis from the same audit did **not** hold and was deliberately not
+"fixed": lease staleness uses a PID, and a hard reset can let the OS reuse it,
+so a dead holder can look alive. In this design the director always claims
+under the same owner name, so it reclaims its own Reel after a reboot; only a
+*different* owner is refused, which is the intended "one Reel, one owner" rule.
+The logic is imprecise but causes no real failure, so it was left alone rather
+than padded with boot-id detection.
+
 ## Security review
 
 An independent review pass over the whole branch found **no HIGH or MEDIUM

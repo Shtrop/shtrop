@@ -204,3 +204,71 @@ def test_a_complete_video_is_usable(tmp_path):
             "streams": [{"codec_type": "video"}, {"codec_type": "audio"}],
         },
     )
+
+
+# ---- journal survives an interrupted append ------------------------------
+def test_a_torn_journal_tail_does_not_destroy_the_history(tmp_path):
+    """Power loss mid-append can only tear the last line.
+
+    The journal is preserved evidence; losing all of it because one append was
+    interrupted would be worse than losing the interrupted entry.
+    """
+    store = CheckpointStore(tmp_path)
+    for stage in (
+        StageState.BRIEF_DONE,
+        StageState.SCRIPT_DONE,
+        StageState.SHOTS_DONE,
+    ):
+        store.advance("r1", stage, "director")
+
+    path = tmp_path / "r1.journal.jsonl"
+    path.write_bytes(path.read_bytes() + b'{"at": 1.0, "stage": "VOI')
+
+    entries = store.journal("r1")
+    assert [e["stage"] for e in entries] == [
+        "BRIEF_DONE",
+        "SCRIPT_DONE",
+        "SHOTS_DONE",
+    ]
+
+
+def test_a_torn_tail_is_reported_not_hidden(tmp_path):
+    store = CheckpointStore(tmp_path)
+    store.advance("r1", StageState.BRIEF_DONE, "director")
+    path = tmp_path / "r1.journal.jsonl"
+    path.write_bytes(path.read_bytes() + b'{"at": 1.0, "sta')
+
+    report = store.journal_integrity("r1")
+    assert report["torn_tail"] is True
+    assert report["entries"] == 1
+    assert "losing power" in report["detail"]
+
+
+def test_an_intact_journal_reports_clean(tmp_path):
+    store = CheckpointStore(tmp_path)
+    store.advance("r1", StageState.BRIEF_DONE, "director")
+    report = store.journal_integrity("r1")
+    assert report["torn_tail"] is False
+    assert report["detail"] == ""
+    assert report["entries"] == 1
+
+
+def test_corruption_away_from_the_tail_still_raises(tmp_path):
+    """Nothing in normal operation can damage a line that is not last."""
+    store = CheckpointStore(tmp_path)
+    store.advance("r1", StageState.BRIEF_DONE, "director")
+    store.advance("r1", StageState.SCRIPT_DONE, "director")
+
+    path = tmp_path / "r1.journal.jsonl"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    lines[0] = '{"at": broken'
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    with pytest.raises(CheckpointError):
+        store.journal("r1")
+
+
+def test_a_missing_journal_reports_absent_rather_than_torn(tmp_path):
+    report = CheckpointStore(tmp_path).journal_integrity("never-existed")
+    assert report["exists"] is False
+    assert report["torn_tail"] is False

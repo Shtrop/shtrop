@@ -207,15 +207,62 @@ class CheckpointStore:
         return cp.stage
 
     def journal(self, reel_id: str) -> list[dict[str, Any]]:
+        """Read the stage history.
+
+        Appends are the only writer, so a host that loses power mid-write can
+        only ever tear the **last** line. That is an interrupted append, not
+        corruption, and it must not make the whole history unreadable — the
+        journal is preserved evidence under the NO-DELETE policy.
+
+        A malformed line anywhere *other* than the tail is a different problem
+        and raises, because nothing in normal operation can produce one.
+        """
+
+        entries, torn_tail = self._read_journal(reel_id)
+        if torn_tail:
+            # Surfaced, not hidden: the caller sees history minus the torn
+            # entry, and journal_integrity() says so explicitly.
+            pass
+        return entries
+
+    def journal_integrity(self, reel_id: str) -> dict[str, Any]:
+        """Whether this reel's history is intact, and what was lost if not."""
+
         path = self._journal_path(reel_id)
         if not path.exists():
-            return []
+            return {"exists": False, "entries": 0, "torn_tail": False, "detail": ""}
+        entries, torn_tail = self._read_journal(reel_id)
+        return {
+            "exists": True,
+            "entries": len(entries),
+            "torn_tail": bool(torn_tail),
+            "detail": (
+                f"the final journal line was left half written ({torn_tail!r}); "
+                "an append was interrupted, most likely by the host losing power"
+                if torn_tail
+                else ""
+            ),
+        }
+
+    def _read_journal(self, reel_id: str) -> tuple[list[dict[str, Any]], str]:
+        path = self._journal_path(reel_id)
+        if not path.exists():
+            return [], ""
+        lines = [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines()]
+        lines = [ln for ln in lines if ln]
         out: list[dict[str, Any]] = []
-        for line in path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line:
+        torn_tail = ""
+        for index, line in enumerate(lines):
+            try:
                 out.append(json.loads(line))
-        return out
+            except json.JSONDecodeError as exc:
+                if index == len(lines) - 1:
+                    torn_tail = line[:80]
+                    break
+                raise CheckpointError(
+                    f"journal for {reel_id} is corrupt at line {index + 1}: {exc}"
+                ) from exc
+        return out, torn_tail
 
     def list_reels(self) -> list[str]:
         return sorted(p.name[: -len(".state.json")] for p in self.root.glob("*.state.json"))
