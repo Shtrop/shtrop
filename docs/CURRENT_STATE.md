@@ -39,14 +39,14 @@ not a defect.
 
 | Component | State | Evidence |
 |---|---|---|
-| Fail-closed gate engine | `PASS` | `sofia/core/gates.py`, 13 tests |
-| Atomic checkpoint + resume | `PASS` | `sofia/core/checkpoint.py`; survives a host killed mid-write |
+| Fail-closed gate engine | `PASS` | `sofia/core/gates.py`, 15 tests |
+| Durable state | `PASS` | every durable write goes through `sofia/core/durable.py`; checkpoint, journal and resume survive a host killed mid-write |
 | AgentRegistry / Factory / Runner / ownership | `PASS` | 25 agents registered, 0 spec-only, 0 capability gaps |
-| Voice Team (7 roles) | `PASS` (wiring) | `sofia/voice/`, 27 tests |
-| Reel Production Team (17 roles) | `PASS` (wiring) | `sofia/reel/`, 41 tests |
+| Voice Team (7 roles) | `PASS` (wiring) | `sofia/voice/`, 33 tests |
+| Reel Production Team (17 roles) | `PASS` (wiring) | `sofia/reel/`, 109 tests |
 | Growth Engine connection | `PASS` | `sofia/reel/growth.py` |
-| GPU priority arbiter | `PASS` | light work proceeds, heavy work waits |
-| Repair router | `PASS` | every defect maps to a component + resume point |
+| GPU priority arbiter | `PASS` | light work proceeds; heavy work waits, including the Champion/Challenger trial |
+| Repair router | `PASS` | every defect maps to a component + resume point, and the director re-runs it within a bounded budget |
 | Publishing HOLD | `PASS` | no publish path exists; asserted by test |
 | Voice campaign harness | `PASS` | 66 clips (22 × RU/UA/EN) ran end to end in 30 s |
 | Reel batch harness | `PASS` | 5 controlled + 5 random ran in 160 s |
@@ -54,10 +54,12 @@ not a defect.
 | Cross-language identity check | `PASS` (wiring) | RU↔UA, RU↔EN, UA↔EN run in the campaign |
 | Champion vs Challenger trial | `PASS` | identity regression sinks a challenger; nothing auto-promotes |
 | Growth feedback loop | `PASS` | director reports every Reel; shadow stays out of REAL |
-| Editing QA | `PASS` | 12 real measurements on the delivered file, not the plan |
+| Editing QA | `PASS` | 17 real measurements, including the delivered runtime and the voice clips as placed |
 | Cover composition QA | `PASS` | 9 real measurements; a black or horizontal cover now FAILs |
 | SFX handling | `PASS` | optional by design, but a declared cue is verified |
 | CI | `PASS` | `.github/workflows/tests.yml` runs suite + registry drift check |
+| Quality scorecard | `PASS` | the 8/10 floors are enforced; `PASS` and *world-class* are separate claims |
+| Backend measurement contract | `PASS` | `preflight.py --measurement-contract`; the gates and the trial read one list |
 
 ## What is NOT proven
 
@@ -73,6 +75,7 @@ not a defect.
 | Reel benchmark *quality* (5 controlled + 5 random) | `NOT_MEASURED` | harness ran; 0/10 runs had every critical category measured |
 | Voice campaign *quality* (66 clips) | `NOT_MEASURED` | harness ran; 0/66 clips had WER and identity measured |
 | Any platform metric | `NOT_MEASURED` | publishing is on HOLD; no publication occurred |
+| World-class (every category ≥ 8/10) | `NOT_MEASURED` | hook strength and retention are audience outcomes; nothing here can measure them |
 
 These are recorded as `NOT_MEASURED`, never as `0` and never as a pass.
 
