@@ -19,6 +19,11 @@
       hold_exit_ready  — можно ли по этому окну выходить из hold.
     Чистое окно длиной в час даёт verdict = PASS и hold_exit_ready = false.
 
+    Порог RequiredHours применяется к фактически набранному наблюдению
+    (observed_hours), а не к календарному размаху окна: иначе возобновление
+    давно брошенного окна засчиталось бы как 48 ч за пять минут работы.
+    Разница между размахом и наблюдением видна в coverage_gap_hours.
+
 .PARAMETER Hours
     Длительность текущего сеанса наблюдения в часах. По умолчанию 24.
 
@@ -310,7 +315,10 @@ $limitChanged = ($limitValues.Count -gt 1)
 $blockers = @()
 if ($everBlocked)               { $blockers += 'event_log_blocked: журнал System не читался, крахи могли быть не видны' }
 if (-not $clean)                { $blockers += ("crash_or_whea_in_window: событий {0}, WHEA {1}" -f $eventsSeen.Count, $wheaSeen.Count) }
-if ($windowSpan -lt $RequiredHours) { $blockers += ("window_short: {0} ч из требуемых {1} ч" -f $windowSpan, $RequiredHours) }
+# Считается именно наблюдение, а не календарный размах окна: иначе
+# возобновление давно брошенного окна дало бы «48 ч» за пять минут работы.
+if ($observed -lt $RequiredHours) { $blockers += ("window_short: наблюдения {0} ч из требуемых {1} ч" -f $observed, $RequiredHours) }
+if ($coverageGap -gt 1) { $blockers += ("coverage_gap: {0} ч окна прошли без наблюдения — нагрузка за это время не подтверждена" -f $coverageGap) }
 if ($limitChanged)              { $blockers += ("power_limit_changed: за окно лимит был {0} W" -f (($limitValues | ForEach-Object { [int]$_ }) -join ' -> ')) }
 
 $holdExitReady = ($blockers.Count -eq 0)
@@ -349,7 +357,8 @@ Write-Host ("  ВЕРДИКТ: {0}   окно {1} ч, событий 41/6008/100
 Write-Host ("  ВЫХОД ИЗ HOLD: {0}" -f $(if ($holdExitReady) { 'условия наблюдения выполнены' } else { 'НЕТ' })) `
            -ForegroundColor $(if ($holdExitReady) { 'Green' } else { 'Yellow' })
 Write-Host ('=' * 78) -ForegroundColor DarkCyan
-Write-Host ("  Наблюдение / окно / пропуск: {0} ч / {1} ч / {2} ч" -f $observed, $windowSpan, $coverageGap)
+Write-Host ("  Наблюдение / окно / пропуск: {0} ч / {1} ч / {2} ч  (порог {3} ч по наблюдению)" -f `
+            $observed, $windowSpan, $coverageGap, $RequiredHours)
 Write-Host ("  Пик температуры / потребления: {0} C / {1} W" -f $maxTemp, $maxDraw)
 if ($null -ne $limitFirst) {
     Write-Host ("  Power limit: {0} W -> {1} W{2}" -f $limitFirst, $limitLast, $(if ($limitChanged) { '  (менялся за окно!)' } else { '' }))

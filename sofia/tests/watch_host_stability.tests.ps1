@@ -97,6 +97,32 @@ Test 'возобновление окна после ресета видит с�
     } finally { Remove-Sandbox $sb }
 }
 
+Test 'возобновление давно брошенного окна не засчитывается как выполненный порог' {
+    $sb = New-Sandbox 'watch_stale_resume'
+    try {
+        $out = Join-Path $sb.Dir 'out'
+        New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+        Set-WinEventStub -Mode ok -Events @()
+        Invoke-Watcher -OutDir $out | Out-Null
+
+        # Окно якобы открыто месяц назад, а наблюдали за ним секунды.
+        $statePath = Join-Path $out 'window_state.json'
+        $st = Get-Content $statePath -Raw | ConvertFrom-Json
+        $st.window_start = (Get-Date).AddDays(-30).ToString('o')
+        $st.observed_hours = 0.001
+        $st | ConvertTo-Json -Depth 6 | Out-File -FilePath $statePath -Encoding UTF8
+
+        $r = Invoke-Watcher -OutDir $out -Arguments @{ Resume = $true }
+
+        Assert-Equal 'PASS' $r.verdict 'крахов не было'
+        Assert-True ($r.window_span_hours -ge 700) 'календарный размах действительно большой'
+        Assert-True (-not $r.hold_exit_ready) 'но наблюдения за это окно почти не было'
+        Assert-Match 'window_short' ($r.hold_exit_blockers -join ';') 'порог считается по наблюдению'
+        Assert-Match 'coverage_gap' ($r.hold_exit_blockers -join ';') 'пропуск окна должен быть назван'
+    } finally { Remove-Sandbox $sb }
+}
+
 Test 'откат power limit посреди окна снимает право на выход из hold' {
     $sb = New-Sandbox 'watch_pl_drift'
     try {
