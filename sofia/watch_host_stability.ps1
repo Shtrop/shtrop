@@ -60,12 +60,14 @@ param(
     [switch] $Resume,
     [int]    $IntervalSeconds = 60,
 
-    # Сколько секунд режим power limit должен продержаться, чтобы считаться
-    # режимом, а не переходным показанием. Задача закрепления срабатывает на
-    # старте системы с задержкой и повторами, поэтому сразу после перезагрузки
-    # карта какое-то время честно стоит на максимуме платы. Засчитывать это как
-    # смену режима нельзя: такое показание попадёт в состояние окна и запрёт
-    # выход из hold навсегда.
+    # Период стабилизации в начале КАЖДОГО сеанса наблюдения. Задача
+    # закрепления power limit срабатывает на старте системы с задержкой и
+    # повторами, поэтому первые минуты после перезагрузки карта честно стоит на
+    # максимуме платы. Показания этого периода не копятся вовсе.
+    #
+    # Привязка именно к началу сеанса, а не абсолютный порог по времени: порог
+    # переходные показания НАКАПЛИВАЕТ — десяток перезагрузок за 48 ч окна, и
+    # переходный режим становится «устойчивым», запирая выход из hold навсегда.
     [int]    $LimitSettleSeconds = 600,
     [string] $OutDir = ''
 )
@@ -158,6 +160,13 @@ if ($Resume -and (Test-Path $statePath)) {
                 $script:ResumedRegimes = @($prev.power_limit_regimes | ForEach-Object {
                     [pscustomobject]@{ W = [double]$_.w; Seconds = [int]$_.seconds }
                 })
+            } elseif ($prev.power_limit_values) {
+                # Состояние от прежней версии набора: список значений без
+                # времени. Владелец мог обновить инструменты посреди окна, и
+                # уже зафиксированный откат лимита терять нельзя.
+                $script:ResumedRegimes = @($prev.power_limit_values | ForEach-Object {
+                    [pscustomobject]@{ W = [double]$_; Seconds = [int]$LimitSettleSeconds }
+                })
             }
             $resumed = $true
         }
@@ -169,6 +178,9 @@ if ($Resume -and (Test-Path $statePath)) {
 }
 
 $end = $segmentStart.AddHours($Hours)
+# Показания до этого момента не копятся: сразу после запуска (а чаще — сразу
+# после перезагрузки) лимит ещё не закреплён.
+$settleUntil = $segmentStart.AddSeconds($LimitSettleSeconds)
 
 Write-Host ''
 Write-Host 'Sofia AI Studio — наблюдение за стабильностью хоста (READ-ONLY)' -ForegroundColor White
@@ -251,12 +263,14 @@ while ((Get-Date) -lt $end) {
                     $lv = [double]$limit
                     $limitLast = $lv
                     if ($null -eq $limitFirst) { $limitFirst = $lv }
-                    # Копим ВРЕМЯ удержания, а не факт появления: переходное
-                    # показание само обесценивается по мере роста окна, и
-                    # запереть им выход из hold нельзя.
-                    $hit = @($limitRegimes | Where-Object { [math]::Abs($_.W - $lv) -le 1 })
-                    if ($hit.Count -gt 0) { $hit[0].Seconds += $IntervalSeconds }
-                    else { $limitRegimes += [pscustomobject]@{ W = $lv; Seconds = $IntervalSeconds } }
+                    # Период стабилизации в начале сеанса пропускаем целиком:
+                    # копить его нельзя ни в каком виде, иначе переходные
+                    # показания накопятся за несколько перезагрузок.
+                    if ($now -ge $settleUntil) {
+                        $hit = @($limitRegimes | Where-Object { [math]::Abs($_.W - $lv) -le 1 })
+                        if ($hit.Count -gt 0) { $hit[0].Seconds += $IntervalSeconds }
+                        else { $limitRegimes += [pscustomobject]@{ W = $lv; Seconds = $IntervalSeconds } }
+                    }
                 }
             }
         } catch { }
@@ -339,12 +353,18 @@ $verdict = if ($everBlocked) { 'NOT_MEASURED' } elseif ($clean) { 'PASS' } else 
 # Смягчение, которое не держалось всё окно, обесценивает окно: наблюдали
 # один режим питания, а в production вернётся другой.
 #
-# Режимом считается только то, что продержалось дольше порога. Переходное
-# показание сразу после перезагрузки режимом не становится и окно не запирает,
-# а настоящая смена набирает часы и видна независимо от того, случилась она
-# посреди работы или ровно на перезагрузке.
-$settled = @($limitRegimes | Where-Object { $_.Seconds -ge $LimitSettleSeconds })
+# Переходные показания уже отброшены периодом стабилизации, поэтому здесь
+# остаётся отсечь только одиночный шум: режим должен занять хотя бы два опроса.
+$noiseFloor = [math]::Max(2 * $IntervalSeconds, 1)
+$settled = @($limitRegimes | Where-Object { $_.Seconds -ge $noiseFloor })
 $limitChanged = ($settled.Count -gt 1)
+
+# Окно может закончиться прямо в период стабилизации после перезагрузки: тогда
+# измеренный режим один, а карта уже стоит на другом лимите. Закрывать окно в
+# этот момент нельзя — но и запирать навсегда тоже: признак снимается сам,
+# стоит продолжить наблюдение.
+$limitUnsettled = ($null -ne $limitLast -and $settled.Count -eq 1 -and
+                   [math]::Abs($settled[0].W - $limitLast) -gt 1)
 
 $blockers = @()
 if ($everBlocked)               { $blockers += 'event_log_blocked: журнал System не читался, крахи могли быть не видны' }
@@ -356,6 +376,9 @@ if ($coverageGap -gt 1) { $blockers += ("coverage_gap: {0} ч окна прош�
 if ($limitChanged) {
     $shape = ($settled | ForEach-Object { "{0} W ({1} ч)" -f [int]$_.W, [math]::Round($_.Seconds / 3600, 1) }) -join ', '
     $blockers += ("power_limit_changed: за окно держались разные режимы — {0}" -f $shape)
+} elseif ($limitUnsettled) {
+    $blockers += ("power_limit_unsettled: измеряли при {0} W, а карта сейчас на {1} W и это ещё не подтверждено наблюдением — продолжить окно" -f `
+                  [int]$settled[0].W, [int]$limitLast)
 }
 
 $holdExitReady = ($blockers.Count -eq 0)
@@ -377,8 +400,9 @@ $result = [ordered]@{
     power_limit_w_last  = $limitLast
     power_limit_changed = $limitChanged
     power_limit_settle_seconds = $LimitSettleSeconds
+    power_limit_unsettled = $limitUnsettled
     power_limit_regimes = @($limitRegimes | ForEach-Object {
-        [ordered]@{ w = $_.W; seconds = $_.Seconds; settled = ($_.Seconds -ge $LimitSettleSeconds) }
+        [ordered]@{ w = $_.W; seconds = $_.Seconds; settled = ($_.Seconds -ge $noiseFloor) }
     })
     events_detected     = @($eventsSeen)
     whea_detected       = @($wheaSeen)
