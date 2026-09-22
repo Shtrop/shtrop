@@ -49,6 +49,21 @@ param(
 $ErrorActionPreference = 'Continue'
 $ProgressPreference    = 'SilentlyContinue'
 
+# Текст ошибки «событий не найдено» локализован, поэтому полагаться на него нельзя:
+# пустой результат и реальный отказ в доступе различаются пробой доступа, а не разбором строки.
+function Test-SystemLogReadable {
+    try { $null = Get-WinEvent -LogName System -MaxEvents 1 -ErrorAction Stop; return $true }
+    catch { return $false }
+}
+
+function Get-SystemEvents {
+    param([hashtable] $Filter, [int] $MaxEvents = 0)
+    $p = @{ FilterHashtable = $Filter; ErrorAction = 'SilentlyContinue' }
+    if ($MaxEvents -gt 0) { $p['MaxEvents'] = $MaxEvents }
+    @(Get-WinEvent @p)
+}
+
+
 $script:Report = [ordered]@{
     generated_at   = (Get-Date).ToString('o')
     host           = $env:COMPUTERNAME
@@ -119,25 +134,24 @@ $since = (Get-Date).AddDays(-$Days)
 # ---------------------------------------------------------------------------
 Write-Head '1/6  Журнал Windows: Kernel-Power 41 / 6008 / BugCheck 1001'
 Invoke-Section 'kernel_power' {
-    $events = @()
-    try {
-        $events = Get-WinEvent -FilterHashtable @{
-            LogName   = 'System'
-            Id        = 41, 6008, 1001
-            StartTime = $since
-        } -ErrorAction Stop
-    } catch {
-        if ($_.Exception.Message -match 'No events were found') {
-            Add-Finding -Status 'PASS' -Component 'Kernel-Power 41' `
-                        -Evidence ("за {0} дн. событий 41/6008/1001 нет" -f $Days) `
-                        -NextAction 'причина safe hold вне журнала System — смотреть governor incidents'
-            $script:Report.sections['kernel_power'] = @()
-            return
-        }
+    if (-not (Test-SystemLogReadable)) {
         Add-Finding -Status 'BLOCKED' -Component 'Kernel-Power 41' `
-                    -Evidence ("журнал System недоступен: {0}" -f $_.Exception.Message) `
+                    -Evidence 'журнал System недоступен' `
                     -NextAction 'перезапустить PowerShell от имени администратора'
         $script:Report.sections['kernel_power'] = 'ACCESS_DENIED'
+        return
+    }
+
+    $events = Get-SystemEvents -Filter @{
+        LogName   = 'System'
+        Id        = 41, 6008, 1001
+        StartTime = $since
+    }
+    if ($events.Count -eq 0) {
+        Add-Finding -Status 'PASS' -Component 'Kernel-Power 41' `
+                    -Evidence ("за {0} дн. событий 41/6008/1001 нет" -f $Days) `
+                    -NextAction 'причина safe hold вне журнала System — смотреть governor incidents'
+        $script:Report.sections['kernel_power'] = @()
         return
     }
 

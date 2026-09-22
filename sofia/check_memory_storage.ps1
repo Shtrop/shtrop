@@ -32,6 +32,21 @@ param(
 
 $ErrorActionPreference = 'Continue'
 $ProgressPreference    = 'SilentlyContinue'
+
+# Текст ошибки «событий не найдено» локализован, поэтому полагаться на него нельзя:
+# пустой результат и реальный отказ в доступе различаются пробой доступа, а не разбором строки.
+function Test-SystemLogReadable {
+    try { $null = Get-WinEvent -LogName System -MaxEvents 1 -ErrorAction Stop; return $true }
+    catch { return $false }
+}
+
+function Get-SystemEvents {
+    param([hashtable] $Filter, [int] $MaxEvents = 0)
+    $p = @{ FilterHashtable = $Filter; ErrorAction = 'SilentlyContinue' }
+    if ($MaxEvents -gt 0) { $p['MaxEvents'] = $MaxEvents }
+    @(Get-WinEvent @p)
+}
+
 $since = (Get-Date).AddDays(-$Days)
 
 $findings = @()
@@ -106,8 +121,10 @@ try {
 
 # ---------------------------------------------------------------------------
 Write-Head '2/6  События WHEA-Logger (аппаратные ошибки)'
-try {
-    $whea = @(Get-WinEvent -FilterHashtable @{ LogName='System'; ProviderName='Microsoft-Windows-WHEA-Logger'; StartTime=$since } -ErrorAction Stop)
+if (-not (Test-SystemLogReadable)) {
+    Add-F -Status 'NOT_MEASURED' -Component 'WHEA' -Evidence 'журнал System недоступен — нужны права администратора'
+} else {
+    $whea = Get-SystemEvents -Filter @{ LogName='System'; ProviderName='Microsoft-Windows-WHEA-Logger'; StartTime=$since }
     if ($whea.Count -eq 0) {
         Add-F -Status 'PASS' -Component 'WHEA' -Evidence 'аппаратных ошибок не зарегистрировано'
     } else {
@@ -138,33 +155,22 @@ try {
               -Evidence ("{0} аппаратных ошибок за {1} дн. (ID: {2}), последняя {3}" -f $whea.Count, $Days, $ids, $last.TimeCreated) `
               -Next 'платформа сама зафиксировала аппаратную ошибку: питание, IMC/RAM, CPU — не драйвер'
     }
-} catch {
-    if ($_.Exception.Message -match 'No events were found') {
-        Add-F -Status 'PASS' -Component 'WHEA' -Evidence 'аппаратных ошибок не зарегистрировано'
-    } else {
-        Add-F -Status 'NOT_MEASURED' -Component 'WHEA' -Evidence 'журнал недоступен — нужны права администратора'
-    }
 }
 
 # ---------------------------------------------------------------------------
 Write-Head '3/6  Результаты средства проверки памяти Windows'
-try {
-    $md = @(Get-WinEvent -FilterHashtable @{ LogName='System'; ProviderName='Microsoft-Windows-MemoryDiagnostics-Results' } -MaxEvents 5 -ErrorAction Stop)
-    foreach ($m in $md) {
-        Write-Host ("  {0}  {1}" -f $m.TimeCreated, (($m.Message -replace '\s+',' '))) -ForegroundColor DarkGray
-    }
-    $bad = @($md | Where-Object { $_.Id -eq 1202 -or $_.Message -match 'обнаруж|error|problem' })
-    if ($md.Count -eq 0) {
-        Add-F -Status 'NOT_MEASURED' -Component 'Проверка памяти Windows' -Evidence 'никогда не запускалась' `
-              -Next 'встроенная проверка слабее MemTest86, но дешевле: mdsched.exe'
-    } elseif ($bad.Count -gt 0) {
-        Add-F -Status 'FAIL' -Component 'Проверка памяти Windows' -Evidence 'прошлый прогон нашёл ошибки'
-    } else {
-        Add-F -Status 'PASS' -Component 'Проверка памяти Windows' -Evidence 'прошлый прогон ошибок не нашёл'
-    }
-} catch {
-    Add-F -Status 'NOT_MEASURED' -Component 'Проверка памяти Windows' -Evidence 'записей нет' `
-          -Next 'MemTest86 минимум 4 прохода — единственный надёжный тест RAM'
+$md = Get-SystemEvents -Filter @{ LogName='System'; ProviderName='Microsoft-Windows-MemoryDiagnostics-Results' } -MaxEvents 5
+foreach ($m in $md) {
+    Write-Host ("  {0}  {1}" -f $m.TimeCreated, (($m.Message -replace '\s+',' '))) -ForegroundColor DarkGray
+}
+$bad = @($md | Where-Object { $_.Id -eq 1202 -or $_.Message -match 'обнаруж|error|problem' })
+if ($md.Count -eq 0) {
+    Add-F -Status 'NOT_MEASURED' -Component 'Проверка памяти Windows' -Evidence 'никогда не запускалась' `
+          -Next 'встроенная проверка слабее MemTest86, но дешевле: mdsched.exe'
+} elseif ($bad.Count -gt 0) {
+    Add-F -Status 'FAIL' -Component 'Проверка памяти Windows' -Evidence 'прошлый прогон нашёл ошибки'
+} else {
+    Add-F -Status 'PASS' -Component 'Проверка памяти Windows' -Evidence 'прошлый прогон ошибок не нашёл'
 }
 
 # ---------------------------------------------------------------------------
@@ -172,9 +178,7 @@ Write-Head '4/6  Ошибки дисковой подсистемы в журн�
 $diskProviders = 'disk','Disk','Ntfs','volmgr','storahci','stornvme','nvme'
 $diskEvents = @()
 foreach ($p in $diskProviders) {
-    try {
-        $diskEvents += Get-WinEvent -FilterHashtable @{ LogName='System'; ProviderName=$p; StartTime=$since; Level=1,2,3 } -ErrorAction Stop
-    } catch { }
+    $diskEvents += Get-SystemEvents -Filter @{ LogName='System'; ProviderName=$p; StartTime=$since; Level=1,2,3 }
 }
 if ($diskEvents.Count -eq 0) {
     Add-F -Status 'PASS' -Component 'Журнал дисков' -Evidence ("ошибок за {0} дн. нет" -f $Days)

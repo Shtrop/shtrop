@@ -33,6 +33,21 @@ param(
 
 $ErrorActionPreference = 'Continue'
 
+# Текст ошибки «событий не найдено» локализован, поэтому полагаться на него нельзя:
+# пустой результат и реальный отказ в доступе различаются пробой доступа, а не разбором строки.
+function Test-SystemLogReadable {
+    try { $null = Get-WinEvent -LogName System -MaxEvents 1 -ErrorAction Stop; return $true }
+    catch { return $false }
+}
+
+function Get-SystemEvents {
+    param([hashtable] $Filter, [int] $MaxEvents = 0)
+    $p = @{ FilterHashtable = $Filter; ErrorAction = 'SilentlyContinue' }
+    if ($MaxEvents -gt 0) { $p['MaxEvents'] = $MaxEvents }
+    @(Get-WinEvent @p)
+}
+
+
 $lib = Join-Path $PSScriptRoot 'lib_bugcheck.ps1'
 if (Test-Path $lib) { . $lib } else {
     Write-Host 'Не найден lib_bugcheck.ps1 рядом со скриптом — скачайте его из того же каталога репозитория.' -ForegroundColor Red
@@ -51,16 +66,19 @@ $found = @()
 # 1. События BugCheck 1001 — самый надёжный источник, ничего не нужно ставить
 # ---------------------------------------------------------------------------
 Write-Head '1/3  События BugCheck 1001'
-try {
+if (-not (Test-SystemLogReadable)) {
+    Write-Host '  Журнал System недоступен — запустите PowerShell от имени администратора.' -ForegroundColor Magenta
+    $ev = @()
+} else {
     # Текст события локализован, а имя провайдера отличается между версиями Windows,
     # поэтому отбираем по признаку, который не зависит ни от того, ни от другого:
     # наличие 8-значного кода остановки в сообщении.
-    $ev = Get-WinEvent -FilterHashtable @{ LogName='System'; Id=1001; StartTime=$since } -ErrorAction Stop |
-          Where-Object {
-              $_.ProviderName -match 'BugCheck|SystemErrorReporting' -or
-              $_.Message -match '(?i)bugcheck|0x[0-9a-f]{8}'
-          }
-    if (-not $ev) {
+    $ev = @(Get-SystemEvents -Filter @{ LogName='System'; Id=1001; StartTime=$since } |
+            Where-Object {
+                $_.ProviderName -match 'BugCheck|SystemErrorReporting' -or
+                $_.Message -match '(?i)bugcheck|0x[0-9a-f]{8}'
+            })
+    if ($ev.Count -eq 0) {
         Write-Host '  Записей нет.' -ForegroundColor DarkGray
     }
     foreach ($e in $ev) {
@@ -85,13 +103,6 @@ try {
         } else {
             Write-Host ("  {0}  код не распознан в тексте события" -f $e.TimeCreated) -ForegroundColor DarkGray
         }
-    }
-} catch {
-    if ($_.Exception.Message -match 'No events were found') {
-        Write-Host '  Записей нет.' -ForegroundColor DarkGray
-    } else {
-        Write-Host ("  Журнал недоступен: {0}" -f $_.Exception.Message) -ForegroundColor Magenta
-        Write-Host '  Запустите PowerShell от имени администратора.' -ForegroundColor Magenta
     }
 }
 
