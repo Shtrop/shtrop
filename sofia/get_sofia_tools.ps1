@@ -65,20 +65,49 @@ Write-Host ("Загрузка инструментов Sofia из ветки {0}
 Write-Host ("Каталог: {0}" -f $Dest)
 Write-Host ''
 
-foreach ($f in $files) {
-    $target = Join-Path $Dest $f
+function Get-ToolFile {
+    param([string] $Name)
+    $target = Join-Path $Dest $Name
     $before = if (Test-Path $target) { (Get-FileHash $target -Algorithm SHA256).Hash } else { $null }
     try {
         # уникальный параметр обходит кэш CDN
-        Invoke-WebRequest "$base/$f`?nocache=$stamp" -OutFile $target -UseBasicParsing -Headers @{ 'Cache-Control' = 'no-cache' }
+        Invoke-WebRequest "$base/$Name`?nocache=$stamp" -OutFile $target -UseBasicParsing -Headers @{ 'Cache-Control' = 'no-cache' }
         $after = (Get-FileHash $target -Algorithm SHA256).Hash
         $size  = (Get-Item $target).Length
         $state = if (-not $before) { 'новый' } elseif ($before -ne $after) { 'ОБНОВЛЁН' } else { 'без изменений' }
         $color = if ($state -eq 'ОБНОВЛЁН') { 'Green' } elseif ($state -eq 'новый') { 'Cyan' } else { 'DarkGray' }
-        Write-Host ("  {0,-32} {1,8} Б  {2,-14} {3}" -f $f, $size, $state, $after.Substring(0,12)) -ForegroundColor $color
+        Write-Host ("  {0,-32} {1,8} Б  {2,-14} {3}" -f $Name, $size, $state, $after.Substring(0,12)) -ForegroundColor $color
     } catch {
-        Write-Host ("  {0,-32} ОШИБКА: {1}" -f $f, $_.Exception.Message) -ForegroundColor Red
+        Write-Host ("  {0,-32} ОШИБКА: {1}" -f $Name, $_.Exception.Message) -ForegroundColor Red
     }
+}
+
+function Get-DeclaredFileList {
+    <#
+        Достаёт список файлов из текста загрузчика: блок $files = @( '...' ).
+        Нужен, чтобы узнать состав набора из СВЕЖЕЙ копии, а не из своей.
+    #>
+    param([string] $Path)
+    if (-not (Test-Path $Path)) { return @() }
+    $text = Get-Content $Path -Raw
+    $m = [regex]::Match($text, '(?s)\$files\s*=\s*@\((.*?)\)')
+    if (-not $m.Success) { return @() }
+    @([regex]::Matches($m.Groups[1].Value, "'([^']+\.ps1)'") | ForEach-Object { $_.Groups[1].Value })
+}
+
+foreach ($f in $files) { Get-ToolFile -Name $f }
+
+# Список файлов зашит в сам загрузчик, поэтому старая копия не знает о файлах,
+# добавленных в набор позже. Загрузчик обновляет сам себя, так что после этого
+# его список можно перечитать и дочитать недостающее. Без этого новый файл
+# доезжал бы только со второго запуска, а скрипт, который его подключает,
+# отваливался бы на первом — во время инцидента.
+$declared = Get-DeclaredFileList -Path (Join-Path $Dest 'get_sofia_tools.ps1')
+$missing = @($declared | Where-Object { $files -notcontains $_ })
+if ($missing.Count -gt 0) {
+    Write-Host ''
+    Write-Host ("В наборе появились новые файлы ({0}) — дочитываю:" -f $missing.Count) -ForegroundColor Cyan
+    foreach ($f in $missing) { Get-ToolFile -Name $f }
 }
 
 Write-Host ''
@@ -88,4 +117,11 @@ Write-Host '  .\analyze_safehold_report.ps1            диагноз и сле�
 Write-Host '  .\analyze_minidump.ps1                   код остановки из событий и дампов'
 Write-Host '  .\check_memory_storage.ps1               память, WHEA, SMART, диски'
 Write-Host '  .\watch_host_stability.ps1 -Hours 48     окно наблюдения для выхода из hold'
+Write-Host '      после ресета продолжать тем же окном: -Resume'
+Write-Host '      решение принимать по hold_exit_ready, а не по verdict'
+Write-Host ''
+Write-Host 'Если применяется ограничение power limit:' -ForegroundColor White
+Write-Host '  .\apply_safehold_fix.ps1 -Action PowerLimit -Percent 80 -Confirm'
+Write-Host '  .\apply_safehold_fix.ps1 -Action PowerLimitPersist -Confirm   закрепить на reboot'
+Write-Host '      без закрепления лимит исчезнет на первой же перезагрузке'
 Write-Host ''

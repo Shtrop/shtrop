@@ -55,3 +55,23 @@ Test 'get_sofia_tools.ps1 перечисляет все скрипты набо�
         }
     }
 }
+
+# Загрузчик дочитывает новые файлы набора, разбирая собственный свежескачанный
+# текст. Разбор и формат списка обязаны совпадать: иначе новый файл снова
+# доедет только со второго запуска — во время инцидента этого никто не заметит.
+Test 'загрузчик разбирает собственный список файлов' {
+    $downloader = Join-Path $sofiaDir 'get_sofia_tools.ps1'
+    $text = Get-Content $downloader -Raw
+
+    # Шаблон продублирован из Get-DeclaredFileList: если он там изменится,
+    # эта проверка обязана упасть.
+    $pattern = '(?s)\$files\s*=\s*@\((.*?)\)'
+    Assert-Match ([regex]::Escape($pattern)) $text 'шаблон разбора в скрипте разошёлся с тестом'
+
+    $m = [regex]::Match($text, $pattern)
+    Assert-True $m.Success 'блок $files не найден'
+    $declared = @([regex]::Matches($m.Groups[1].Value, "'([^']+\.ps1)'") | ForEach-Object { $_.Groups[1].Value })
+
+    $actual = @(Get-ChildItem -Path $sofiaDir -Filter '*.ps1' -File | ForEach-Object { $_.Name } | Sort-Object)
+    Assert-Equal ($actual -join ',') (($declared | Sort-Object) -join ',') 'разобранный список не совпал с составом набора'
+}
