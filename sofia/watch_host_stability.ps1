@@ -39,6 +39,21 @@ param(
 $ErrorActionPreference = 'Continue'
 $ProgressPreference    = 'SilentlyContinue'
 
+# Текст ошибки «событий не найдено» локализован, поэтому полагаться на него нельзя:
+# пустой результат и реальный отказ в доступе различаются пробой доступа, а не разбором строки.
+function Test-SystemLogReadable {
+    try { $null = Get-WinEvent -LogName System -MaxEvents 1 -ErrorAction Stop; return $true }
+    catch { return $false }
+}
+
+function Get-SystemEvents {
+    param([hashtable] $Filter, [int] $MaxEvents = 0)
+    $p = @{ FilterHashtable = $Filter; ErrorAction = 'SilentlyContinue' }
+    if ($MaxEvents -gt 0) { $p['MaxEvents'] = $MaxEvents }
+    @(Get-WinEvent @p)
+}
+
+
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $csv     = Join-Path $OutDir 'telemetry.csv'
 $summary = Join-Path $OutDir 'stability_summary.json'
@@ -55,6 +70,12 @@ Write-Host 'Прервать можно Ctrl+C — собранные данны
 Write-Host ''
 
 'timestamp,temp_c,power_w,limit_w,util_pct,mem_used_mib,new_events_41,new_whea' | Out-File -FilePath $csv -Encoding UTF8
+
+$eventLogBlocked = -not (Test-SystemLogReadable)
+if ($eventLogBlocked) {
+    Write-Host 'Журнал System недоступен — перезапустите PowerShell от имени администратора.' -ForegroundColor Magenta
+    Write-Host 'Телеметрия GPU собираться будет, но события и WHEA — нет.' -ForegroundColor Magenta
+}
 
 $hasNvidia = [bool](Get-Command nvidia-smi -ErrorAction SilentlyContinue)
 if (-not $hasNvidia) {
@@ -91,52 +112,43 @@ while ((Get-Date) -lt $end) {
     $newEvents = 0
     $newWhea = 0
     if (-not $eventLogBlocked) {
-        try {
-            $ev = Get-WinEvent -FilterHashtable @{
-                LogName   = 'System'
-                Id        = 41, 6008, 1001
-                StartTime = $start
-            } -ErrorAction Stop
-            foreach ($e in $ev) {
-                $key = "{0}|{1}" -f $e.TimeCreated.ToString('o'), $e.Id
-                if ($eventsSeen -notcontains $key) {
-                    $eventsSeen += $key
-                    $newEvents++
-                    Write-Host ("  !! {0}  Event {1} ({2})" -f $e.TimeCreated, $e.Id, $e.ProviderName) -ForegroundColor Red
-                }
-            }
-        } catch {
-            if ($_.Exception.Message -notmatch 'No events were found') {
-                $eventLogBlocked = $true
-                Write-Host '  Журнал System недоступен — перезапустите от имени администратора.' -ForegroundColor Magenta
+        $ev = Get-SystemEvents -Filter @{
+            LogName   = 'System'
+            Id        = 41, 6008, 1001
+            StartTime = $start
+        }
+        foreach ($e in $ev) {
+            $key = "{0}|{1}" -f $e.TimeCreated.ToString('o'), $e.Id
+            if ($eventsSeen -notcontains $key) {
+                $eventsSeen += $key
+                $newEvents++
+                Write-Host ("  !! {0}  Event {1} ({2})" -f $e.TimeCreated, $e.Id, $e.ProviderName) -ForegroundColor Red
             }
         }
 
         # Корректируемые аппаратные ошибки появляются раньше крахов, поэтому
         # они здесь не менее важны, чем сами ресеты.
-        try {
-            $wh = Get-WinEvent -FilterHashtable @{
-                LogName      = 'System'
-                ProviderName = 'Microsoft-Windows-WHEA-Logger'
-                StartTime    = $start
-            } -ErrorAction Stop
-            foreach ($w in $wh) {
-                $wkey = "{0}|{1}" -f $w.TimeCreated.ToString('o'), $w.Id
-                if ($wheaSeen -notcontains $wkey) {
-                    $wheaSeen += $wkey
-                    $newWhea++
-                    $addr = ''
-                    try {
-                        $wx = [xml]$w.ToXml()
-                        foreach ($d in $wx.Event.EventData.Data) {
-                            if ("$($d.Name)" -eq 'PhysicalAddress') { $addr = "$($d.'#text')" }
-                        }
-                    } catch { }
-                    $suffix = if ($addr -and $addr -ne '0') { " адрес $addr" } else { '' }
-                    Write-Host ("  !! {0}  WHEA Event {1}{2}" -f $w.TimeCreated, $w.Id, $suffix) -ForegroundColor Red
-                }
+        $wh = Get-SystemEvents -Filter @{
+            LogName      = 'System'
+            ProviderName = 'Microsoft-Windows-WHEA-Logger'
+            StartTime    = $start
+        }
+        foreach ($w in $wh) {
+            $wkey = "{0}|{1}" -f $w.TimeCreated.ToString('o'), $w.Id
+            if ($wheaSeen -notcontains $wkey) {
+                $wheaSeen += $wkey
+                $newWhea++
+                $addr = ''
+                try {
+                    $wx = [xml]$w.ToXml()
+                    foreach ($d in $wx.Event.EventData.Data) {
+                        if ("$($d.Name)" -eq 'PhysicalAddress') { $addr = "$($d.'#text')" }
+                    }
+                } catch { }
+                $suffix = if ($addr -and $addr -ne '0') { " адрес $addr" } else { '' }
+                Write-Host ("  !! {0}  WHEA Event {1}{2}" -f $w.TimeCreated, $w.Id, $suffix) -ForegroundColor Red
             }
-        } catch { }
+        }
     }
 
     ("{0},{1},{2},{3},{4},{5},{6},{7}" -f $now.ToString('o'), $temp, $draw, $limit, $util, $mem, $newEvents, $newWhea) |
