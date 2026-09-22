@@ -1,0 +1,44 @@
+﻿<#
+    Синтаксис всех скриптов набора. Ошибка разбора на Windows означает, что
+    владелец получит отказ в самый неподходящий момент — при инциденте.
+#>
+
+$sofiaDir = Split-Path $PSScriptRoot -Parent
+
+foreach ($f in (Get-ChildItem -Path $sofiaDir -Filter '*.ps1' -File -Recurse | Sort-Object FullName)) {
+    $rel = $f.FullName.Substring($sofiaDir.Length).TrimStart('\', '/')
+    Test ("синтаксис: {0}" -f $rel) {
+        $errors = $null
+        $null = [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$errors)
+        if ($errors -and $errors.Count -gt 0) {
+            throw ("ошибок разбора: {0}; первая: {1} (строка {2})" -f $errors.Count, $errors[0].Message, $errors[0].Extent.StartLineNumber)
+        }
+    }
+}
+
+# Инструменты обещают владельцу, что не удаляют файлы студии и не трогают hold.
+# Проверяем обещание по тексту: Remove-Item допустим только во временных каталогах.
+Test 'инструменты не снимают HOST_SAFE_HOLD.flag' {
+    foreach ($f in (Get-ChildItem -Path $sofiaDir -Filter '*.ps1' -File)) {
+        $text = Get-Content $f.FullName -Raw
+        if ($text -match '(?i)(Remove-Item|del|Clear-Content)[^\r\n]*HOST_SAFE_HOLD') {
+            throw ("{0} пытается снять hold" -f $f.Name)
+        }
+        if ($text -match '(?i)(Remove-Item|del)[^\r\n]*PUBLISHING_DISABLED') {
+            throw ("{0} пытается снять запрет публикации" -f $f.Name)
+        }
+    }
+}
+
+# Инструменты запускаются штатным Windows PowerShell 5.1, а он читает файл без
+# BOM как ANSI: весь русский текст превращается в мусор ровно в тот момент,
+# когда владелец разбирает инцидент. Кодировка здесь — часть контракта.
+foreach ($f in (Get-ChildItem -Path $sofiaDir -Filter '*.ps1' -File -Recurse | Sort-Object FullName)) {
+    $rel = $f.FullName.Substring($sofiaDir.Length).TrimStart('\', '/')
+    Test ("UTF-8 BOM: {0}" -f $rel) {
+        $bytes = [System.IO.File]::ReadAllBytes($f.FullName)
+        if ($bytes.Length -lt 3 -or $bytes[0] -ne 0xEF -or $bytes[1] -ne 0xBB -or $bytes[2] -ne 0xBF) {
+            throw 'файл сохранён без UTF-8 BOM — PowerShell 5.1 покажет кириллицу как мусор'
+        }
+    }
+}
