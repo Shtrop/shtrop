@@ -43,6 +43,13 @@
 .PARAMETER ComfyUrl
     База ComfyUI. По умолчанию http://127.0.0.1:8188.
 
+.PARAMETER ComfyPorts
+    Порты, на которых искать экземпляры ComfyUI: -ComfyPorts 8188,8189.
+    Пусто — искать самостоятельно: порт из -ComfyUrl плюс порты, которые
+    слушают рендер-процессы. Принимает и список, и строку через запятую:
+    при запуске через powershell -File аргумент приходит одной строкой, и
+    [int[]] склеил бы «8188,8189» в одно число.
+
 .PARAMETER RenderProcessPattern
     Образец пути процесса, по которому узнаётся рендер-воркер. Нужен там, где
     потребление по процессам недоступно и владельца приходится узнавать по
@@ -94,6 +101,7 @@ param(
     [int]    $GpuIndex = 0,
     [string] $ComfyUrl = 'http://127.0.0.1:8188',
     [string] $RenderProcessPattern = 'comfy|python|wan|infinitetalk',
+    [string[]] $ComfyPorts = @(),
     [string] $BaselineFile = (Join-Path ([System.IO.Path]::GetTempPath()) 'sofia_gpu_baseline.json'),
     [double] $Minutes = 15,
     [int]    $IntervalSeconds = 30,
@@ -410,6 +418,59 @@ function Get-ComfyState {
     return $res
 }
 
+# Проба одного порта показывает один экземпляр ComfyUI. Если на карте работает
+# второй, он остаётся невидимым: очередь на известном порту пуста, а карта
+# занята — и причина выглядит необъяснимой. Поэтому экземпляры ищутся по портам,
+# которые слушают сами рендер-процессы, а не по списку угаданных номеров.
+function Get-ComfyInstances {
+    param(
+        [string]   $PrimaryUrl,
+        [array]    $Owners,
+        [string]   $Pattern,
+        [string[]] $Ports = @()
+    )
+    $primaryPort = 8188
+    if ($PrimaryUrl -match ':(\d+)') { $primaryPort = [int]$Matches[1] }
+
+    # Разбираем и список, и строку через запятую: через powershell -File
+    # аргумент приходит одной строкой.
+    $wanted = @()
+    foreach ($item in $Ports) {
+        foreach ($piece in ([string]$item -split '[,;\s]+')) {
+            if ($piece -match '^\d+$') { $wanted += [int]$piece }
+        }
+    }
+
+    $candidates = New-Object System.Collections.Generic.List[int]
+    if ($wanted.Count -gt 0) {
+        foreach ($p in $wanted) { if (-not $candidates.Contains([int]$p)) { $candidates.Add([int]$p) } }
+    } else {
+        $candidates.Add($primaryPort)
+        $pids = @($Owners | Where-Object { $_.process -match $Pattern } | ForEach-Object { [string]$_.pid })
+        if ($pids.Count -gt 0) {
+            try {
+                $listen = Get-NetTCPConnection -State Listen -ErrorAction Stop
+                foreach ($c in $listen) {
+                    if ($pids -contains [string]$c.OwningProcess) {
+                        $port = [int]$c.LocalPort
+                        if (-not $candidates.Contains($port)) { $candidates.Add($port) }
+                    }
+                }
+            } catch { }
+        }
+    }
+
+    $found = @()
+    foreach ($port in $candidates) {
+        $url = "http://127.0.0.1:{0}" -f $port
+        $st = Get-ComfyState -Base $url
+        if ($st.reachable) {
+            $found += [ordered]@{ port = $port; url = $url; primary = ($port -eq $primaryPort); state = $st }
+        }
+    }
+    return @{ instances = @($found); probed = @($candidates) }
+}
+
 function Write-Result {
     param([string] $Verdict, [hashtable] $Extra = @{})
     $payload = [ordered]@{
@@ -670,9 +731,31 @@ switch ($Action) {
         Write-Head 'PREFLIGHT: можно ли отдавать GPU тяжёлой задаче'
         $gpu    = Get-GpuState -Index $GpuIndex
         $owners = Get-GpuOwners -Index $GpuIndex
-        $comfy  = Get-ComfyState -Base $ComfyUrl
+
+        $found = Get-ComfyInstances -PrimaryUrl $ComfyUrl -Owners $owners.owners `
+                                    -Pattern $RenderProcessPattern -Ports $ComfyPorts
+        $primary = @($found.instances | Where-Object { $_.primary }) | Select-Object -First 1
+        $comfy = if ($primary) { $primary.state } else { Get-ComfyState -Base $ComfyUrl }
+
+        # Несколько отвечающих экземпляров — это и есть нарушение правила одного
+        # владельца, причём доказанное: не догадка по именам процессов, а два
+        # живых ComfyUI, каждый со своей очередью.
+        if ($found.instances.Count -ge 2) {
+            $desc = (@($found.instances | ForEach-Object {
+                "порт {0} (выполняется {1}, ожидает {2})" -f $_.port, $_.state.running, $_.state.pending
+            }) -join '; ')
+            Add-Finding -Status 'FAIL' -Component 'экземпляры ComfyUI' `
+                        -Evidence ("отвечают {0} экземпляра: {1}" -f $found.instances.Count, $desc) `
+                        -NextAction 'на карте два независимых ComfyUI — нарушено ONE HEAVY GPU OWNER, оставить один'
+        }
+
         $verdict = Test-LeaseReady -Gpu $gpu -OwnerInfo $owners -Comfy $comfy
-        Write-Result -Verdict $verdict -Extra @{ gpu = $gpu; owners = $owners.owners; comfyui = $comfy }
+        if ($found.instances.Count -ge 2 -and $verdict -eq 'GO') { $verdict = 'NO_GO' }
+        Write-Result -Verdict $verdict -Extra @{
+            gpu = $gpu; owners = $owners.owners; comfyui = $comfy
+            comfy_instances = @($found.instances | ForEach-Object { [ordered]@{ port = $_.port; running = $_.state.running; pending = $_.state.pending } })
+            comfy_ports_probed = @($found.probed)
+        }
         if ($verdict -ne 'GO') {
             Write-Host '  Тяжёлый маршрут не запускать. CPU-работа (тренды, сценарии, аналитика) не блокируется.' -ForegroundColor Yellow
         }
