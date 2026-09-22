@@ -198,6 +198,98 @@ function Get-GpuOwners {
 # Список процессов на WDDM включает и графические задачи рабочего стола, поэтому
 # в нём десятки строк. Печатаем ограниченно: сначала то, что реально занимает
 # память, остальное — обрезанным списком имён.
+# Когда nvidia-smi не отдаёт used_memory, потребление по процессам всё ещё
+# доступно через счётчики производительности Windows — из них ту же картину
+# рисует диспетчер задач. Имена счётчиков локализованы, а имена экземпляров
+# ("pid_27900_luid_0x0_0xd8f1_phys_0") — нет, поэтому набор ищется по образцу
+# экземпляра, а не по названию.
+#
+# Неоднозначностей две: какой из счётчиков набора означает выделенную память и
+# какой адаптер наш (в системе может быть и встроенный GPU). Обе снимаются
+# одним приёмом: суммы считаются по каждой паре (счётчик, адаптер), и берётся
+# та, что ближе всего к занятости, измеренной nvidia-smi. Если ни одна пара не
+# попадает в разумный коридор вокруг этого значения, владелец остаётся
+# неизвестным — угадывать здесь нельзя.
+function Select-GpuCounterOwners {
+    param([array] $Samples, [double] $TargetUsedMiB)
+
+    if (-not $Samples -or $Samples.Count -eq 0) { return $null }
+
+    $rows = @()
+    foreach ($smp in $Samples) {
+        $path = [string]$smp.Path
+        if ($path -notmatch '\(([^)]*pid_(\d+)_luid_([0-9a-fA-Fx_]+?)_phys_\d+)\)\\(.+)$') { continue }
+        $rows += [pscustomobject]@{
+            Pid     = $Matches[2]
+            Luid    = $Matches[3]
+            Counter = $Matches[4]
+            Bytes   = [double]$smp.CookedValue
+        }
+    }
+    if ($rows.Count -eq 0) { return $null }
+
+    $best = $null
+    foreach ($g in ($rows | Group-Object Counter, Luid)) {
+        $sumMib = 0.0
+        foreach ($r in $g.Group) { $sumMib += $r.Bytes / 1MB }
+        $diff = [math]::Abs($sumMib - $TargetUsedMiB)
+        if ($null -eq $best -or $diff -lt $best.Diff) {
+            $best = [pscustomobject]@{ Diff = $diff; SumMib = $sumMib; Rows = $g.Group }
+        }
+    }
+    if ($null -eq $best) { return $null }
+
+    # Коридор вокруг измерения nvidia-smi: счётчики считают немного иначе, но
+    # расхождение в разы означает, что выбрана не та величина или не тот
+    # адаптер, и доверять ей нельзя.
+    if ($TargetUsedMiB -gt 0) {
+        $lo = $TargetUsedMiB * 0.5
+        $hi = $TargetUsedMiB * 1.5
+        if ($best.SumMib -lt $lo -or $best.SumMib -gt $hi) { return $null }
+    }
+
+    $byPid = @{}
+    foreach ($r in $best.Rows) {
+        if (-not $byPid.ContainsKey($r.Pid)) { $byPid[$r.Pid] = 0.0 }
+        $byPid[$r.Pid] += $r.Bytes / 1MB
+    }
+    $out = @()
+    foreach ($k in $byPid.Keys) {
+        $out += [ordered]@{ pid = $k; process = ''; used_mib = [math]::Round($byPid[$k]) }
+    }
+    return @{ owners = @($out); total_mib = [math]::Round($best.SumMib) }
+}
+
+function Get-GpuOwnersFromCounters {
+    param([double] $TargetUsedMiB, [array] $KnownOwners = @())
+    try {
+        $set = Get-Counter -ListSet * -ErrorAction Stop |
+               Where-Object { $_.PathsWithInstances -match 'pid_\d+_luid_.*_phys_\d' } |
+               Select-Object -First 1
+        if (-not $set) { return $null }
+        $paths = @($set.PathsWithInstances | Where-Object { $_ -match '_phys_\d' })
+        if ($paths.Count -eq 0) { return $null }
+        $samples = (Get-Counter -Counter $paths -ErrorAction Stop).CounterSamples
+    } catch {
+        return $null
+    }
+
+    $picked = Select-GpuCounterOwners -Samples $samples -TargetUsedMiB $TargetUsedMiB
+    if (-not $picked) { return $null }
+
+    # Имена берём из уже собранного списка nvidia-smi, а чего там нет —
+    # спрашиваем у системы.
+    foreach ($o in $picked.owners) {
+        $match = $KnownOwners | Where-Object { $_.pid -eq $o.pid } | Select-Object -First 1
+        if ($match) {
+            $o.process = $match.process
+        } else {
+            try { $o.process = (Get-Process -Id ([int]$o.pid) -ErrorAction Stop).ProcessName } catch { $o.process = ("pid {0}" -f $o.pid) }
+        }
+    }
+    return $picked
+}
+
 function Write-OwnerList {
     param([array] $Owners, [bool] $MemoryKnown, [int] $Max = 12)
     if ($MemoryKnown) {
@@ -311,10 +403,35 @@ function Test-LeaseReady {
                            $Gpu.name, $Gpu.used_mib, $Gpu.total_mib, $Gpu.util_gpu_pct, $Gpu.power_w, $Gpu.power_limit_w)
 
     # 1. Владелец
-    $heavy = @()
+    $heavyBlocking = $false
+
+    # Решение о тяжёлых владельцах одно и то же, откуда бы ни пришли цифры —
+    # от nvidia-smi или от счётчиков Windows. Отличается только подпись
+    # источника, чтобы в отчёте было видно, чем мерили.
+    function Test-HeavyOwners {
+        param([array] $Owners, [string] $Source)
+        $heavy = @($Owners | Where-Object { $null -ne $_.used_mib -and $_.used_mib -ge $HeavyMiB })
+        if ($heavy.Count -eq 0) {
+            Add-Finding -Status 'PASS' -Component 'владелец GPU' `
+                        -Evidence ("тяжёлых владельцев нет, аренда свободна (по данным {0})" -f $Source)
+            return $false
+        }
+        if ($heavy.Count -eq 1) {
+            Add-Finding -Status 'WARN' -Component 'владелец GPU' `
+                        -Evidence ("занято одним владельцем: pid {0} {1}, {2} MiB (по данным {3})" -f `
+                                   $heavy[0].pid, (Split-Path $heavy[0].process -Leaf), $heavy[0].used_mib, $Source) `
+                        -NextAction 'дождаться завершения текущей задачи — второй тяжёлый маршрут параллельно не запускать'
+            return $true
+        }
+        $names = ($heavy | ForEach-Object { "{0}({1} MiB)" -f (Split-Path $_.process -Leaf), $_.used_mib }) -join ', '
+        Add-Finding -Status 'FAIL' -Component 'владелец GPU' `
+                    -Evidence ("тяжёлых владельцев {0}: {1} (по данным {2})" -f $heavy.Count, $names, $Source) `
+                    -NextAction 'нарушено правило ONE HEAVY GPU OWNER — развести задачи по очереди, приоритет у production'
+        return $true
+    }
+
     if ($OwnerInfo.supported -and $OwnerInfo.memory_known) {
         Write-OwnerList -Owners $OwnerInfo.owners -MemoryKnown $true
-        $heavy = @($OwnerInfo.owners | Where-Object { $null -ne $_.used_mib -and $_.used_mib -ge $HeavyMiB })
 
         # Часть записей может прийти без used_memory. Если незакрытый остаток
         # занятой памяти сам дотягивает до порога, среди этих записей может
@@ -334,42 +451,38 @@ function Test-LeaseReady {
                         -NextAction 'среди них может быть ещё один тяжёлый владелец — тяжёлый маршрут не запускать'
             return 'NO_GO'
         }
-
-        if ($heavy.Count -eq 0) {
-            Add-Finding -Status 'PASS' -Component 'владелец GPU' -Evidence 'тяжёлых владельцев нет, аренда свободна'
-        } elseif ($heavy.Count -eq 1) {
-            Add-Finding -Status 'WARN' -Component 'владелец GPU' `
-                        -Evidence ("занято одним владельцем: pid {0} {1}, {2} MiB" -f $heavy[0].pid, (Split-Path $heavy[0].process -Leaf), $heavy[0].used_mib) `
-                        -NextAction 'дождаться завершения текущей задачи — второй тяжёлый маршрут параллельно не запускать'
-            $blocking = $true
-        } else {
-            $names = ($heavy | ForEach-Object { "{0}({1} MiB)" -f (Split-Path $_.process -Leaf), $_.used_mib }) -join ', '
-            Add-Finding -Status 'FAIL' -Component 'владелец GPU' `
-                        -Evidence ("тяжёлых владельцев {0}: {1}" -f $heavy.Count, $names) `
-                        -NextAction 'нарушено правило ONE HEAVY GPU OWNER — развести задачи по очереди, приоритет у production'
-            $blocking = $true
-        }
+        $heavyBlocking = Test-HeavyOwners -Owners $OwnerInfo.owners -Source 'nvidia-smi'
     } else {
-        # Потребление по процессам неизвестно. Решение принимается по суммарной
-        # занятости GPU, а не по пустым значениям: «не знаем сколько» никогда не
-        # значит «ноль».
-        if ($OwnerInfo.supported) {
-            Write-OwnerList -Owners $OwnerInfo.owners -MemoryKnown $false
-            $why = ("список процессов есть ({0} шт.), но used_memory не отдаётся — так ведёт себя WDDM" -f $OwnerInfo.owners.Count)
+        # Потребление по процессам от nvidia-smi неизвестно. Прежде чем признать
+        # владельца неустановимым, спрашиваем счётчики Windows: диспетчер задач
+        # эти же цифры показывает и на WDDM.
+        Write-Host '      used_memory не отдаётся — опрашиваю счётчики Windows...' -ForegroundColor DarkGray
+        $counters = Get-GpuOwnersFromCounters -TargetUsedMiB ([double]$Gpu.used_mib) -KnownOwners $OwnerInfo.owners
+
+        if ($counters) {
+            $sorted = @($counters.owners | Sort-Object { -[double]$_.used_mib })
+            Write-OwnerList -Owners $sorted -MemoryKnown $true
+            $heavyBlocking = Test-HeavyOwners -Owners $sorted -Source 'счётчики Windows'
         } else {
-            $why = ("список процессов недоступен: {0}" -f $OwnerInfo.raw)
-        }
-        if ($Gpu.used_mib -ge $HeavyMiB) {
-            Add-Finding -Status 'FAIL' -Component 'владелец GPU' `
-                        -Evidence ("{0}; при этом занято {1} MiB" -f $why, $Gpu.used_mib) `
-                        -NextAction 'владельца установить нельзя, а VRAM занята — тяжёлый маршрут не запускать'
-            $blocking = $true
-        } else {
-            Add-Finding -Status 'WARN' -Component 'владелец GPU' `
-                        -Evidence ("{0}; занято {1} MiB — ниже порога тяжёлой задачи" -f $why, $Gpu.used_mib) `
-                        -NextAction 'владелец не определяется, но GPU фактически свободен'
+            if ($OwnerInfo.supported) {
+                Write-OwnerList -Owners $OwnerInfo.owners -MemoryKnown $false
+                $why = ("список процессов есть ({0} шт.), но used_memory не отдаётся и счётчики Windows не помогли" -f $OwnerInfo.owners.Count)
+            } else {
+                $why = ("список процессов недоступен: {0}" -f $OwnerInfo.raw)
+            }
+            if ($Gpu.used_mib -ge $HeavyMiB) {
+                Add-Finding -Status 'FAIL' -Component 'владелец GPU' `
+                            -Evidence ("{0}; при этом занято {1} MiB" -f $why, $Gpu.used_mib) `
+                            -NextAction 'владельца установить нельзя, а VRAM занята — тяжёлый маршрут не запускать'
+                $heavyBlocking = $true
+            } else {
+                Add-Finding -Status 'WARN' -Component 'владелец GPU' `
+                            -Evidence ("{0}; занято {1} MiB — ниже порога тяжёлой задачи" -f $why, $Gpu.used_mib) `
+                            -NextAction 'владелец не определяется, но GPU фактически свободен'
+            }
         }
     }
+    if ($heavyBlocking) { $blocking = $true }
 
     # 2. ComfyUI: занят ли он работой и сколько памяти реально держит
     if (-not $Comfy.reachable) {
