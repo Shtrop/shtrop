@@ -306,12 +306,29 @@ try {
 $fails = @($findings | Where-Object Status -eq 'FAIL')
 $warns = @($findings | Where-Object Status -eq 'WARN')
 $passes = @($findings | Where-Object Status -eq 'PASS')
+$unknowns = @($findings | Where-Object Status -eq 'NOT_MEASURED')
+
+# Неизмеренные проверки участвуют в вердикте наравне с остальными. Иначе одна
+# удачная проверка из десяти давала бы PASS, а девять неизмеренных исчезали бы
+# из итога — ровно то превращение UNKNOWN в PASS, которого быть не должно.
+# Чистый PASS выставляется, только когда неизмеренных проверок нет вовсе.
 $verdict = if ($fails.Count) { 'FAIL' }
            elseif ($warns.Count) { 'WARN' }
+           elseif ($unknowns.Count) { 'NOT_MEASURED' }
            elseif ($passes.Count) { 'PASS' }
-           else { 'NOT_MEASURED' }   # всё упало в NOT_MEASURED — это не «здоров»
+           else { 'NOT_MEASURED' }
 
-Write-Head ("ВЕРДИКТ: {0}   (FAIL={1}  WARN={2})" -f $verdict, $fails.Count, $warns.Count)
+Write-Head ("ВЕРДИКТ: {0}   (FAIL={1}  WARN={2}  не измерено={3})" -f $verdict, $fails.Count, $warns.Count, $unknowns.Count)
+if ($unknowns.Count) {
+    Write-Host '  Не измерено — эти проверки НЕ являются пройденными:' -ForegroundColor Magenta
+    foreach ($u in $unknowns) {
+        Write-Host ("    {0}: {1}" -f $u.Component, $u.Evidence) -ForegroundColor Magenta
+    }
+    if ($warns.Count -or $fails.Count) {
+        Write-Host '  Вердикт ниже поставлен по измеренному; неизмеренное может его только ухудшить.' -ForegroundColor Magenta
+    }
+    Write-Host ''
+}
 foreach ($f in $fails + $warns) {
     Write-Host ("  {0,-5} {1}: {2}" -f $f.Status, $f.Component, $f.Evidence) -ForegroundColor $(if ($f.Status -eq 'FAIL') { 'Red' } else { 'Yellow' })
     if ($f.Next) { Write-Host ("        -> {0}" -f $f.Next) -ForegroundColor DarkGray }
