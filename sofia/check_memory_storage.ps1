@@ -206,8 +206,9 @@ try {
     foreach ($d in $pds) {
         $rc = $null
         try { $rc = $d | Get-StorageReliabilityCounter -ErrorAction Stop } catch { }
-        Write-Host ("  {0}  {1}  {2} ГБ  health={3}  status={4}" -f `
-            $d.DeviceId, $d.FriendlyName, [math]::Round($d.Size/1GB,0), $d.HealthStatus, $d.OperationalStatus)
+        Write-Host ("  {0}  {1}  {2} ГБ  health={3}  status={4}  прошивка={5}  шина={6}" -f `
+            $d.DeviceId, $d.FriendlyName, [math]::Round($d.Size/1GB,0), $d.HealthStatus, $d.OperationalStatus,
+            $d.FirmwareVersion, $d.BusType)
         if ($rc) {
             Write-Host ("      износ={0}%  темп={1}C  наработка={2} ч  ошибок чтения={3}  ошибок записи={4}" -f `
                 $rc.Wear, $rc.Temperature, $rc.PowerOnHours, $rc.ReadErrorsTotal, $rc.WriteErrorsTotal) -ForegroundColor DarkGray
@@ -260,6 +261,32 @@ try {
     }
 } catch {
     Add-F -Status 'NOT_MEASURED' -Component 'Флаг тома' -Evidence 'fsutil недоступен'
+}
+
+# ---------------------------------------------------------------------------
+Write-Head '7/7  Настройки аварийного дампа'
+try {
+    $cc = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CrashControl' -ErrorAction Stop
+    $kind = switch ([int]$cc.CrashDumpEnabled) {
+        0 { 'отключён' } 1 { 'полный' } 2 { 'дамп ядра' } 3 { 'малый (минидамп)' } 7 { 'автоматический' }
+        default { "код $($cc.CrashDumpEnabled)" }
+    }
+    Write-Host ("  Тип дампа      : {0}" -f $kind)
+    Write-Host ("  Файл дампа     : {0}" -f $cc.DumpFile)
+    Write-Host ("  Минидампы      : {0}" -f $cc.MinidumpDir)
+    Write-Host ("  Автоперезагрузка: {0}" -f $cc.AutoReboot)
+    if ([int]$cc.CrashDumpEnabled -eq 0) {
+        Add-F -Status 'FAIL' -Component 'Аварийный дамп' -Evidence 'запись дампа отключена' `
+              -Next 'без дампа причина краха не определяется — включить малый дамп'
+    } else {
+        Add-F -Status 'PASS' -Component 'Аварийный дамп' -Evidence ("включён: {0}" -f $kind)
+    }
+    if ([int]$cc.AutoReboot -eq 1) {
+        Write-Host '  Автоперезагрузка включена: синий экран может не успеть показаться,' -ForegroundColor DarkGray
+        Write-Host '  и внешне крах выглядит как внезапный ресет.' -ForegroundColor DarkGray
+    }
+} catch {
+    Add-F -Status 'NOT_MEASURED' -Component 'Аварийный дамп' -Evidence 'ветка CrashControl недоступна'
 }
 
 # ---------------------------------------------------------------------------
