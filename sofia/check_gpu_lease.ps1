@@ -158,21 +158,21 @@ function Get-GpuState {
     }
 }
 
-# На WDDM список compute-процессов часто недоступен: nvidia-smi отвечает
-# "Not Supported". Это не значит «никого нет» — это значит «не знаем», и
-# ниже такое состояние обрабатывается отдельно от пустого списка.
+# На WDDM nvidia-smi ведёт себя двумя разными способами, и их нельзя путать:
+# либо список compute-процессов не отдаётся вовсе ("Not Supported"), либо список
+# приходит, но used_memory у каждой записи равен [N/A]. Во втором случае имена
+# владельцев известны, а их потребление — нет, и считать «тяжёлых владельцев
+# нет» по пустым значениям нельзя: это ровно то превращение UNKNOWN в PASS,
+# от которого защищает весь остальной скрипт.
 function Get-GpuOwners {
     param([int] $Index)
     if (-not (Get-Command nvidia-smi -ErrorAction SilentlyContinue)) {
-        return @{ supported = $false; owners = @(); raw = 'nvidia-smi отсутствует' }
+        return @{ supported = $false; memory_known = $false; owners = @(); raw = 'nvidia-smi отсутствует' }
     }
     $q = & nvidia-smi -i $Index --query-compute-apps='pid,process_name,used_memory' --format=csv,noheader,nounits 2>&1
     $raw = ($q | Out-String).Trim()
-    if ($raw -match 'Not Supported|N/A\s*$') {
-        return @{ supported = $false; owners = @(); raw = $raw }
-    }
     if ($raw -match 'Failed|Error') {
-        return @{ supported = $false; owners = @(); raw = $raw }
+        return @{ supported = $false; memory_known = $false; owners = @(); raw = $raw }
     }
     $owners = @()
     foreach ($l in ($raw -split "`r?`n")) {
@@ -180,6 +180,7 @@ function Get-GpuOwners {
         if (-not $t) { continue }
         $p = $t.Split(',') | ForEach-Object { $_.Trim() }
         if ($p.Count -lt 3) { continue }
+        # "[N/A]", "Not Supported" и пустое значение одинаково означают «неизвестно»
         $mem = ($p[2] -replace '[^\d\.]', '')
         $owners += [ordered]@{
             pid       = $p[0]
@@ -187,7 +188,32 @@ function Get-GpuOwners {
             used_mib  = if ($mem) { [double]$mem } else { $null }
         }
     }
-    return @{ supported = $true; owners = @($owners); raw = $raw }
+    if ($owners.Count -eq 0) {
+        return @{ supported = $false; memory_known = $false; owners = @(); raw = $(if ($raw) { $raw } else { 'пустой ответ' }) }
+    }
+    $known = @($owners | Where-Object { $null -ne $_.used_mib })
+    return @{ supported = $true; memory_known = [bool]($known.Count -gt 0); owners = @($owners); raw = $raw }
+}
+
+# Список процессов на WDDM включает и графические задачи рабочего стола, поэтому
+# в нём десятки строк. Печатаем ограниченно: сначала то, что реально занимает
+# память, остальное — обрезанным списком имён.
+function Write-OwnerList {
+    param([array] $Owners, [bool] $MemoryKnown, [int] $Max = 12)
+    if ($MemoryKnown) {
+        $sorted = @($Owners | Sort-Object -Property @{ Expression = { if ($null -ne $_.used_mib) { $_.used_mib } else { -1 } } } -Descending)
+    } else {
+        $sorted = @($Owners)
+    }
+    $shown = @($sorted | Select-Object -First $Max)
+    foreach ($o in $shown) {
+        $mem = if ($null -ne $o.used_mib) { "{0} MiB" -f $o.used_mib } else { 'память неизвестна' }
+        $name = Split-Path $o.process -Leaf
+        Write-Host ("      pid {0,-8} {1,-44} {2}" -f $o.pid, $name, $mem) -ForegroundColor DarkGray
+    }
+    if ($sorted.Count -gt $shown.Count) {
+        Write-Host ("      ... и ещё {0} из {1} процессов на GPU" -f ($sorted.Count - $shown.Count), $sorted.Count) -ForegroundColor DarkGray
+    }
 }
 
 function Get-ComfyJson {
@@ -206,14 +232,22 @@ function Get-ComfyState {
         vram_free    = $null
         vram_total   = $null
         torch_free   = $null
+        torch_total  = $null
+        torch_held   = $null
         running      = $null
         pending      = $null
     }
     if ($stats.ok -and $stats.data.devices) {
         $d = @($stats.data.devices)[0]
-        if ($null -ne $d.vram_free)       { $res.vram_free  = [double]$d.vram_free / 1MB }
-        if ($null -ne $d.vram_total)      { $res.vram_total = [double]$d.vram_total / 1MB }
-        if ($null -ne $d.torch_vram_free) { $res.torch_free = [double]$d.torch_vram_free / 1MB }
+        if ($null -ne $d.vram_free)        { $res.vram_free   = [double]$d.vram_free / 1MB }
+        if ($null -ne $d.vram_total)       { $res.vram_total  = [double]$d.vram_total / 1MB }
+        if ($null -ne $d.torch_vram_free)  { $res.torch_free  = [double]$d.torch_vram_free / 1MB }
+        if ($null -ne $d.torch_vram_total) { $res.torch_total = [double]$d.torch_vram_total / 1MB }
+        # Выгружать имеет смысл только то, что torch реально держит. Свободное
+        # место внутри его резервации к освобождению отношения не имеет.
+        if ($null -ne $res.torch_total -and $null -ne $res.torch_free) {
+            $res.torch_held = [math]::Max(0, $res.torch_total - $res.torch_free)
+        }
     }
     if ($queue.ok -and $queue.data) {
         $res.running = @($queue.data.queue_running).Count
@@ -278,55 +312,66 @@ function Test-LeaseReady {
 
     # 1. Владелец
     $heavy = @()
-    if ($OwnerInfo.supported) {
-        $heavy = @($OwnerInfo.owners | Where-Object { $_.used_mib -ne $null -and $_.used_mib -ge $HeavyMiB })
+    if ($OwnerInfo.supported -and $OwnerInfo.memory_known) {
+        Write-OwnerList -Owners $OwnerInfo.owners -MemoryKnown $true
+        $heavy = @($OwnerInfo.owners | Where-Object { $null -ne $_.used_mib -and $_.used_mib -ge $HeavyMiB })
+
+        # Часть записей может прийти без used_memory. Если незакрытый остаток
+        # занятой памяти сам дотягивает до порога, среди этих записей может
+        # прятаться ещё один тяжёлый владелец, и молчать об этом нельзя.
+        $unknownOwners = @($OwnerInfo.owners | Where-Object { $null -eq $_.used_mib })
+        # Сумма считается перебором: элементы списка — hashtable, и
+        # Measure-Object -Property по их ключам суммы не даёт (молча вернёт
+        # пустоту, из-за чего всё занятое выглядело бы ничейным).
+        $accounted = 0.0
         foreach ($o in $OwnerInfo.owners) {
-            Write-Host ("      pid {0,-8} {1,-40} {2} MiB" -f $o.pid, $o.process, $o.used_mib) -ForegroundColor DarkGray
+            if ($null -ne $o.used_mib) { $accounted += [double]$o.used_mib }
         }
+        $unaccounted = [double]$Gpu.used_mib - $accounted
+        if ($unknownOwners.Count -gt 0 -and $unaccounted -ge $HeavyMiB) {
+            Add-Finding -Status 'FAIL' -Component 'владелец GPU' `
+                        -Evidence ("записей без used_memory: {0}; памяти ни за кем не числится: {1} MiB" -f $unknownOwners.Count, [math]::Round($unaccounted)) `
+                        -NextAction 'среди них может быть ещё один тяжёлый владелец — тяжёлый маршрут не запускать'
+            return 'NO_GO'
+        }
+
         if ($heavy.Count -eq 0) {
             Add-Finding -Status 'PASS' -Component 'владелец GPU' -Evidence 'тяжёлых владельцев нет, аренда свободна'
         } elseif ($heavy.Count -eq 1) {
             Add-Finding -Status 'WARN' -Component 'владелец GPU' `
-                        -Evidence ("занято одним владельцем: pid {0} {1}, {2} MiB" -f $heavy[0].pid, $heavy[0].process, $heavy[0].used_mib) `
+                        -Evidence ("занято одним владельцем: pid {0} {1}, {2} MiB" -f $heavy[0].pid, (Split-Path $heavy[0].process -Leaf), $heavy[0].used_mib) `
                         -NextAction 'дождаться завершения текущей задачи — второй тяжёлый маршрут параллельно не запускать'
             $blocking = $true
         } else {
-            $names = ($heavy | ForEach-Object { "{0}({1} MiB)" -f $_.process, $_.used_mib }) -join ', '
+            $names = ($heavy | ForEach-Object { "{0}({1} MiB)" -f (Split-Path $_.process -Leaf), $_.used_mib }) -join ', '
             Add-Finding -Status 'FAIL' -Component 'владелец GPU' `
                         -Evidence ("тяжёлых владельцев {0}: {1}" -f $heavy.Count, $names) `
                         -NextAction 'нарушено правило ONE HEAVY GPU OWNER — развести задачи по очереди, приоритет у production'
             $blocking = $true
         }
     } else {
-        # Имя владельца недоступно, но занятость VRAM измерима — решаем по ней.
+        # Потребление по процессам неизвестно. Решение принимается по суммарной
+        # занятости GPU, а не по пустым значениям: «не знаем сколько» никогда не
+        # значит «ноль».
+        if ($OwnerInfo.supported) {
+            Write-OwnerList -Owners $OwnerInfo.owners -MemoryKnown $false
+            $why = ("список процессов есть ({0} шт.), но used_memory не отдаётся — так ведёт себя WDDM" -f $OwnerInfo.owners.Count)
+        } else {
+            $why = ("список процессов недоступен: {0}" -f $OwnerInfo.raw)
+        }
         if ($Gpu.used_mib -ge $HeavyMiB) {
             Add-Finding -Status 'FAIL' -Component 'владелец GPU' `
-                        -Evidence ("список процессов недоступен ({0}), при этом занято {1} MiB" -f $OwnerInfo.raw, $Gpu.used_mib) `
+                        -Evidence ("{0}; при этом занято {1} MiB" -f $why, $Gpu.used_mib) `
                         -NextAction 'владельца установить нельзя, а VRAM занята — тяжёлый маршрут не запускать'
             $blocking = $true
         } else {
             Add-Finding -Status 'WARN' -Component 'владелец GPU' `
-                        -Evidence ("список процессов недоступен ({0}); занято {1} MiB — ниже порога тяжёлой задачи" -f $OwnerInfo.raw, $Gpu.used_mib) `
-                        -NextAction 'на WDDM это нормально: владелец не виден, но GPU фактически свободен'
+                        -Evidence ("{0}; занято {1} MiB — ниже порога тяжёлой задачи" -f $why, $Gpu.used_mib) `
+                        -NextAction 'владелец не определяется, но GPU фактически свободен'
         }
     }
 
-    # 2. Свободная VRAM
-    if ($null -eq $Gpu.free_mib) {
-        Add-Finding -Status 'NOT_MEASURED' -Component 'свободная VRAM' -Evidence 'значение не прочитано'
-        return 'NOT_MEASURED'
-    }
-    if ($Gpu.free_mib -ge $RequiredFreeMiB) {
-        Add-Finding -Status 'PASS' -Component 'свободная VRAM' `
-                    -Evidence ("{0} MiB свободно при требуемых {1} MiB" -f $Gpu.free_mib, $RequiredFreeMiB)
-    } else {
-        Add-Finding -Status 'FAIL' -Component 'свободная VRAM' `
-                    -Evidence ("{0} MiB свободно, требуется {1} MiB" -f $Gpu.free_mib, $RequiredFreeMiB) `
-                    -NextAction 'сначала освобождение: .\check_gpu_lease.ps1 -Action Release -Confirm (выгрузка моделей, не рестарт)'
-        $blocking = $true
-    }
-
-    # 3. ComfyUI: кто именно держит память и не занят ли он работой
+    # 2. ComfyUI: занят ли он работой и сколько памяти реально держит
     if (-not $Comfy.reachable) {
         Add-Finding -Status 'NOT_MEASURED' -Component 'ComfyUI' `
                     -Evidence ("нет ответа: {0}" -f $Comfy.error) `
@@ -341,9 +386,34 @@ function Test-LeaseReady {
     } else {
         Add-Finding -Status 'PASS' -Component 'ComfyUI' -Evidence $qtext
     }
-    if ($null -ne $Comfy.torch_free -and $null -ne $Comfy.vram_free) {
+    if ($null -ne $Comfy.torch_held -and $null -ne $Comfy.vram_free) {
         Add-Finding -Status 'PASS' -Component 'ComfyUI VRAM' `
-                    -Evidence ("свободно {0:N0} MiB, в кэше torch {1:N0} MiB" -f $Comfy.vram_free, $Comfy.torch_free)
+                    -Evidence ("по данным ComfyUI свободно {0:N0} MiB, torch держит {1:N0} MiB" -f $Comfy.vram_free, $Comfy.torch_held)
+    }
+
+    # 3. Свободная VRAM
+    if ($null -eq $Gpu.free_mib) {
+        Add-Finding -Status 'NOT_MEASURED' -Component 'свободная VRAM' -Evidence 'значение не прочитано'
+        return 'NOT_MEASURED'
+    }
+    if ($Gpu.free_mib -ge $RequiredFreeMiB) {
+        Add-Finding -Status 'PASS' -Component 'свободная VRAM' `
+                    -Evidence ("{0} MiB свободно при требуемых {1} MiB" -f $Gpu.free_mib, $RequiredFreeMiB)
+    } else {
+        # Советовать выгрузку моделей имеет смысл, только если их есть что
+        # выгружать. Когда torch почти ничего не держит, память занята другими
+        # процессами, и Release не сдвинет ничего — совет увёл бы в сторону.
+        $next = if ($null -eq $Comfy.torch_held) {
+            'проверить, что именно держит память: .\check_gpu_lease.ps1 -Action Release (dry-run, ничего не меняет)'
+        } elseif ($Comfy.torch_held -ge 1024) {
+            ("ComfyUI держит {0:N0} MiB — освобождение: .\check_gpu_lease.ps1 -Action Release -Confirm (выгрузка моделей, не рестарт)" -f $Comfy.torch_held)
+        } else {
+            ("ComfyUI держит всего {0:N0} MiB — выгрузка моделей не поможет: память занята другими процессами на GPU" -f $Comfy.torch_held)
+        }
+        Add-Finding -Status 'FAIL' -Component 'свободная VRAM' `
+                    -Evidence ("{0} MiB свободно, требуется {1} MiB" -f $Gpu.free_mib, $RequiredFreeMiB) `
+                    -NextAction $next
+        $blocking = $true
     }
 
     if ($blocking) { return 'NO_GO' }
