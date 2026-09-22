@@ -42,7 +42,15 @@ powershell -ExecutionPolicy Bypass -File .\diagnose_host_safe_hold.ps1
 - `%TEMP%\sofia_safehold_<timestamp>\safehold_report.json` — машиночитаемые доказательства;
 - `console.log` — полный транскрипт.
 
-Пришлите `safehold_report.json` — по нему ставится точный диагноз.
+Сразу после сбора получить диагноз, не отправляя отчёт никуда:
+
+```powershell
+.\analyze_safehold_report.ps1
+```
+
+Анализатор сам находит свежий отчёт, взвешивает улики по таблицам ниже,
+ранжирует гипотезы root cause и печатает одну минимальную команду следующего шага.
+Отчёт можно прислать и мне — но решение он выдаёт без этого.
 
 ---
 
@@ -78,10 +86,12 @@ powershell -ExecutionPolicy Bypass -File .\diagnose_host_safe_hold.ps1
 
 1. **Ограничить power limit GPU** (обратимо, без вскрытия корпуса):
    ```powershell
-   nvidia-smi -q -d POWER          # записать текущий лимит ДО изменения
-   nvidia-smi -pl <80% от max>     # применить
+   .\apply_safehold_fix.ps1 -Action PowerLimit -Percent 80            # dry-run, ничего не меняет
+   .\apply_safehold_fix.ps1 -Action PowerLimit -Percent 80 -Confirm   # применить
    ```
-   Откат: `nvidia-smi -pl <исходное значение>`.
+   Исходный лимит сохраняется в файл отката автоматически.
+   Откат: `.\apply_safehold_fix.ps1 -Action Rollback -Confirm`.
+   Скрипт не трогает `HOST_SAFE_HOLD.flag`, publishing state, сервисы и планировщик.
 
 2. **Запретить параллельные GPU-задачи** через `gpu_resource_scheduler` — один
    `gpu_render` в моменте. Изменение конфига: temp → validate → atomic replace, с backup.
@@ -99,13 +109,23 @@ powershell -ExecutionPolicy Bypass -File .\diagnose_host_safe_hold.ps1
 событий 41, подтверждённые повторным запуском этого скрипта. N задаёт владелец; разумный
 минимум — 48 ч с минимум одним полным production-циклом.
 
+Окно наблюдения собирается автоматически:
+
+```powershell
+.\watch_host_stability.ps1 -Hours 48
+```
+
+Скрипт снимает телеметрию GPU, ловит новые события 41/6008/1001 и в конце выдаёт
+`PASS`/`FAIL`/`NOT_MEASURED` с CSV и итоговым JSON. Ничего не изменяет.
+
 ---
 
 ## 4. Снятие hold и возврат в работу
 
 Только после выполнения п.3 и явного решения владельца:
 
-1. Повторный `diagnose_host_safe_hold.ps1` → в секции 1 должно быть 0 новых событий 41.
+1. `watch_host_stability.ps1 -Hours 48` → вердикт `PASS`, затем повторный
+   `diagnose_host_safe_hold.ps1` → в секции 1 должно быть 0 новых событий 41.
 2. Штатный `REBOOT_PRECHECK.ps1` → требовать `PASS`.
 3. Физический reboot выполняет владелец.
 4. Штатный `REBOOT_POSTCHECK.ps1` → требовать `PASS`.

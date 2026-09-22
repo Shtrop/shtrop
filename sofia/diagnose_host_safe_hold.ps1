@@ -43,7 +43,7 @@
 param(
     [string] $SofiaRoot = 'D:\AI_CONTENT\Sofia',
     [int]    $Days      = 7,
-    [string] $OutDir    = (Join-Path $env:TEMP ("sofia_safehold_{0}" -f (Get-Date -Format 'yyyyMMdd_HHmmss')))
+    [string] $OutDir    = (Join-Path ([System.IO.Path]::GetTempPath()) ("sofia_safehold_{0}" -f (Get-Date -Format 'yyyyMMdd_HHmmss')))
 )
 
 $ErrorActionPreference = 'Continue'
