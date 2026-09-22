@@ -90,7 +90,6 @@ $maxDraw = 0.0
 $samples = 0
 $eventsSeen = @()
 $wheaSeen = @()
-$eventLogBlocked = $false
 
 while ((Get-Date) -lt $end) {
     $now = Get-Date
@@ -114,6 +113,16 @@ while ((Get-Date) -lt $end) {
 
     $newEvents = 0
     $newWhea = 0
+
+    # Доступ к журналу может пропасть посреди окна (смена прав, политика, сбой
+    # службы). Get-SystemEvents возвращает при этом пустой результат, неотличимый
+    # от «событий не было», поэтому читаемость перепроверяется на каждом шаге и
+    # защёлкивается: один отказ делает всё окно NOT_MEASURED, а не PASS.
+    if (-not $eventLogBlocked -and -not (Test-SystemLogReadable)) {
+        $eventLogBlocked = $true
+        Write-Host ("  !! {0}  журнал System стал недоступен — окно больше не измеряется" -f $now.ToString('HH:mm:ss')) -ForegroundColor Magenta
+    }
+
     if (-not $eventLogBlocked) {
         $ev = Get-SystemEvents -Filter @{
             LogName   = 'System'
@@ -197,7 +206,11 @@ Write-Host ("  Пик температуры / потребления: {0} C / {
 Write-Host ("  CSV    : {0}" -f $csv)
 Write-Host ("  Итог   : {0}" -f $summary)
 Write-Host ''
-if ($verdict -eq 'PASS' -and $observed -ge 48) {
+if ($verdict -eq 'NOT_MEASURED') {
+    Write-Host '  Журнал System был недоступен — окно НЕ засчитывается.' -ForegroundColor Magenta
+    Write-Host '  Пустой список событий здесь означает «не измеряли», а не «крахов не было».' -ForegroundColor Magenta
+    Write-Host '  Перезапустите PowerShell от имени администратора и наберите окно заново.' -ForegroundColor Magenta
+} elseif ($verdict -eq 'PASS' -and $observed -ge 48) {
     Write-Host '  Критерий выхода из hold по наблюдениям выполнен.' -ForegroundColor Green
     Write-Host '  Снятие HOST_SAFE_HOLD.flag остаётся решением владельца и выполняется' -ForegroundColor Yellow
     Write-Host '  штатной процедурой governor после REBOOT_PRECHECK/POSTCHECK.' -ForegroundColor Yellow
