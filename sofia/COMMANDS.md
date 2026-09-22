@@ -93,6 +93,47 @@ Set-Location "$env:USERPROFILE\sofia_tools"; .\get_sofia_tools.ps1
 
 ---
 
+## 3a. Аудит студии (ничего не меняет)
+
+Другой слой: не про хост, а про саму студию. Нужна машина, на которой лежит
+дерево студии — без него аудит честно возвращает `BLOCKED` и код выхода 2.
+
+```powershell
+.\audit_agent_matrix.ps1                      # какие агенты реальны
+.\audit_agent_matrix.ps1 -FreshHours 72       # шире окно «недавнего запуска»
+.\audit_growth_readiness.ps1                  # какие звенья ростового контура замкнуты
+```
+
+Связать одно с другим — growth-аудит прочитает матрицу агентов и включит её в итог:
+
+```powershell
+.\audit_agent_matrix.ps1 -OutDir C:\Temp\sofia_audit
+.\audit_growth_readiness.ps1 -MatrixReport C:\Temp\sofia_audit\agent_matrix.json
+```
+
+Пороги под свою ситуацию:
+
+```powershell
+.\audit_growth_readiness.ps1 -LearningCases 10 -PhotoTarget 3 -ReelTarget 4
+.\audit_agent_matrix.ps1 -SofiaRoot 'D:\AI_CONTENT\Sofia'
+```
+
+Что читать в выводе:
+
+| Смотреть | Значит |
+|---|---|
+| `ACTIVE_REAL` | все пять улик на месте, роль работает |
+| `PARTIAL` / `SPEC_ONLY` | подключить существующее, нового агента не создавать |
+| `BROKEN` | запускается, но не производит output — чинить |
+| `DUPLICATE` | две точки входа на роль — оставить одну |
+| `MISSING` | только здесь уместно создавать новое |
+| `RETIRE` | точка входа без ссылок и запусков; скрипт ничего не удаляет |
+| `NOT_MEASURED` | не смогли посмотреть; это не провал и не успех |
+
+Подробности и порядок закрытия разрывов — `RUNBOOK_growth_autopilot.md`.
+
+---
+
 ## 4. Текущая последовательность по инциденту
 
 ```powershell
@@ -147,5 +188,6 @@ nvidia-smi -q -d TEMPERATURE,POWER,PERFORMANCE
 ## Границы
 
 Скрипты **никогда** не трогают `HOST_SAFE_HOLD.flag`, publishing state, `FROZEN`,
-сервисы, Task Scheduler и не удаляют файлы. Перезагрузка, изменения BIOS,
+сервисы, Task Scheduler и не удаляют файлы. Аудиты студии — тоже только чтение:
+они называют кандидатов на retire, но ничего не отключают и не удаляют. Перезагрузка, изменения BIOS,
 MemTest86 и перестановка планок — руки и решение владельца.
