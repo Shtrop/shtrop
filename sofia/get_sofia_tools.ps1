@@ -38,7 +38,24 @@ $files = @(
     'get_sofia_tools.ps1'
 )
 
-$base = "https://raw.githubusercontent.com/Shtrop/shtrop/$Branch/sofia"
+# Запрос по имени ветки уходит через кэш CDN и может вернуть копию до последнего
+# коммита. Ссылка на конкретный SHA неизменяема, поэтому всегда отдаёт нужное
+# содержимое. SHA берём из API, который кэшируется иначе.
+$ref = $Branch
+try {
+    $head = Invoke-RestMethod "https://api.github.com/repos/Shtrop/shtrop/commits/$Branch" `
+                              -Headers @{ 'User-Agent' = 'sofia-tools'; 'Accept' = 'application/vnd.github+json' }
+    if ($head.sha) {
+        $ref = $head.sha
+        Write-Host ("Коммит {0}: {1}" -f $Branch, $ref.Substring(0,12)) -ForegroundColor DarkGray
+        $when = $head.commit.committer.date
+        if ($when) { Write-Host ("Дата коммита : {0}" -f $when) -ForegroundColor DarkGray }
+    }
+} catch {
+    Write-Host ("Не удалось узнать SHA ветки ({0}) — качаю по имени ветки, возможен кэш." -f $_.Exception.Message) -ForegroundColor Yellow
+}
+
+$base = "https://raw.githubusercontent.com/Shtrop/shtrop/$ref/sofia"
 $stamp = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
