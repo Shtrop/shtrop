@@ -54,7 +54,7 @@ Write-Host ("Вывод   : {0}" -f $OutDir)
 Write-Host 'Прервать можно Ctrl+C — собранные данные останутся на месте.' -ForegroundColor DarkGray
 Write-Host ''
 
-'timestamp,temp_c,power_w,limit_w,util_pct,mem_used_mib,new_events_41' | Out-File -FilePath $csv -Encoding UTF8
+'timestamp,temp_c,power_w,limit_w,util_pct,mem_used_mib,new_events_41,new_whea' | Out-File -FilePath $csv -Encoding UTF8
 
 $hasNvidia = [bool](Get-Command nvidia-smi -ErrorAction SilentlyContinue)
 if (-not $hasNvidia) {
@@ -65,6 +65,7 @@ $maxTemp = 0.0
 $maxDraw = 0.0
 $samples = 0
 $eventsSeen = @()
+$wheaSeen = @()
 $eventLogBlocked = $false
 
 while ((Get-Date) -lt $end) {
@@ -88,6 +89,7 @@ while ((Get-Date) -lt $end) {
     }
 
     $newEvents = 0
+    $newWhea = 0
     if (-not $eventLogBlocked) {
         try {
             $ev = Get-WinEvent -FilterHashtable @{
@@ -109,22 +111,49 @@ while ((Get-Date) -lt $end) {
                 Write-Host '  Журнал System недоступен — перезапустите от имени администратора.' -ForegroundColor Magenta
             }
         }
+
+        # Корректируемые аппаратные ошибки появляются раньше крахов, поэтому
+        # они здесь не менее важны, чем сами ресеты.
+        try {
+            $wh = Get-WinEvent -FilterHashtable @{
+                LogName      = 'System'
+                ProviderName = 'Microsoft-Windows-WHEA-Logger'
+                StartTime    = $start
+            } -ErrorAction Stop
+            foreach ($w in $wh) {
+                $wkey = "{0}|{1}" -f $w.TimeCreated.ToString('o'), $w.Id
+                if ($wheaSeen -notcontains $wkey) {
+                    $wheaSeen += $wkey
+                    $newWhea++
+                    $addr = ''
+                    try {
+                        $wx = [xml]$w.ToXml()
+                        foreach ($d in $wx.Event.EventData.Data) {
+                            if ("$($d.Name)" -eq 'PhysicalAddress') { $addr = "$($d.'#text')" }
+                        }
+                    } catch { }
+                    $suffix = if ($addr -and $addr -ne '0') { " адрес $addr" } else { '' }
+                    Write-Host ("  !! {0}  WHEA Event {1}{2}" -f $w.TimeCreated, $w.Id, $suffix) -ForegroundColor Red
+                }
+            }
+        } catch { }
     }
 
-    ("{0},{1},{2},{3},{4},{5},{6}" -f $now.ToString('o'), $temp, $draw, $limit, $util, $mem, $newEvents) |
+    ("{0},{1},{2},{3},{4},{5},{6},{7}" -f $now.ToString('o'), $temp, $draw, $limit, $util, $mem, $newEvents, $newWhea) |
         Out-File -FilePath $csv -Append -Encoding UTF8
     $samples++
 
     if ($samples % 10 -eq 1) {
         $left = [math]::Round(($end - $now).TotalHours, 1)
-        Write-Host ("  {0}  temp={1}C  power={2}W  util={3}%  событий 41+: {4}  осталось {5} ч" -f `
-                    $now.ToString('HH:mm:ss'), $temp, $draw, $util, $eventsSeen.Count, $left)
+        Write-Host ("  {0}  temp={1}C  power={2}W  util={3}%  событий 41+: {4}  WHEA: {5}  осталось {6} ч" -f `
+                    $now.ToString('HH:mm:ss'), $temp, $draw, $util, $eventsSeen.Count, $wheaSeen.Count, $left)
     }
 
     Start-Sleep -Seconds $IntervalSeconds
 }
 
-$clean = ($eventsSeen.Count -eq 0 -and -not $eventLogBlocked)
+# Новая ошибка WHEA означает, что дефект живой, даже если крахов за окно не было.
+$clean = ($eventsSeen.Count -eq 0 -and $wheaSeen.Count -eq 0 -and -not $eventLogBlocked)
 $observed = [math]::Round(((Get-Date) - $start).TotalHours, 2)
 
 $verdict = if ($eventLogBlocked) { 'NOT_MEASURED' } elseif ($clean) { 'PASS' } else { 'FAIL' }
@@ -137,6 +166,7 @@ $result = [ordered]@{
     max_temp_c       = $maxTemp
     max_power_w      = $maxDraw
     events_detected  = @($eventsSeen)
+    whea_detected    = @($wheaSeen)
     event_log_blocked = $eventLogBlocked
     verdict          = $verdict
     csv              = $csv
@@ -145,7 +175,8 @@ $result | ConvertTo-Json -Depth 5 | Out-File -FilePath $summary -Encoding UTF8
 
 Write-Host ''
 Write-Host ('=' * 78) -ForegroundColor DarkCyan
-Write-Host ("  ВЕРДИКТ: {0}   окно {1} ч, событий 41/6008/1001: {2}" -f $verdict, $observed, $eventsSeen.Count) -ForegroundColor Cyan
+Write-Host ("  ВЕРДИКТ: {0}   окно {1} ч, событий 41/6008/1001: {2}, WHEA: {3}" -f `
+            $verdict, $observed, $eventsSeen.Count, $wheaSeen.Count) -ForegroundColor Cyan
 Write-Host ('=' * 78) -ForegroundColor DarkCyan
 Write-Host ("  Пик температуры / потребления: {0} C / {1} W" -f $maxTemp, $maxDraw)
 Write-Host ("  CSV    : {0}" -f $csv)
@@ -159,4 +190,9 @@ if ($verdict -eq 'PASS' -and $observed -ge 48) {
     Write-Host ("  Чисто, но окна мало: нужно 48 ч, наблюдали {0} ч. Продолжить наблюдение." -f $observed) -ForegroundColor Yellow
 } elseif ($verdict -eq 'FAIL') {
     Write-Host '  Хост всё ещё нестабилен: hold обязателен, fix не помог или причина другая.' -ForegroundColor Red
+    if ($wheaSeen.Count -gt 0 -and $eventsSeen.Count -eq 0) {
+        Write-Host '  Крахов не было, но появились новые ошибки WHEA: дефект памяти живой,' -ForegroundColor Red
+        Write-Host '  просто ещё не дошёл до краха. Новые адреса добавить в список исключений:' -ForegroundColor Red
+        Write-Host '    .\apply_safehold_fix.ps1 -Action BadMemoryList -Confirm' -ForegroundColor DarkGray
+    }
 }
