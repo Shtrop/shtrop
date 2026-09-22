@@ -64,7 +64,15 @@ Set-Location "$env:USERPROFILE\sofia_tools"; .\get_sofia_tools.ps1
 
 .\apply_safehold_fix.ps1 -Action PowerLimit -Percent 80        # показать план по GPU
 .\apply_safehold_fix.ps1 -Action PowerLimit -Percent 80 -Confirm
+
+.\apply_safehold_fix.ps1 -Action PowerLimitPersist             # показать план закрепления
+.\apply_safehold_fix.ps1 -Action PowerLimitPersist -Confirm    # закрепить текущий лимит
 ```
+
+`nvidia-smi -pl` живёт только до перезагрузки, а выход из hold по runbook
+требует reboot. Без `PowerLimitPersist` смягчение исчезает ровно в тот момент,
+когда производство возвращается под нагрузку, — а окно наблюдения при этом
+измеряло совсем другой режим питания. `Rollback` снимает закрепление первым.
 
 Адреса из отчёта MemTest86 добавляются вручную:
 
@@ -86,10 +94,29 @@ Set-Location "$env:USERPROFILE\sofia_tools"; .\get_sofia_tools.ps1
 ```powershell
 .\watch_host_stability.ps1 -Hours 48                       # окно для выхода из hold
 .\watch_host_stability.ps1 -Hours 24 -IntervalSeconds 30   # чаще опрос
+.\watch_host_stability.ps1 -Hours 48 -Resume               # продолжить окно после ресета
 ```
 
 Считает события 41/6008/1001 **и** новые ошибки WHEA. Любая новая ошибка WHEA
 проваливает окно: дефект живой, даже если крахов не было.
+
+В `stability_summary.json` смотреть **`hold_exit_ready`**, а не только
+`verdict`. `verdict` отвечает на вопрос «были ли крахи за окно», а
+`hold_exit_ready` — «можно ли по этому окну выходить из hold». Чистый час
+наблюдения даёт `verdict: PASS` и `hold_exit_ready: false`; причины перечислены
+в `hold_exit_blockers`.
+
+Право на выход снимают, кроме крахов:
+
+| Блокер | Что значит |
+|---|---|
+| `window_short` | окно короче требуемых 48 ч |
+| `event_log_blocked` | журнал System не читался — крахи могли быть не видны |
+| `power_limit_changed` | смягчение не держалось всё окно, наблюдали другой режим |
+| `crash_or_whea_in_window` | были события 41/6008/1001 или новые ошибки WHEA |
+
+После внезапного ресета продолжать тем же окном через `-Resume`: иначе событие
+41 от этого самого ресета останется до старта нового окна и не будет учтено.
 
 ---
 
@@ -104,15 +131,18 @@ Set-Location "$env:USERPROFILE\sofia_tools"; .\get_sofia_tools.ps1
 # 3. после перезагрузки — проверить, что всё на месте
 Set-Location "$env:USERPROFILE\sofia_tools"; .\get_sofia_tools.ps1
 .\apply_safehold_fix.ps1 -Action Status
+#    в Status смотреть строку «Закрепление»: если лимит применялся, но не
+#    закреплён, после этой перезагрузки его уже нет
 
 # 4. MemTest86 с флешки, минимум 4 прохода                (руки владельца)
 #    новые адреса из отчёта:
 #    .\apply_safehold_fix.ps1 -Action BadMemoryList -Address 0x... -Confirm
 
-# 5. окно наблюдения
+# 5. окно наблюдения (после ресета продолжать тем же окном: -Resume)
 .\watch_host_stability.ps1 -Hours 48
 
-# 6. если окно чистое — снятие HOST_SAFE_HOLD.flag штатной процедурой governor
+# 6. если в stability_summary.json hold_exit_ready = true — снятие
+#    HOST_SAFE_HOLD.flag штатной процедурой governor
 #    (решение владельца, скрипты флаг не трогают)
 ```
 
@@ -140,12 +170,39 @@ Get-ChildItem C:\Windows\Minidump | Sort-Object LastWriteTime -Descending | Sele
 
 # GPU
 nvidia-smi -q -d TEMPERATURE,POWER,PERFORMANCE
+
+# кто держит GPU и сколько VRAM (правило ONE HEAVY GPU OWNER)
+nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv
+
+# закреплённая задача восстановления power limit и её журнал
+schtasks /Query /TN SofiaAIStudio_GpuPowerLimit_0
+Get-Content "$env:ProgramData\SofiaAIStudio\sofia_gpu0_powerlimit.log" -Tail 5
 ```
+
+---
+
+## 6. Тесты набора
+
+Нужен PowerShell 7 (`pwsh`). Запускаются на любой машине: `nvidia-smi`,
+`schtasks` и `Get-WinEvent` подменяются заглушками, дерево студии не нужно.
+
+```powershell
+pwsh -NoProfile -File .\tests\run_tests.ps1
+pwsh -NoProfile -File .\tests\run_tests.ps1 -Filter watch
+```
+
+Код возврата — число проваленных тестов.
 
 ---
 
 ## Границы
 
 Скрипты **никогда** не трогают `HOST_SAFE_HOLD.flag`, publishing state, `FROZEN`,
-сервисы, Task Scheduler и не удаляют файлы. Перезагрузка, изменения BIOS,
-MemTest86 и перестановка планок — руки и решение владельца.
+сервисы и не удаляют файлы студии. Перезагрузка, изменения BIOS, MemTest86 и
+перестановка планок — руки и решение владельца.
+
+Одно исключение, названное явно: `-Action PowerLimitPersist -Confirm` создаёт
+ровно одну именованную задачу планировщика `SofiaAIStudio_GpuPowerLimit_<N>` и
+обёртку в `%ProgramData%\SofiaAIStudio`. Без `-Confirm` — только план.
+`-Action Rollback -Confirm` снимает задачу и удаляет обёртку; журнал применения
+остаётся как доказательство.
