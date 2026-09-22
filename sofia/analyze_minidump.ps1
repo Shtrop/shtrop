@@ -52,8 +52,14 @@ $found = @()
 # ---------------------------------------------------------------------------
 Write-Head '1/3  События BugCheck 1001'
 try {
+    # Текст события локализован, а имя провайдера отличается между версиями Windows,
+    # поэтому отбираем по признаку, который не зависит ни от того, ни от другого:
+    # наличие 8-значного кода остановки в сообщении.
     $ev = Get-WinEvent -FilterHashtable @{ LogName='System'; Id=1001; StartTime=$since } -ErrorAction Stop |
-          Where-Object { $_.ProviderName -match 'BugCheck' -or $_.Message -match 'bugcheck' }
+          Where-Object {
+              $_.ProviderName -match 'BugCheck|SystemErrorReporting' -or
+              $_.Message -match '(?i)bugcheck|0x[0-9a-f]{8}'
+          }
     if (-not $ev) {
         Write-Host '  Записей нет.' -ForegroundColor DarkGray
     }
