@@ -52,7 +52,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet('PowerLimit','Rollback','Status')]
+    [ValidateSet('PowerLimit','MemoryCompression','Rollback','Status')]
     [string] $Action = 'Status',
 
     [ValidateRange(50,100)]
@@ -67,6 +67,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $rollbackPath = Join-Path $StateDir ("gpu{0}_powerlimit_rollback.json" -f $GpuIndex)
+$mcRollbackPath = Join-Path $StateDir 'memory_compression_rollback.json'
+
+function Get-MemoryCompressionState {
+    if (-not (Get-Command Get-MMAgent -ErrorAction SilentlyContinue)) { return $null }
+    try { return [bool](Get-MMAgent).MemoryCompression } catch { return $null }
+}
 
 function Get-GpuPower {
     param([int]$Index)
@@ -89,6 +95,10 @@ function Get-GpuPower {
 function Show-State {
     param($Gpu)
     Write-Host ''
+    if (-not $Gpu) {
+        Write-Host ("GPU {0}: состояние недоступно ({1})" -f $GpuIndex, $script:gpuError) -ForegroundColor DarkGray
+        return
+    }
     Write-Host ("GPU {0}: {1}" -f $GpuIndex, $Gpu.Name) -ForegroundColor White
     Write-Host ("  power limit сейчас : {0} W  (диапазон платы {1}..{2} W)" -f $Gpu.Limit, $Gpu.MinLim, $Gpu.MaxLim)
     Write-Host ("  потребление / темп : {0} W / {1} C" -f $Gpu.Draw, $Gpu.Temp)
@@ -101,10 +111,14 @@ function Show-State {
     }
 }
 
-try {
-    $gpu = Get-GpuPower -Index $GpuIndex
-} catch {
-    Write-Host ("Не удалось прочитать состояние GPU: {0}" -f $_.Exception.Message) -ForegroundColor Red
+# Состояние GPU нужно не всем действиям: сжатие памяти к видеокарте отношения
+# не имеет, поэтому отсутствие nvidia-smi не должно блокировать его.
+$gpu = $null
+$gpuError = $null
+try { $gpu = Get-GpuPower -Index $GpuIndex } catch { $gpuError = $_.Exception.Message }
+
+if (-not $gpu -and $Action -eq 'PowerLimit') {
+    Write-Host ("Не удалось прочитать состояние GPU: {0}" -f $gpuError) -ForegroundColor Red
     Write-Host 'Проверьте, что драйвер NVIDIA установлен и nvidia-smi доступен в PATH.' -ForegroundColor Red
     exit 2
 }
@@ -113,8 +127,68 @@ switch ($Action) {
 
     'Status' {
         Show-State -Gpu $gpu
+        $mc = Get-MemoryCompressionState
+        Write-Host ''
+        if ($null -eq $mc) {
+            Write-Host 'Сжатие памяти : состояние не прочитано (нет Get-MMAgent)' -ForegroundColor DarkGray
+        } else {
+            Write-Host ("Сжатие памяти : {0}" -f $(if ($mc) { 'включено' } else { 'выключено' }))
+        }
+        if (Test-Path $mcRollbackPath) {
+            $rb = Get-Content $mcRollbackPath -Raw | ConvertFrom-Json
+            Write-Host ("  откат        : вернуть в {0} (сохранено {1})" -f `
+                        $(if ($rb.original_enabled) { 'включено' } else { 'выключено' }), $rb.saved_at) -ForegroundColor DarkGray
+        }
         Write-Host ''
         Write-Host 'HOST_SAFE_HOLD.flag этот скрипт не трогает ни при каких параметрах.' -ForegroundColor Yellow
+    }
+
+    'MemoryCompression' {
+        # 0x154 UNEXPECTED_STORE_EXCEPTION падает именно в менеджере сжатой памяти.
+        # Отключение убирает этот код из схемы; это не лечит сбойную планку,
+        # но снимает конкретный путь отказа и полностью обратимо.
+        $mc = Get-MemoryCompressionState
+        if ($null -eq $mc) {
+            Write-Host 'Get-MMAgent недоступен — действие невозможно на этой системе.' -ForegroundColor Red
+            exit 2
+        }
+        Write-Host ''
+        Write-Host ("Сжатие памяти сейчас: {0}" -f $(if ($mc) { 'включено' } else { 'выключено' })) -ForegroundColor White
+        if (-not $mc) {
+            Write-Host 'Уже выключено — делать нечего.' -ForegroundColor Yellow
+            break
+        }
+        Write-Host 'Планируется: выключить сжатие памяти (вступит в силу после перезагрузки).' -ForegroundColor Cyan
+
+        if (-not $Confirm) {
+            Write-Host ''
+            Write-Host 'DRY-RUN: ничего не изменено. Для применения добавьте -Confirm.' -ForegroundColor Yellow
+            break
+        }
+
+        New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
+        if (-not (Test-Path $mcRollbackPath)) {
+            [ordered]@{
+                setting          = 'MemoryCompression'
+                original_enabled = $mc
+                saved_at         = (Get-Date).ToString('o')
+                rollback_command = 'Enable-MMAgent -MemoryCompression'
+            } | ConvertTo-Json -Depth 3 | Out-File -FilePath $mcRollbackPath -Encoding UTF8
+            Write-Host ("Файл отката сохранён: {0}" -f $mcRollbackPath) -ForegroundColor Green
+        }
+
+        Disable-MMAgent -MemoryCompression
+        $after = Get-MemoryCompressionState
+        if ($after -eq $false) {
+            Write-Host ''
+            Write-Host 'PASS: сжатие памяти выключено.' -ForegroundColor Green
+            Write-Host 'Вступит в силу после перезагрузки — её выполняет владелец,' -ForegroundColor Yellow
+            Write-Host 'штатно: REBOOT_PRECHECK -> reboot -> REBOOT_POSTCHECK.' -ForegroundColor Yellow
+            Write-Host 'Откат: .\apply_safehold_fix.ps1 -Action Rollback -Confirm' -ForegroundColor DarkGray
+        } else {
+            Write-Host 'FAIL: состояние не изменилось — нужны права администратора.' -ForegroundColor Red
+            exit 1
+        }
     }
 
     'PowerLimit' {
@@ -170,9 +244,29 @@ switch ($Action) {
     }
 
     'Rollback' {
-        if (-not (Test-Path $rollbackPath)) {
-            Write-Host 'Файл отката не найден — откатывать нечего.' -ForegroundColor Yellow
-            Show-State -Gpu $gpu
+        $didSomething = $false
+
+        if (Test-Path $mcRollbackPath) {
+            $mcRb = Get-Content $mcRollbackPath -Raw | ConvertFrom-Json
+            $mcNow = Get-MemoryCompressionState
+            Write-Host ''
+            Write-Host ("Сжатие памяти: {0} -> {1}" -f `
+                        $(if ($mcNow) { 'включено' } else { 'выключено' }),
+                        $(if ($mcRb.original_enabled) { 'включено' } else { 'выключено' })) -ForegroundColor Cyan
+            if ($Confirm) {
+                if ($mcRb.original_enabled) { Enable-MMAgent -MemoryCompression } else { Disable-MMAgent -MemoryCompression }
+                Write-Host 'PASS: исходное состояние сжатия памяти восстановлено (нужна перезагрузка).' -ForegroundColor Green
+                $didSomething = $true
+            } else {
+                Write-Host 'DRY-RUN: добавьте -Confirm.' -ForegroundColor Yellow
+            }
+        }
+
+        if (-not (Test-Path $rollbackPath) -or -not $gpu) {
+            if (-not $didSomething) {
+                Write-Host 'По GPU откатывать нечего: нет файла отката или недоступен nvidia-smi.' -ForegroundColor Yellow
+                Show-State -Gpu $gpu
+            }
             break
         }
         $rb = Get-Content $rollbackPath -Raw | ConvertFrom-Json
