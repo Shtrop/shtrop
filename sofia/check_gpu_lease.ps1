@@ -43,6 +43,11 @@
 .PARAMETER ComfyUrl
     База ComfyUI. По умолчанию http://127.0.0.1:8188.
 
+.PARAMETER RenderProcessPattern
+    Образец пути процесса, по которому узнаётся рендер-воркер. Нужен там, где
+    потребление по процессам недоступно и владельца приходится узнавать по
+    имени. По умолчанию 'comfy|python|wan|infinitetalk'.
+
 .PARAMETER BaselineFile
     Файл базовой линии. По умолчанию %TEMP%\sofia_gpu_baseline.json.
 
@@ -88,6 +93,7 @@ param(
     [int]    $ToleranceMiB = 512,
     [int]    $GpuIndex = 0,
     [string] $ComfyUrl = 'http://127.0.0.1:8188',
+    [string] $RenderProcessPattern = 'comfy|python|wan|infinitetalk',
     [string] $BaselineFile = (Join-Path ([System.IO.Path]::GetTempPath()) 'sofia_gpu_baseline.json'),
     [double] $Minutes = 15,
     [int]    $IntervalSeconds = 30,
@@ -169,7 +175,7 @@ function Get-GpuOwners {
     if (-not (Get-Command nvidia-smi -ErrorAction SilentlyContinue)) {
         return @{ supported = $false; memory_known = $false; owners = @(); raw = 'nvidia-smi отсутствует' }
     }
-    $q = & nvidia-smi -i $Index --query-compute-apps='pid,process_name,used_memory' --format=csv,noheader,nounits 2>&1
+    $q = & nvidia-smi -i $Index --query-compute-apps='pid,process_name,used_gpu_memory' --format=csv,noheader,nounits 2>&1
     $raw = ($q | Out-String).Trim()
     if ($raw -match 'Failed|Error') {
         return @{ supported = $false; memory_known = $false; owners = @(); raw = $raw }
@@ -213,7 +219,7 @@ function Get-GpuOwners {
 function Select-GpuCounterOwners {
     param([array] $Samples, [double] $TargetUsedMiB)
 
-    if (-not $Samples -or $Samples.Count -eq 0) { return $null }
+    if (-not $Samples -or $Samples.Count -eq 0) { return @{ ok = $false; reason = 'счётчики не дали выборки' } }
 
     $rows = @()
     foreach ($smp in $Samples) {
@@ -226,7 +232,7 @@ function Select-GpuCounterOwners {
             Bytes   = [double]$smp.CookedValue
         }
     }
-    if ($rows.Count -eq 0) { return $null }
+    if ($rows.Count -eq 0) { return @{ ok = $false; reason = 'среди счётчиков нет экземпляров вида pid_..._luid_..._phys_N' } }
 
     $best = $null
     foreach ($g in ($rows | Group-Object Counter, Luid)) {
@@ -237,7 +243,7 @@ function Select-GpuCounterOwners {
             $best = [pscustomobject]@{ Diff = $diff; SumMib = $sumMib; Rows = $g.Group }
         }
     }
-    if ($null -eq $best) { return $null }
+    if ($null -eq $best) { return @{ ok = $false; reason = 'не из чего выбирать' } }
 
     # Коридор вокруг измерения nvidia-smi: счётчики считают немного иначе, но
     # расхождение в разы означает, что выбрана не та величина или не тот
@@ -245,7 +251,13 @@ function Select-GpuCounterOwners {
     if ($TargetUsedMiB -gt 0) {
         $lo = $TargetUsedMiB * 0.5
         $hi = $TargetUsedMiB * 1.5
-        if ($best.SumMib -lt $lo -or $best.SumMib -gt $hi) { return $null }
+        if ($best.SumMib -lt $lo -or $best.SumMib -gt $hi) {
+            # Расхождение в разы — счётчики видят не то, что nvidia-smi. Так
+            # бывает, когда память выделена через CUDA: диспетчер видеопамяти
+            # WDDM её процессам не приписывает. Возвращаем не просто «нет»,
+            # а величину расхождения: она сама по себе улика.
+            return @{ ok = $false; best_sum_mib = [math]::Round($best.SumMib); target_mib = [math]::Round($TargetUsedMiB) }
+        }
     }
 
     $byPid = @{}
@@ -257,7 +269,7 @@ function Select-GpuCounterOwners {
     foreach ($k in $byPid.Keys) {
         $out += [ordered]@{ pid = $k; process = ''; used_mib = [math]::Round($byPid[$k]) }
     }
-    return @{ owners = @($out); total_mib = [math]::Round($best.SumMib) }
+    return @{ ok = $true; owners = @($out); total_mib = [math]::Round($best.SumMib) }
 }
 
 function Get-GpuOwnersFromCounters {
@@ -266,16 +278,16 @@ function Get-GpuOwnersFromCounters {
         $set = Get-Counter -ListSet * -ErrorAction Stop |
                Where-Object { $_.PathsWithInstances -match 'pid_\d+_luid_.*_phys_\d' } |
                Select-Object -First 1
-        if (-not $set) { return $null }
+        if (-not $set) { return @{ ok = $false; reason = 'набор счётчиков GPU в системе не найден' } }
         $paths = @($set.PathsWithInstances | Where-Object { $_ -match '_phys_\d' })
-        if ($paths.Count -eq 0) { return $null }
+        if ($paths.Count -eq 0) { return @{ ok = $false; reason = 'в наборе нет экземпляров _phys_' } }
         $samples = (Get-Counter -Counter $paths -ErrorAction Stop).CounterSamples
     } catch {
-        return $null
+        return @{ ok = $false; reason = ("счётчики недоступны: {0}" -f $_.Exception.Message) }
     }
 
     $picked = Select-GpuCounterOwners -Samples $samples -TargetUsedMiB $TargetUsedMiB
-    if (-not $picked) { return $null }
+    if (-not $picked -or -not $picked.ok) { return $picked }
 
     # Имена берём из уже собранного списка nvidia-smi, а чего там нет —
     # спрашиваем у системы.
@@ -288,6 +300,56 @@ function Get-GpuOwnersFromCounters {
         }
     }
     return $picked
+}
+
+# Два процесса одного дерева — это один экземпляр с подпроцессом, а не два
+# владельца карты. Различать их обязательно: иначе каждый рендер, порождающий
+# воркер, выглядел бы нарушением правила одного владельца и глушил бы
+# production на ровном месте. Группы считаются по родству: процесс относится к
+# той же группе, что и его родитель, если родитель тоже держит GPU.
+function Select-OwnerGroups {
+    param([array] $Procs)   # элементы: pid, parent
+
+    $parentOf = @{}
+    foreach ($p in $Procs) { $parentOf[[string]$p.pid] = [string]$p.parent }
+
+    $rootOf = @{}
+    foreach ($p in $Procs) {
+        $cur = [string]$p.pid
+        $seen = @{}
+        while ($true) {
+            if ($seen.ContainsKey($cur)) { break }   # защита от цикла в данных
+            $seen[$cur] = $true
+            $par = $parentOf[$cur]
+            if (-not $par -or -not $parentOf.ContainsKey($par)) { break }
+            $cur = $par
+        }
+        $rootOf[[string]$p.pid] = $cur
+    }
+
+    $groups = @{}
+    foreach ($p in $Procs) {
+        $r = $rootOf[[string]$p.pid]
+        if (-not $groups.ContainsKey($r)) { $groups[$r] = @() }
+        $groups[$r] += $p
+    }
+    return $groups
+}
+
+function Add-ParentPids {
+    param([array] $Procs)
+    try {
+        $all = @{}
+        foreach ($w in (Get-CimInstance Win32_Process -ErrorAction Stop | Select-Object ProcessId, ParentProcessId)) {
+            $all[[string]$w.ProcessId] = [string]$w.ParentProcessId
+        }
+        foreach ($p in $Procs) {
+            $p.parent = $all[[string]$p.pid]
+        }
+        return $true
+    } catch {
+        return $false
+    }
 }
 
 function Write-OwnerList {
@@ -453,32 +515,76 @@ function Test-LeaseReady {
         }
         $heavyBlocking = Test-HeavyOwners -Owners $OwnerInfo.owners -Source 'nvidia-smi'
     } else {
-        # Потребление по процессам от nvidia-smi неизвестно. Прежде чем признать
-        # владельца неустановимым, спрашиваем счётчики Windows: диспетчер задач
-        # эти же цифры показывает и на WDDM.
-        Write-Host '      used_memory не отдаётся — опрашиваю счётчики Windows...' -ForegroundColor DarkGray
-        $counters = Get-GpuOwnersFromCounters -TargetUsedMiB ([double]$Gpu.used_mib) -KnownOwners $OwnerInfo.owners
+        # Потребление по процессам от nvidia-smi неизвестно. Прежде чем
+        # признать владельца неустановимым, пробуем три источника по
+        # убыванию надёжности: имена рендер-процессов, очередь самого
+        # ComfyUI и счётчики Windows.
 
-        if ($counters) {
-            $sorted = @($counters.owners | Sort-Object { -[double]$_.used_mib })
-            Write-OwnerList -Owners $sorted -MemoryKnown $true
-            $heavyBlocking = Test-HeavyOwners -Owners $sorted -Source 'счётчики Windows'
-        } else {
-            if ($OwnerInfo.supported) {
-                Write-OwnerList -Owners $OwnerInfo.owners -MemoryKnown $false
-                $why = ("список процессов есть ({0} шт.), но used_memory не отдаётся и счётчики Windows не помогли" -f $OwnerInfo.owners.Count)
+        # 1) Правило одного тяжёлого владельца проверяется по именам, а не по
+        #    памяти: два рендер-процесса на карте нарушают его независимо от
+        #    того, сколько мегабайт за каждым числится.
+        $renderish = @($OwnerInfo.owners | Where-Object { $_.process -match $RenderProcessPattern })
+        if ($renderish.Count -ge 2) {
+            foreach ($rp in $renderish) { if (-not $rp.Contains('parent')) { $rp['parent'] = $null } }
+            $haveTree = Add-ParentPids -Procs $renderish
+            $groups = if ($haveTree) { Select-OwnerGroups -Procs $renderish } else { $null }
+
+            if ($haveTree -and $groups.Keys.Count -lt 2) {
+                Write-Host ("      {0} рендер-процесса одного дерева — один экземпляр с подпроцессом" -f $renderish.Count) -ForegroundColor DarkGray
             } else {
-                $why = ("список процессов недоступен: {0}" -f $OwnerInfo.raw)
-            }
-            if ($Gpu.used_mib -ge $HeavyMiB) {
+                Write-OwnerList -Owners $renderish -MemoryKnown $false -Max 6
+                $list = (@($renderish | ForEach-Object { "pid {0}" -f $_.pid }) -join ', ')
+                $how = if ($haveTree) { ("{0} независимых дерева процессов" -f $groups.Keys.Count) } else { 'родство определить не удалось' }
                 Add-Finding -Status 'FAIL' -Component 'владелец GPU' `
-                            -Evidence ("{0}; при этом занято {1} MiB" -f $why, $Gpu.used_mib) `
-                            -NextAction 'владельца установить нельзя, а VRAM занята — тяжёлый маршрут не запускать'
-                $heavyBlocking = $true
+                            -Evidence ("на GPU {0} рендер-процесса ({1}), {2}; занято {3} MiB" -f $renderish.Count, $list, $how, $Gpu.used_mib) `
+                            -NextAction 'похоже на два экземпляра ComfyUI — проверить: Get-CimInstance Win32_Process -Filter "Name=''python.exe''" | Select ProcessId,ParentProcessId,CommandLine'
+                return 'NO_GO'
+            }
+        }
+
+        # 2) Очередь ComfyUI — самый надёжный признак владельца на этом хосте:
+        #    она отвечает на вопрос «кто занял карту» там, где ни nvidia-smi,
+        #    ни счётчики не отвечают.
+        if ($Comfy.reachable -and $Comfy.running -gt 0 -and $Gpu.used_mib -ge $HeavyMiB) {
+            Add-Finding -Status 'WARN' -Component 'владелец GPU' `
+                        -Evidence ("ComfyUI выполняет задачу, занято {0} MiB — владелец он (по очереди, не по nvidia-smi)" -f $Gpu.used_mib) `
+                        -NextAction 'дождаться завершения — второй тяжёлый маршрут параллельно не запускать'
+            $heavyBlocking = $true
+        } else {
+            # 3) Счётчики Windows.
+            Write-Host '      used_gpu_memory не отдаётся — опрашиваю счётчики Windows...' -ForegroundColor DarkGray
+            $counters = Get-GpuOwnersFromCounters -TargetUsedMiB ([double]$Gpu.used_mib) -KnownOwners $OwnerInfo.owners
+
+            if ($counters -and $counters.ok) {
+                $sorted = @($counters.owners | Sort-Object { -[double]$_.used_mib })
+                Write-OwnerList -Owners $sorted -MemoryKnown $true
+                $heavyBlocking = Test-HeavyOwners -Owners $sorted -Source 'счётчики Windows'
             } else {
-                Add-Finding -Status 'WARN' -Component 'владелец GPU' `
-                            -Evidence ("{0}; занято {1} MiB — ниже порога тяжёлой задачи" -f $why, $Gpu.used_mib) `
-                            -NextAction 'владелец не определяется, но GPU фактически свободен'
+                if ($OwnerInfo.supported) {
+                    Write-OwnerList -Owners $OwnerInfo.owners -MemoryKnown $false
+                    $why = ("список процессов есть ({0} шт.), но used_gpu_memory не отдаётся" -f $OwnerInfo.owners.Count)
+                } else {
+                    $why = ("список процессов недоступен: {0}" -f $OwnerInfo.raw)
+                }
+                # Расхождение счётчиков с nvidia-smi — не шум, а улика: так
+                # выглядит память, выделенная через CUDA, которую диспетчер
+                # видеопамяти процессам не приписывает.
+                $cnote = if ($counters -and $counters.best_sum_mib) {
+                    ("; счётчики Windows насчитали всего {0} MiB против {1} MiB у nvidia-smi — память выделена мимо них (обычно CUDA)" -f $counters.best_sum_mib, $counters.target_mib)
+                } elseif ($counters -and $counters.reason) {
+                    ("; счётчики не помогли: {0}" -f $counters.reason)
+                } else { '' }
+
+                if ($Gpu.used_mib -ge $HeavyMiB) {
+                    Add-Finding -Status 'FAIL' -Component 'владелец GPU' `
+                                -Evidence ("{0}; занято {1} MiB{2}" -f $why, $Gpu.used_mib, $cnote) `
+                                -NextAction 'владельца установить нельзя, а VRAM занята — тяжёлый маршрут не запускать'
+                    $heavyBlocking = $true
+                } else {
+                    Add-Finding -Status 'WARN' -Component 'владелец GPU' `
+                                -Evidence ("{0}; занято {1} MiB — ниже порога тяжёлой задачи{2}" -f $why, $Gpu.used_mib, $cnote) `
+                                -NextAction 'владелец не определяется, но GPU фактически свободен'
+                }
             }
         }
     }
@@ -502,6 +608,25 @@ function Test-LeaseReady {
     if ($null -ne $Comfy.torch_held -and $null -ne $Comfy.vram_free) {
         Add-Finding -Status 'PASS' -Component 'ComfyUI VRAM' `
                     -Evidence ("по данным ComfyUI свободно {0:N0} MiB, torch держит {1:N0} MiB" -f $Comfy.vram_free, $Comfy.torch_held)
+    }
+
+    # Очередь пуста, а карта занята и считает. Значит работу делает не этот
+    # ComfyUI: либо второй экземпляр, либо чужая программа, либо прошлая задача
+    # не отпустила память. Для инцидента с питанием это важнее всего
+    # остального: карта под нагрузкой, а владельца в production-контуре нет.
+    if ($Comfy.running -eq 0) {
+        $heldIdle = ($Gpu.used_mib -ge $HeavyMiB)
+        $busyIdle = ($null -ne $Gpu.util_gpu_pct -and $Gpu.util_gpu_pct -ge 20)
+        if ($heldIdle -or $busyIdle) {
+            $ev = "очередь ComfyUI пуста, но GPU занят: {0} MiB, util {1}%, {2} W" -f $Gpu.used_mib, $Gpu.util_gpu_pct, $Gpu.power_w
+            $na = if ($busyIdle) {
+                'карту грузит не этот ComfyUI — искать второй экземпляр или стороннюю программу; для инцидента с питанием это первоочередная улика'
+            } else {
+                'память не освобождена после прошлой задачи либо её держит другой процесс: .\check_gpu_lease.ps1 -Action Watch'
+            }
+            Add-Finding -Status 'FAIL' -Component 'нагрузка без очереди' -Evidence $ev -NextAction $na
+            $blocking = $true
+        }
     }
 
     # 3. Свободная VRAM
