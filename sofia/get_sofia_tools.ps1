@@ -29,12 +29,15 @@ $ErrorActionPreference = 'Stop'
 
 $files = @(
     'lib_bugcheck.ps1',
+    'lib_sofia_tree.ps1',
     'diagnose_host_safe_hold.ps1',
     'analyze_safehold_report.ps1',
     'analyze_minidump.ps1',
     'check_memory_storage.ps1',
     'watch_host_stability.ps1',
     'apply_safehold_fix.ps1',
+    'audit_agent_matrix.ps1',
+    'audit_growth_readiness.ps1',
     'get_sofia_tools.ps1'
 )
 
@@ -87,4 +90,8 @@ Write-Host '  .\analyze_safehold_report.ps1            диагноз и сле�
 Write-Host '  .\analyze_minidump.ps1                   код остановки из событий и дампов'
 Write-Host '  .\check_memory_storage.ps1               память, WHEA, SMART, диски'
 Write-Host '  .\watch_host_stability.ps1 -Hours 48     окно наблюдения для выхода из hold'
+Write-Host ''
+Write-Host 'Аудит студии (только чтение, нужна машина студии):' -ForegroundColor White
+Write-Host '  .\audit_agent_matrix.ps1                 какие агенты реальны'
+Write-Host '  .\audit_growth_readiness.ps1             какие звенья ростового контура замкнуты'
 Write-Host ''
