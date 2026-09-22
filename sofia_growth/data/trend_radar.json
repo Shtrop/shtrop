@@ -1,0 +1,199 @@
+{
+  "schema_version": "1.0",
+  "radar_date": "2026-09-21",
+  "window_days": 14,
+  "collected_by": "web research (open sources)",
+  "evidence_label": "AI ANALYSIS",
+  "disclaimer": "Сигналы собраны из открытых публикаций о платформе, а не из аккаунта Sofia. Это не REAL-метрики Instagram. Оценки attention — PREDICTED.",
+  "platform_rules": [
+    {
+      "id": "rank-sends-per-reach",
+      "title": "Sends per reach — сильнейший сигнал для нефолловерского охвата",
+      "detail": "DM-пересылки весят ~3-5x лайка для охвата вне подписчиков. Ориентир: 1-2% shares/reach — сильно, >3% — вирусное распространение через DM.",
+      "confidence": "high",
+      "source": "https://postproval.com/instagram-algorithm-2026-the-3-ranking-metrics-that-matter-most/"
+    },
+    {
+      "id": "rank-watch-time-total-seconds",
+      "title": "Watch completion — главная метрика Reels",
+      "detail": "Уточнение сентября: решает доля досмотров, а не сумма секунд. Ролик, который 1000 человек досмотрели и пересмотрели, обгоняет ролик, где 10000 отвалились на 3-й секунде.",
+      "confidence": "high",
+      "source": "https://www.usefastlane.ai/blog/instagram-algorithm-2026"
+    },
+    {
+      "id": "rank-skip-rate",
+      "title": "Skip rate стал ранжирующим сигналом",
+      "detail": "Слабые первые 1-2 секунды ограничивают дальность распространения ещё до набора просмотров. Хук обязан быть в первом кадре.",
+      "confidence": "medium",
+      "source": "https://www.usefastlane.ai/blog/instagram-reels-algorithm-2026"
+    },
+    {
+      "id": "rank-audition-non-followers",
+      "title": "Audition-механика: новый пост сначала тестируется на неподписчиках",
+      "detail": "Ранний отклик холодной аудитории определяет дальнейший охват — оптимизировать под понятность без контекста аккаунта.",
+      "confidence": "medium",
+      "source": "https://creatorflow.so/blog/instagram-algorithm-2026/"
+    },
+    {
+      "id": "rank-originality-penalty",
+      "title": "Оригинальный контент получает до 3x дистрибуции",
+      "detail": "Обновление сентября: оригинал, сделанный под Instagram, получает до 3x распространения против репостов и переработок. Водяные знаки TikTok и переиспользование старых постов без существенных добавлений понижаются в выдаче.",
+      "confidence": "high",
+      "source": "https://leeseohits.com/blog/industry-news/instagram-algorithm-update-2026-new-ranking-factors"
+    },
+    {
+      "id": "rank-longer-reels-reach",
+      "title": "Reels до 3 минут попадают в рекомендации",
+      "detail": "Длинный формат перестал быть штрафом, но конкурирует с retention-логикой. Использовать только под сильную историю.",
+      "confidence": "low",
+      "source": "https://www.fanpagekarma.com/insights/the-instagram-algorithm-2026-how-to-adapt-your-strategy/"
+    },
+    {
+      "id": "meta-shares-up-comments-down",
+      "title": "Сдвиг поведения: +12% shares, -16% comments год к году",
+      "detail": "Оптимизировать контент под «переслать другу», а не под дискуссию в комментариях.",
+      "confidence": "medium",
+      "source": "https://postproval.com/instagram-algorithm-2026-the-3-ranking-metrics-that-matter-most/"
+    },
+    {
+      "id": "rank-small-account-boost",
+      "title": "Платформа стала подталкивать небольшие аккаунты",
+      "detail": "В 2026 добавлен буст малых аккаунтов: размер аудитории меньше мешает попасть в рекомендации, если удержание и пересылки в норме. Для Sofia это значит, что низкий охват объясняется контентом и поверхностью, а не размером аккаунта.",
+      "confidence": "medium",
+      "source": "https://heropost.io/instagram-algorithm-changes-2026/"
+    },
+    {
+      "id": "rank-saves-alongside-sends",
+      "title": "Сохранения поднялись до уровня пересылок",
+      "detail": "Сентябрьские обзоры ставят saves и shares двумя сильнейшими сигналами вовлечения, лайки — слабейшим. Раньше saves шли заметно ниже sends.",
+      "confidence": "medium",
+      "source": "https://buffer.com/resources/instagram-algorithms/"
+    }
+  ],
+  "format_signals": [
+    {
+      "id": "fmt-raw-single-take",
+      "title": "Raw / single-take вместо глянца",
+      "detail": "Низкопродакшн, честный кадр и ясное мнение обгоняют вылизанные постановки.",
+      "sofia_fit": "high",
+      "production_cost": "low",
+      "confidence": "high",
+      "source": "https://creatorflow.so/blog/instagram-trends-2026-creators-marketers/"
+    },
+    {
+      "id": "fmt-flop-core",
+      "title": "Flop-Core: публикация своих провалов и неловких моментов",
+      "detail": "Формат работает на доверие и высокий share-rate. Для AI-персоны — способ снять «стерильность».",
+      "sofia_fit": "high",
+      "production_cost": "low",
+      "confidence": "medium",
+      "source": "https://creatorflow.so/blog/instagram-trends-2026-creators-marketers/"
+    },
+    {
+      "id": "fmt-10-10-habits",
+      "title": "10/10 Habits: рейтинговый хук на привычку/убеждение",
+      "detail": "Рейтинг в первом кадре даёт мгновенный хук и повод переслать.",
+      "sofia_fit": "medium",
+      "production_cost": "low",
+      "confidence": "medium",
+      "source": "https://manychat.com/blog/instagram-trends-for-creators-2026/"
+    },
+    {
+      "id": "fmt-this-or-that",
+      "title": "Game-форматы: this-or-that, blind ranking",
+      "detail": "Дают паузу и повтор просмотра — прямо кормят watch time и сохранения.",
+      "sofia_fit": "medium",
+      "production_cost": "medium",
+      "confidence": "medium",
+      "source": "https://later.com/blog/instagram-reels-trends/"
+    },
+    {
+      "id": "fmt-transition-sketch-to-reality",
+      "title": "Sketch-to-reality переходы",
+      "detail": "Сильный визуальный хук; для студии — дорогой GPU-путь, применять точечно.",
+      "sofia_fit": "medium",
+      "production_cost": "high",
+      "confidence": "medium",
+      "source": "https://www.socialpilot.co/blog/instagram-reels-trends"
+    },
+    {
+      "id": "fmt-storytime-direct-to-camera",
+      "title": "Storytime прямо в камеру",
+      "detail": "Требует надёжного lip-sync и стабильной identity — узкое место качества для AI-персоны.",
+      "sofia_fit": "medium",
+      "production_cost": "high",
+      "confidence": "medium",
+      "source": "https://newengen.com/insights/instagram-trends/"
+    },
+    {
+      "id": "fmt-saveable-carousel",
+      "title": "Сохраняемые карусели 8-10 слайдов, 4:5, хук <10 слов",
+      "detail": "Дешёвый для фото-pipeline способ добирать сохранения и профильные визиты вне Reels.",
+      "sofia_fit": "high",
+      "production_cost": "low",
+      "confidence": "medium",
+      "source": "https://make-influencer.ai/guides/ai-influencer-instagram"
+    },
+    {
+      "id": "fmt-episodic-series",
+      "title": "Эпизодические серии вместо разовых трендов",
+      "detail": "Возвращаемость и досматриваемость выше у контента с продолжением: зритель приходит за следующей частью, а не за одним роликом.",
+      "sofia_fit": "high",
+      "production_cost": "medium",
+      "confidence": "medium",
+      "source": "https://manychat.com/blog/instagram-trends-for-creators-2026/"
+    },
+    {
+      "id": "fmt-original-audio",
+      "title": "Оригинальное аудио вместо трендовых треков",
+      "detail": "Своё аудио сигнализирует алгоритму о свежем контенте и не попадает под понижение за переиспользование. Для студии с XTTS это дешёвый ход.",
+      "sofia_fit": "high",
+      "production_cost": "low",
+      "confidence": "medium",
+      "source": "https://thesocialcontentfactory.com/reel-trends"
+    }
+  ],
+  "audience_signals": [
+    {
+      "id": "aud-ai-disclosure-trust",
+      "title": "Доверие к AI-контенту упало: 60% (2023) → 26% (2026)",
+      "detail": "52% снижают вовлечение, если распознают нераскрытый AI. Проактивное раскрытие — единственный способ получить премию доверия.",
+      "impact_on_sofia": "critical",
+      "confidence": "medium",
+      "source": "https://wayin.ai/blog/ai-influencers-on-instagram/"
+    },
+    {
+      "id": "aud-virtual-engagement-premium",
+      "title": "Виртуальные инфлюенсеры: средний ER ~5.9% против ~1.9% у людей",
+      "detail": "Премия существует, но держится на качестве вовлечения, а не на размере аудитории.",
+      "impact_on_sofia": "positive",
+      "confidence": "low",
+      "source": "https://wayin.ai/blog/ai-influencers-on-instagram/"
+    },
+    {
+      "id": "aud-growth-timeline",
+      "title": "Реалистичный таймлайн: 1k подписчиков за 60-90 дней, 10k за 6-12 месяцев",
+      "detail": "Ориентир для постановки целей и оценки, работает ли цикл вообще.",
+      "impact_on_sofia": "planning",
+      "confidence": "low",
+      "source": "https://make-influencer.ai/guides/ai-influencer-instagram"
+    },
+    {
+      "id": "aud-cadence",
+      "title": "Каденция: 3-5 роликов в неделю, публикация вт-пт в часовом поясе аудитории",
+      "detail": "Сверять с runtime limits и очередью студии, а не наращивать вслепую.",
+      "impact_on_sofia": "planning",
+      "confidence": "low",
+      "source": "https://improvado.io/blog/instagram-growth-strategies"
+    },
+    {
+      "id": "aud-ai-profile-label-policy",
+      "title": "Instagram ограничивает охват нераскрытых AI-профилей",
+      "detail": "Meta объявила 31 августа 2026: аккаунты, построенные вокруг AI-персоны без раскрытия, получают пониженную дистрибуцию в рекомендациях, включая Reels и Explore. Метка 'AI creator' заменена на явную 'AI-generated profile'. Корректно раскрытый AI-профиль сохраняет обычный охват без штрафа.",
+      "impact_on_sofia": "critical",
+      "confidence": "high",
+      "source": "https://www.affiversemedia.com/instagram-undisclosed-ai-profile-reach-limits/"
+    }
+  ],
+  "previous_radar_date": "2026-09-15"
+}
