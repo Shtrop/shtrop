@@ -291,7 +291,9 @@ function Get-GpuOwnersFromCounters {
         if ($paths.Count -eq 0) { return @{ ok = $false; reason = 'в наборе нет экземпляров _phys_' } }
         $samples = (Get-Counter -Counter $paths -ErrorAction Stop).CounterSamples
     } catch {
-        return @{ ok = $false; reason = ("счётчики недоступны: {0}" -f $_.Exception.Message) }
+        # Текст исключения бывает многострочным и ломает таблицу находок.
+        $msg = (($_.Exception.Message -split "`r?`n")[0]).Trim()
+        return @{ ok = $false; reason = ("счётчики недоступны: {0}" -f $msg) }
     }
 
     $picked = Select-GpuCounterOwners -Samples $samples -TargetUsedMiB $TargetUsedMiB
@@ -385,9 +387,9 @@ function Get-ComfyJson {
 }
 
 function Get-ComfyState {
-    param([string] $Base)
-    $stats = Get-ComfyJson ("{0}/system_stats" -f $Base.TrimEnd('/'))
-    $queue = Get-ComfyJson ("{0}/queue" -f $Base.TrimEnd('/'))
+    param([string] $Base, [int] $TimeoutSec = 5)
+    $stats = Get-ComfyJson ("{0}/system_stats" -f $Base.TrimEnd('/')) $TimeoutSec
+    $queue = Get-ComfyJson ("{0}/queue" -f $Base.TrimEnd('/')) $TimeoutSec
     $res = [ordered]@{
         reachable    = [bool]($stats.ok -or $queue.ok)
         error        = if ($stats.ok) { $null } else { $stats.error }
@@ -460,15 +462,26 @@ function Get-ComfyInstances {
         }
     }
 
+    # Под образец рендер-процесса попадает любой python, а он может слушать
+    # десяток портов. Опрос каждого по общему таймауту растянул бы preflight на
+    # минуту, а preflight — это gate перед запуском, он обязан быть быстрым.
+    # Поэтому число кандидатов ограничено, а на разведку даётся короткий срок:
+    # ComfyUI на localhost отвечает мгновенно либо не отвечает вовсе.
+    $maxProbe = 12
+    $probeList = @($candidates | Select-Object -First $maxProbe)
+    $skipped = $candidates.Count - $probeList.Count
+
     $found = @()
-    foreach ($port in $candidates) {
+    foreach ($port in $probeList) {
         $url = "http://127.0.0.1:{0}" -f $port
-        $st = Get-ComfyState -Base $url
+        # Основной порт опрашивается обычным таймаутом: по нему потом читается
+        # очередь и VRAM, и ошибиться из-за спешки тут нельзя.
+        $st = if ($port -eq $primaryPort) { Get-ComfyState -Base $url } else { Get-ComfyState -Base $url -TimeoutSec 2 }
         if ($st.reachable) {
             $found += [ordered]@{ port = $port; url = $url; primary = ($port -eq $primaryPort); state = $st }
         }
     }
-    return @{ instances = @($found); probed = @($candidates) }
+    return @{ instances = @($found); probed = @($probeList); skipped_ports = $skipped }
 }
 
 function Write-Result {
@@ -510,7 +523,7 @@ function Get-ExitCode {
 # --- общий блок оценки владельца и свободной VRAM ---------------------------
 
 function Test-LeaseReady {
-    param([hashtable] $Gpu, [hashtable] $OwnerInfo, [hashtable] $Comfy)
+    param([hashtable] $Gpu, [hashtable] $OwnerInfo, [hashtable] $Comfy, [array] $Instances = @())
 
     $blocking = $false
 
@@ -606,9 +619,13 @@ function Test-LeaseReady {
         # 2) Очередь ComfyUI — самый надёжный признак владельца на этом хосте:
         #    она отвечает на вопрос «кто занял карту» там, где ни nvidia-smi,
         #    ни счётчики не отвечают.
-        if ($Comfy.reachable -and $Comfy.running -gt 0 -and $Gpu.used_mib -ge $HeavyMiB) {
+        $working = @($Instances | Where-Object { $_.state.running -gt 0 }) | Select-Object -First 1
+        if (-not $working -and $Comfy.reachable -and $Comfy.running -gt 0) {
+            $working = [ordered]@{ port = 'основной'; state = $Comfy }
+        }
+        if ($working -and $Gpu.used_mib -ge $HeavyMiB) {
             Add-Finding -Status 'WARN' -Component 'владелец GPU' `
-                        -Evidence ("ComfyUI выполняет задачу, занято {0} MiB — владелец он (по очереди, не по nvidia-smi)" -f $Gpu.used_mib) `
+                        -Evidence ("ComfyUI на порту {0} выполняет задачу, занято {1} MiB — владелец он (по очереди, не по nvidia-smi)" -f $working.port, $Gpu.used_mib) `
                         -NextAction 'дождаться завершения — второй тяжёлый маршрут параллельно не запускать'
             $heavyBlocking = $true
         } else {
@@ -675,7 +692,11 @@ function Test-LeaseReady {
     # ComfyUI: либо второй экземпляр, либо чужая программа, либо прошлая задача
     # не отпустила память. Для инцидента с питанием это важнее всего
     # остального: карта под нагрузкой, а владельца в production-контуре нет.
-    if ($Comfy.running -eq 0) {
+    # Если работу делает другой найденный экземпляр, пустая очередь основного —
+    # не аномалия, а объяснённая картина: аномалия это нагрузка, за которой не
+    # стоит ни один известный ComfyUI.
+    $anyWorking = @($Instances | Where-Object { $_.state.running -gt 0 }).Count -gt 0
+    if ($Comfy.running -eq 0 -and -not $anyWorking) {
         $heldIdle = ($Gpu.used_mib -ge $HeavyMiB)
         $busyIdle = ($null -ne $Gpu.util_gpu_pct -and $Gpu.util_gpu_pct -ge 20)
         if ($heldIdle -or $busyIdle) {
@@ -749,12 +770,13 @@ switch ($Action) {
                         -NextAction 'на карте два независимых ComfyUI — нарушено ONE HEAVY GPU OWNER, оставить один'
         }
 
-        $verdict = Test-LeaseReady -Gpu $gpu -OwnerInfo $owners -Comfy $comfy
+        $verdict = Test-LeaseReady -Gpu $gpu -OwnerInfo $owners -Comfy $comfy -Instances $found.instances
         if ($found.instances.Count -ge 2 -and $verdict -eq 'GO') { $verdict = 'NO_GO' }
         Write-Result -Verdict $verdict -Extra @{
             gpu = $gpu; owners = $owners.owners; comfyui = $comfy
             comfy_instances = @($found.instances | ForEach-Object { [ordered]@{ port = $_.port; running = $_.state.running; pending = $_.state.pending } })
             comfy_ports_probed = @($found.probed)
+            comfy_ports_skipped = $found.skipped_ports
         }
         if ($verdict -ne 'GO') {
             Write-Host '  Тяжёлый маршрут не запускать. CPU-работа (тренды, сценарии, аналитика) не блокируется.' -ForegroundColor Yellow
