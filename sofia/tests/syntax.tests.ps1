@@ -42,3 +42,16 @@ foreach ($f in (Get-ChildItem -Path $sofiaDir -Filter '*.ps1' -File -Recurse | S
         }
     }
 }
+
+# get_sofia_tools.ps1 скачивает набор по списку. Файл, которого нет в списке,
+# не доедет до машины студии, и скрипт, который его подключает, отвалится
+# ровно во время инцидента.
+Test 'get_sofia_tools.ps1 перечисляет все скрипты набора' {
+    $downloader = Join-Path $sofiaDir 'get_sofia_tools.ps1'
+    $text = Get-Content $downloader -Raw
+    foreach ($f in (Get-ChildItem -Path $sofiaDir -Filter '*.ps1' -File)) {
+        if ($text -notmatch [regex]::Escape($f.Name)) {
+            throw ("{0} не перечислен в get_sofia_tools.ps1" -f $f.Name)
+        }
+    }
+}

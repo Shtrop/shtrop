@@ -105,12 +105,17 @@ $fLimit    = Get-Finding 'GPU power limit'
 $fThrottle = Get-Finding 'GPU throttle reasons'
 $fUps      = Get-Finding 'UPS/батарея'
 $fHold     = Get-Finding 'HOST_SAFE_HOLD.flag'
+$fOwners   = Get-Finding 'GPU owners'
 
 $holdActive = ($fHold -and $fHold.status -eq 'FAIL')
 $noUps      = ($fUps -and $fUps.status -eq 'WARN')
 $thermalHit = (($fTemp -and $fTemp.status -in @('WARN','FAIL')) -or
                ($fThrottle -and $fThrottle.status -eq 'WARN'))
 $limitAtMax = ($fLimit -and $fLimit.status -eq 'WARN')
+# Несколько тяжёлых владельцев GPU — это не «две задачи», а удвоенный
+# транзиентный пик на той же линии питания.
+$multiOwner = ($fOwners -and $fOwners.status -eq 'FAIL')
+$orphanVram = ($s.gpu_owners -and [int]$s.gpu_owners.orphan_vram_mib -gt 0)
 
 Write-Head 'Улики'
 if ($blocked41) {
@@ -139,6 +144,11 @@ if ($corr.Count -gt 0) {
     Write-Host ("  Совпало с рендером      : {0} из {1} событий" -f $corrHits, $corr.Count)
 }
 Write-Host ("  HOST_SAFE_HOLD.flag     : {0}" -f $(if ($holdActive) { 'активен' } else { 'не активен' }))
+if ($s.gpu_owners) {
+    Write-Host ("  Тяжёлых владельцев GPU  : {0}{1}" -f $s.gpu_owners.heavy_count, `
+                $(if ($orphanVram) { (", осиротевшая VRAM {0} MiB" -f $s.gpu_owners.orphan_vram_mib) } else { '' })) `
+               -ForegroundColor $(if ($multiOwner) { 'Red' } else { 'Gray' })
+}
 
 # ---------------------------------------------------------------------------
 # Взвешивание гипотез
@@ -213,6 +223,10 @@ if (-not $blocked41) {
         if ($limitAtMax) {
             $h.gpu_transient += 1
             $why.gpu_transient += 'power limit равен максимуму платы — транзиентные пики ничем не ограничены'
+        }
+        if ($multiOwner) {
+            $h.gpu_transient += 2
+            $why.gpu_transient += ("нарушено ONE HEAVY GPU OWNER: {0} тяжёлых владельцев GPU одновременно — пики складываются" -f $s.gpu_owners.heavy_count)
         }
         if ($noUps) {
             $h.mains_psu += 1

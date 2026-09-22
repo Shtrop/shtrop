@@ -136,6 +136,10 @@ $since = (Get-Date).AddDays(-$Days)
 # 1. Kernel-Power 41 и родственные события
 # ---------------------------------------------------------------------------
 Write-Head '1/6  Журнал Windows: Kernel-Power 41 / 6008 / BugCheck 1001'
+$gpuLib = Join-Path $PSScriptRoot 'lib_gpu_owners.ps1'
+$script:HasGpuLib = Test-Path $gpuLib
+if ($script:HasGpuLib) { . $gpuLib }
+
 Invoke-Section 'kernel_power' {
     if (-not (Test-SystemLogReadable)) {
         Add-Finding -Status 'BLOCKED' -Component 'Kernel-Power 41' `
@@ -401,6 +405,7 @@ Invoke-Section 'gpu' {
     if (-not $nvsmi) {
         Add-Finding -Status 'NOT_MEASURED' -Component 'GPU' -Evidence 'nvidia-smi не найден в PATH'
     } else {
+        $memUsed = 0
         $q = & nvidia-smi --query-gpu='name,temperature.gpu,power.draw,power.limit,power.max_limit,clocks.sm,utilization.gpu,memory.used,memory.total' --format=csv,noheader 2>&1
         $script:Report.sections['gpu_query'] = ($q | Out-String).Trim()
         Write-Host ("  {0}" -f ($q | Out-String).Trim())
@@ -411,6 +416,7 @@ Invoke-Section 'gpu' {
             $draw  = [double]($fields[2] -replace '[^\d\.]', '')
             $limit = [double]($fields[3] -replace '[^\d\.]', '')
             $maxL  = [double]($fields[4] -replace '[^\d\.]', '')
+            if ($fields.Count -ge 8) { $memUsed = [int]([double]($fields[7] -replace '[^\d\.]', '')) }
             $tSt = if ($temp -ge 83) { 'FAIL' } elseif ($temp -ge 75) { 'WARN' } else { 'PASS' }
             Add-Finding -Status $tSt -Component 'GPU температура' -Evidence ("{0} C" -f $temp)
             if ($limit -ge $maxL) {
@@ -433,16 +439,47 @@ Invoke-Section 'gpu' {
             Add-Finding -Status 'PASS' -Component 'GPU throttle reasons' -Evidence 'активных причин нет'
         }
 
+        # «На GPU есть задачи» — не вывод. Важно, сколько тяжёлых владельцев и
+        # не держится ли VRAM без владельца вовсе: это разные дефекты.
         $procs = & nvidia-smi --query-compute-apps='pid,process_name,used_memory' --format=csv,noheader 2>&1
-        $script:Report.sections['gpu_processes'] = ($procs | Out-String).Trim()
-        if (($procs | Out-String).Trim()) {
-            Write-Host '  --- активные GPU-процессы ---' -ForegroundColor DarkGray
-            $procs | Write-Host
-            Add-Finding -Status 'WARN' -Component 'GPU processes' `
-                        -Evidence 'на GPU есть активные задачи' `
-                        -NextAction 'при активном safe hold рендеров быть не должно — проверить, кто владелец процесса'
+        $procText = ($procs | Out-String).Trim()
+        $script:Report.sections['gpu_processes'] = $procText
+
+        if ($script:HasGpuLib) {
+            $holdActive = [bool]$script:Report.sections['host_safe_hold']
+            $apps = ConvertFrom-NvidiaComputeApps -Text $procText
+            $own  = Get-GpuOwnerReport -Apps $apps -MemoryUsedMiB $memUsed -HoldActive $holdActive
+
+            $script:Report.sections['gpu_owners'] = [ordered]@{
+                heavy_count     = $own.HeavyCount
+                heavy_used_mib  = $own.HeavyUsedMiB
+                orphan_vram_mib = $own.OrphanVramMiB
+                hold_active     = $holdActive
+                apps            = @($own.Apps | ForEach-Object {
+                    [ordered]@{ pid = $_.Pid; name = $_.Name; used_mib = $_.UsedMiB; class = $_.Class }
+                })
+            }
+
+            if ($own.Apps.Count -gt 0) {
+                Write-Host '  --- владельцы GPU ---' -ForegroundColor DarkGray
+                foreach ($a in $own.Apps) {
+                    Write-Host ("    {0,-24} pid {1,-8} {2,7} MiB  [{3}]" -f $a.Name, $a.Pid, $a.UsedMiB, $a.Class)
+                }
+            }
+
+            Add-Finding -Status $own.Status -Component 'GPU owners' `
+                        -Evidence $own.Evidence -NextAction $own.NextAction
         } else {
-            Add-Finding -Status 'PASS' -Component 'GPU processes' -Evidence 'активных GPU-задач нет (ожидаемо при hold)'
+            # Библиотеки рядом нет — не отказываемся собирать доказательства.
+            if ($procText) {
+                Write-Host '  --- активные GPU-процессы ---' -ForegroundColor DarkGray
+                $procs | Write-Host
+                Add-Finding -Status 'WARN' -Component 'GPU processes' `
+                            -Evidence 'на GPU есть активные задачи, lib_gpu_owners.ps1 рядом не найден' `
+                            -NextAction 'скачать lib_gpu_owners.ps1 из того же каталога репозитория и повторить'
+            } else {
+                Add-Finding -Status 'PASS' -Component 'GPU processes' -Evidence 'активных GPU-задач нет (ожидаемо при hold)'
+            }
         }
     }
 
