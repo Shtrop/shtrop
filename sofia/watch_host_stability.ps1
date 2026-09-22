@@ -166,7 +166,15 @@ if ($Resume -and (Test-Path $statePath)) {
                     # Признак «режим подтверждён» переносится как есть и заново
                     # не вычисляется: иначе возобновление с другим -IntervalSeconds
                     # задним числом снимало бы уже доказанный откат лимита.
-                    [pscustomobject]@{ W = [double]$_.w; Seconds = [int]$_.seconds; Settled = [bool]$_.settled }
+                    #
+                    # Промежуточная версия набора писала режимы без этого поля.
+                    # Считать такие режимы неподтверждёнными нельзя: доказанный
+                    # откат лимита молча перестал бы блокировать выход. Для них
+                    # признак восстанавливается по накопленному времени.
+                    $hasFlag = ($_.PSObject.Properties.Name -contains 'settled')
+                    $sec = [int]$_.seconds
+                    $isSettled = if ($hasFlag) { [bool]$_.settled } else { $sec -ge (2 * $IntervalSeconds) }
+                    [pscustomobject]@{ W = [double]$_.w; Seconds = $sec; Settled = $isSettled }
                 })
             } elseif ($prev.power_limit_values) {
                 # Состояние от прежней версии набора: список значений без
@@ -396,7 +404,12 @@ $limitChanged = ($settled.Count -gt 1)
 # но и запирать навсегда тоже: признак снимается сам, стоит продолжить окно.
 $limitUnsettled = $false
 $limitUnsettledWhy = ''
-if ($null -ne $limitLast) {
+if ($hasNvidia -and $null -eq $limitLast) {
+    # nvidia-smi есть, но лимит не прочитался ни разу: это меньше доказательств,
+    # чем «ни один режим не подтверждён», и молчать тут нельзя.
+    $limitUnsettled = $true
+    $limitUnsettledWhy = 'power limit не прочитался ни разу за окно, хотя nvidia-smi доступен'
+} elseif ($null -ne $limitLast) {
     if ($settled.Count -eq 0) {
         $limitUnsettled = $true
         $limitUnsettledWhy = ("ни один режим не подтверждён наблюдением, карта сейчас на {0} W" -f [int]$limitLast)
@@ -425,9 +438,12 @@ if ($limitChanged) {
 # набранные до него часы. Засчитывать их как доказательство по лимиту нельзя,
 # поэтому окно по питанию набирается заново — и этот блокер снимается сам,
 # как только после миграции набрано требуемое наблюдение.
+$migrationBlocks = $false
+$sinceMigration = $null
 if ($null -ne $script:ObservedAtMigration) {
     $sinceMigration = [math]::Round($observed - [double]$script:ObservedAtMigration, 2)
     if ($sinceMigration -lt $RequiredHours) {
+        $migrationBlocks = $true
         $blockers += ("power_limit_state_migrated: после переноса состояния набрано {0} ч из требуемых {1} ч — чем питались прежние часы, состояние не говорит" -f `
                       $sinceMigration, $RequiredHours)
     }
@@ -453,7 +469,12 @@ $result = [ordered]@{
     power_limit_changed = $limitChanged
     power_limit_settle_seconds = $LimitSettleSeconds
     power_limit_unsettled = $limitUnsettled
-    power_limit_state_migrated = ($null -ne $script:ObservedAtMigration)
+    # Имя совпадает с именем блокера, поэтому и значение — про блокер: иначе
+    # в отчёте оказалось бы power_limit_state_migrated = true рядом с
+    # hold_exit_ready = true. Сам факт переноса виден в observed_hours_at_migration.
+    power_limit_state_migrated = $migrationBlocks
+    observed_hours_at_migration = $script:ObservedAtMigration
+    observed_hours_since_migration = $sinceMigration
     power_limit_regimes = @($limitRegimes | ForEach-Object {
         [ordered]@{ w = $_.W; seconds = $_.Seconds; settled = $_.Settled }
     })
