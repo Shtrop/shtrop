@@ -34,8 +34,11 @@ $files = @(
     'analyze_minidump.ps1',
     'check_memory_storage.ps1',
     'watch_host_stability.ps1',
+    'check_gpu_lease.ps1',
     'apply_safehold_fix.ps1',
-    'get_sofia_tools.ps1'
+    'get_sofia_tools.ps1',
+    'COMMANDS.md',
+    'RUNBOOK_host_safe_hold.md'
 )
 
 # Запрос по имени ветки уходит через кэш CDN и может вернуть копию до последнего
@@ -87,4 +90,5 @@ Write-Host '  .\analyze_safehold_report.ps1            диагноз и сле�
 Write-Host '  .\analyze_minidump.ps1                   код остановки из событий и дампов'
 Write-Host '  .\check_memory_storage.ps1               память, WHEA, SMART, диски'
 Write-Host '  .\watch_host_stability.ps1 -Hours 48     окно наблюдения для выхода из hold'
+Write-Host '  .\check_gpu_lease.ps1                    можно ли отдавать GPU тяжёлой задаче'
 Write-Host ''
