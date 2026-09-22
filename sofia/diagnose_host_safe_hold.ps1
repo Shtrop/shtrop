@@ -119,6 +119,20 @@ function Invoke-Section {
     }
 }
 
+function Invoke-Probe {
+    # Секция состоит из независимых зондов, и один сбойный не должен уносить
+    # остальные: отказ WMI иначе прячет и ИБП, и схему питания, и планировщик
+    # под одной строкой NOT_MEASURED — ровно тогда, когда они нужнее всего.
+    param([string]$Name, [scriptblock]$Body)
+    try {
+        & $Body
+    } catch {
+        Add-Finding -Status 'NOT_MEASURED' -Component $Name `
+                    -Evidence ("зонд не выполнен: {0}" -f $_.Exception.Message) `
+                    -NextAction 'остальные проверки секции не пострадали — разбирать только этот источник'
+    }
+}
+
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $transcript = Join-Path $OutDir 'console.log'
 try { Start-Transcript -Path $transcript -Force | Out-Null } catch { }
@@ -139,6 +153,10 @@ Write-Head '1/6  Журнал Windows: Kernel-Power 41 / 6008 / BugCheck 1001'
 $gpuLib = Join-Path $PSScriptRoot 'lib_gpu_owners.ps1'
 $script:HasGpuLib = Test-Path $gpuLib
 if ($script:HasGpuLib) { . $gpuLib }
+
+$taskLib = Join-Path $PSScriptRoot 'lib_task_results.ps1'
+$script:HasTaskLib = Test-Path $taskLib
+if ($script:HasTaskLib) { . $taskLib }
 
 Invoke-Section 'kernel_power' {
     if (-not (Test-SystemLogReadable)) {
@@ -612,6 +630,7 @@ Invoke-Section 'services' {
 # ---------------------------------------------------------------------------
 Write-Head '6/6  Аптайм, профиль питания, задачи Sofia (read-only)'
 Invoke-Section 'host' {
+  Invoke-Probe 'Uptime' {
     $os = Get-CimInstance Win32_OperatingSystem
     $up = (Get-Date) - $os.LastBootUpTime
     $script:Report.sections['uptime'] = [ordered]@{
@@ -621,7 +640,9 @@ Invoke-Section 'host' {
     Add-Finding -Status $(if ($up.TotalHours -lt 12) { 'WARN' } else { 'PASS' }) `
                 -Component 'Uptime' `
                 -Evidence ("последняя загрузка {0} ({1} ч назад)" -f $os.LastBootUpTime, [math]::Round($up.TotalHours,1))
+  }
 
+  Invoke-Probe 'UPS/батарея' {
     $bat = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue
     $script:Report.sections['ups_battery'] = if ($bat) {
         @($bat | ForEach-Object { [ordered]@{ name = $_.Name; status = $_.Status; charge = $_.EstimatedChargeRemaining } })
@@ -633,11 +654,15 @@ Invoke-Section 'host' {
                     -Evidence 'ИБП системе не виден' `
                     -NextAction 'при подтверждённых событиях 41 без BSOD — ИБП закрывает класс причин целиком'
     }
+  }
 
+  Invoke-Probe 'Схема питания' {
     $scheme = (& powercfg /getactivescheme 2>&1 | Out-String).Trim()
     $script:Report.sections['power_scheme'] = $scheme
     Write-Host ("  {0}" -f $scheme)
+  }
 
+  Invoke-Probe 'Task Scheduler' {
     try {
         $tasks = Get-ScheduledTask -ErrorAction Stop |
                  Where-Object { $_.TaskName -match 'sofia|comfy|reel|render|govern' -or $_.TaskPath -match 'Sofia' }
@@ -653,20 +678,60 @@ Invoke-Section 'host' {
             }
         })
         $script:Report.sections['scheduled_tasks'] = $trows
-        if ($trows.Count -gt 0) {
+        if ($trows.Count -gt 0 -and $script:HasTaskLib) {
+            # «Ненулевой код» — не синоним отказа: планировщик возвращает и свои
+            # коды состояния (выполняется, ни разу не запускалась, в очереди).
+            # Считать их провалами — получить десятки несуществующих отказов.
+            $sum = Get-TaskFailureSummary -Tasks ($trows | ForEach-Object { [pscustomobject]$_ })
+
+            $script:Report.sections['scheduled_tasks_summary'] = [ordered]@{
+                total        = $sum.Total
+                ok_count     = $sum.OkCount
+                info_count   = $sum.InfoCount
+                failed_count = $sum.FailedCount
+                groups       = @($sum.Groups | ForEach-Object {
+                    [ordered]@{ hex = $_.Hex; count = $_.Count; name = $_.ResultName; hint = $_.Hint; examples = @($_.Examples) }
+                })
+            }
+
+            Write-Host ("  задач Sofia: {0}   успешно: {1}   состояние планировщика: {2}   отказов: {3}" -f `
+                        $sum.Total, $sum.OkCount, $sum.InfoCount, $sum.FailedCount)
+
+            if ($sum.FailedCount -gt 0) {
+                Write-Host '  --- причины отказов ---' -ForegroundColor DarkGray
+                foreach ($g in $sum.Groups) {
+                    Write-Host ("    {0}  x{1,-4} {2}" -f $g.Hex, $g.Count, $g.ResultName) -ForegroundColor Yellow
+                    Write-Host ("      {0}" -f $g.Hint) -ForegroundColor DarkGray
+                    Write-Host ("      например: {0}" -f ($g.Examples -join ', ')) -ForegroundColor DarkGray
+                }
+            }
+
+            if ($sum.FailedCount -gt 0) {
+                $topG = $sum.Groups[0]
+                Add-Finding -Status 'WARN' -Component 'Task Scheduler' `
+                            -Evidence ("задач Sofia: {0}, отказов: {1} (чаще всего {2} {3} — {4} шт.); состояний планировщика, не отказов: {5}" -f `
+                                       $sum.Total, $sum.FailedCount, $topG.Hex, $topG.ResultName, $topG.Count, $sum.InfoCount) `
+                            -NextAction ("разбирать по самой частой причине: {0}; задачи не изменять — только чтение" -f $topG.Hint)
+            } else {
+                Add-Finding -Status 'PASS' -Component 'Task Scheduler' `
+                            -Evidence ("задач Sofia: {0}, отказов нет ({1} в состоянии планировщика)" -f $sum.Total, $sum.InfoCount) `
+                            -NextAction 'задачи не изменять — только чтение'
+            }
+        } elseif ($trows.Count -gt 0) {
             $trows | ForEach-Object { [pscustomobject]$_ } |
                 Select-Object name, state, last_run, last_code, next_run |
                 Format-Table -AutoSize | Out-String | Write-Host
             $bad = @($trows | Where-Object { $_.last_code -ne 0 -and $_.last_code -ne $null })
             Add-Finding -Status $(if ($bad.Count) { 'WARN' } else { 'PASS' }) -Component 'Task Scheduler' `
-                        -Evidence ("задач Sofia: {0}, с ненулевым кодом: {1}" -f $trows.Count, $bad.Count) `
-                        -NextAction 'задачи не изменять — только чтение'
+                        -Evidence ("задач Sofia: {0}, с ненулевым кодом: {1}; lib_task_results.ps1 рядом не найден" -f $trows.Count, $bad.Count) `
+                        -NextAction 'скачать lib_task_results.ps1 из того же каталога репозитория и повторить'
         } else {
             Add-Finding -Status 'NOT_MEASURED' -Component 'Task Scheduler' -Evidence 'задачи Sofia не найдены по маске'
         }
     } catch {
         Add-Finding -Status 'NOT_MEASURED' -Component 'Task Scheduler' -Evidence 'нет доступа к планировщику'
     }
+  }
 }
 
 # ---------------------------------------------------------------------------

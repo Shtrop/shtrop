@@ -30,6 +30,7 @@ $ErrorActionPreference = 'Stop'
 $files = @(
     'lib_bugcheck.ps1',
     'lib_gpu_owners.ps1',
+    'lib_task_results.ps1',
     'diagnose_host_safe_hold.ps1',
     'analyze_safehold_report.ps1',
     'analyze_minidump.ps1',

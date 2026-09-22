@@ -276,6 +276,42 @@ function Set-WinEventStub {
     $global:SofiaTest_WinEvents = @($Events)
 }
 
+function Set-ScheduledTaskStub {
+    <#
+        Задаёт, какие задачи «видит» планировщик.
+        Каждая запись: @{ name = '...'; code = <int>; state = 'Ready' }.
+        $null означает, что планировщик недоступен.
+    #>
+    param([object[]] $Tasks)
+    $global:SofiaTest_Tasks = $Tasks
+}
+
+function Get-ScheduledTask {
+    [CmdletBinding()]
+    param()
+    if ($null -eq $global:SofiaTest_Tasks) { throw [System.Exception]::new('Access to scheduler denied') }
+    @($global:SofiaTest_Tasks | ForEach-Object {
+        [pscustomobject]@{
+            TaskName = $_.name
+            TaskPath = '\Sofia'
+            State    = $(if ($_.state) { $_.state } else { 'Ready' })
+            _code    = $_.code
+        }
+    })
+}
+
+function Get-ScheduledTaskInfo {
+    [CmdletBinding()]
+    param([Parameter(ValueFromPipeline = $true)] $InputObject)
+    process {
+        [pscustomobject]@{
+            LastRunTime    = (Get-Date).AddHours(-1)
+            LastTaskResult = $InputObject._code
+            NextRunTime    = (Get-Date).AddHours(1)
+        }
+    }
+}
+
 function Set-GpuCounterStub {
     <#
         Задаёт, что вернут счётчики производительности Windows по VRAM.

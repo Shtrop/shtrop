@@ -175,6 +175,19 @@ nvidia-smi -q -d TEMPERATURE,POWER,PERFORMANCE
 # кто держит GPU и сколько VRAM (правило ONE HEAVY GPU OWNER)
 nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv
 
+# под WDDM used_memory приходит как [N/A] — это норма, память берут счётчики.
+# Полная сумма по всем процессам, без выборки «топ-N» и порога:
+$set = Get-Counter -ListSet * | Where-Object { $_.PathsWithInstances -match 'pid_\d+_luid_.*_phys_\d' } | Select-Object -First 1
+$paths = $set.PathsWithInstances | Where-Object { $_ -match '_phys_\d' }
+$sm = (Get-Counter -Counter $paths).CounterSamples
+'{0:N0} MiB по счётчикам' -f (($sm | Measure-Object -Property CookedValue -Sum).Sum / 1MB)
+
+# отказавшие задачи Sofia (коды 0x41301/0x41303 — не отказы, а состояния)
+Get-ScheduledTask | Where-Object { $_.TaskPath -match 'Sofia' } |
+    ForEach-Object { $_ | Get-ScheduledTaskInfo } |
+    Where-Object { $_.LastTaskResult -ne 0 } |
+    Group-Object LastTaskResult | Sort-Object Count -Descending | Select-Object Count, Name
+
 # закреплённая задача восстановления power limit и её журнал
 schtasks /Query /TN SofiaAIStudio_GpuPowerLimit_0
 Get-Content "$env:ProgramData\SofiaAIStudio\sofia_gpu0_powerlimit.log" -Tail 5

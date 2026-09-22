@@ -130,3 +130,116 @@ Test 'FAIL из-за неустановленного владельца не у
         Assert-NotMatch 'пики складываются' $out 'это не довод в пользу транзиентов питания'
     } finally { Remove-Sandbox $sb }
 }
+
+# --------------------------------------------------------------------------
+# План действий: гипотеза задаёт направление, но часть находок закрывается
+# независимо от неё. Раньше они в план не попадали вовсе.
+# --------------------------------------------------------------------------
+
+Test 'известный код остановки не отправляет искать код остановки' {
+    # В отчёте с машины анализатор печатал код 0x154 в уликах и тут же
+    # советовал запустить analyze_minidump, чтобы его получить.
+    $sb = New-Sandbox 'analyze_known_code'
+    try {
+        $rep = New-Report
+        $now = Get-Date
+        $rep.sections.kernel_power = @(
+            [ordered]@{
+                id = 1001; time = $now.AddHours(-20).ToString('o')
+                message = 'The computer has rebooted from a bugcheck. The bugcheck was: 0x00000154'
+            }
+        )
+        $rep.sections.minidumps = @([ordered]@{ name = '091826-01.dmp' }, [ordered]@{ name = '091726-01.dmp' })
+        $rep.sections.kernel_power_stats.bugcheck_count = 2
+
+        $out = Invoke-Analyzer -Report $rep -Dir $sb.Dir
+
+        Assert-Match 'Код остановки уже известен' $out 'план должен опираться на уже добытый код'
+        Assert-Match 'MemTest86' $out 'класс memory ведёт к проверке памяти'
+        Assert-NotMatch 'Получить код остановки' $out 'второй раз за кодом гонять нельзя'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'нарушение ONE HEAVY GPU OWNER попадает в план, а не только в список FAIL' {
+    $sb = New-Sandbox 'analyze_plan_owners'
+    try {
+        $rep = New-Report
+        $rep.sections.gpu_owners.heavy_count = 2
+        $rep.sections.gpu_owners.memory_used_mib = 31794
+        $rep.sections.gpu_owners.orphan_vram_mib = 29879
+        $rep.sections.gpu_owners.attribution = 'partial'
+        $rep.sections.gpu_owners.apps = @(
+            [ordered]@{ pid = 27900; name = 'python.exe'; class = 'heavy' },
+            [ordered]@{ pid = 19692; name = 'python.exe'; class = 'heavy' }
+        )
+        $out = Invoke-Analyzer -Report $rep -Dir $sb.Dir
+
+        Assert-Match 'Закрыть независимо от гипотезы' $out 'раздел должен появиться'
+        Assert-Match 'python.exe:27900' $out 'владельцы должны быть названы поимённо'
+        Assert-Match 'python.exe:19692' $out 'оба'
+        Assert-Match '29879 MiB' $out 'не отнесённая память должна быть в плане'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'лимит на максимуме попадает в план, даже когда верхняя гипотеза другая' {
+    $sb = New-Sandbox 'analyze_plan_limit'
+    try {
+        $rep = New-Report
+        $now = Get-Date
+        $rep.sections.kernel_power = @(
+            [ordered]@{ id = 1001; time = $now.AddHours(-20).ToString('o')
+                        message = 'bugcheck was: 0x00000154' }
+        )
+        $rep.sections.kernel_power_stats.bugcheck_count = 2
+        $out = Invoke-Analyzer -Report $rep -Dir $sb.Dir
+
+        Assert-Match 'power limit равен максимуму платы' $out 'дешёвая обратимая проверка не должна теряться'
+        Assert-Match 'PowerLimitPersist' $out 'и закрепление вместе с ней'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'отказавшие задачи планировщика попадают в план с причиной' {
+    $sb = New-Sandbox 'analyze_plan_tasks'
+    try {
+        $rep = New-Report
+        $rep.sections.scheduled_tasks_summary = [ordered]@{
+            total = 310; ok_count = 200; info_count = 65; failed_count = 45
+            groups = @(
+                [ordered]@{ hex = '0x00000001'; count = 40; name = 'EXIT_CODE_1'
+                            hint = 'задача вернула 1 — ошибка внутри самого скрипта'
+                            examples = @('sofia_publish', 'sofia_reel') }
+            )
+        }
+        $out = Invoke-Analyzer -Report $rep -Dir $sb.Dir
+
+        Assert-Match 'отказов 45 из 310' $out 'отказы и общее число должны быть названы'
+        Assert-Match 'не отказов: 65' $out 'состояния планировщика считаются отдельно'
+        Assert-Match 'sofia_publish' $out 'примеры задач должны дойти до плана'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'упавшие сервисы попадают в план и не предлагается их перезапускать' {
+    $sb = New-Sandbox 'analyze_plan_services'
+    try {
+        $rep = New-Report
+        $rep.findings = @($rep.findings) + @(
+            [ordered]@{ status = 'FAIL'; component = 'сервис Command Center'; evidence = 'нет ответа' },
+            [ordered]@{ status = 'FAIL'; component = 'сервис Dashboard v2';   evidence = 'нет ответа' }
+        )
+        $out = Invoke-Analyzer -Report $rep -Dir $sb.Dir
+
+        Assert-Match 'Command Center' $out 'сервис должен быть назван'
+        Assert-Match 'не перезапускать' $out 'перезапуск маскирует симптом — это должно быть сказано'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'чистый отчёт не порождает пустой раздел плана' {
+    $sb = New-Sandbox 'analyze_plan_empty'
+    try {
+        $rep = New-Report
+        $rep.sections.Remove('gpu_owners')
+        $rep.findings = @($rep.findings | Where-Object { $_.component -notlike 'сервис *' -and $_.component -ne 'GPU power limit' })
+        $out = Invoke-Analyzer -Report $rep -Dir $sb.Dir
+        Assert-NotMatch 'Закрыть независимо от гипотезы' $out 'пустого раздела быть не должно'
+    } finally { Remove-Sandbox $sb }
+}
