@@ -142,6 +142,8 @@ $segmentIndex   = 1
 $limitFirst     = $null # power limit на начало всего окна, а не сеанса
 $resumed        = $false
 $script:ResumedRegimes = $null
+$script:MigratedLegacyLimits = $false
+$script:ObservedAtMigration = $null
 
 if ($Resume -and (Test-Path $statePath)) {
     try {
@@ -150,6 +152,9 @@ if ($Resume -and (Test-Path $statePath)) {
             $windowStart   = [datetime]::Parse($prev.window_start, [Globalization.CultureInfo]::InvariantCulture)
             $priorObserved = [double]$prev.observed_hours
             $segmentIndex  = [int]$prev.segments + 1
+            if ($null -ne $prev.observed_at_migration -and "$($prev.observed_at_migration)") {
+                $script:ObservedAtMigration = [double]$prev.observed_at_migration
+            }
             if ($null -ne $prev.power_limit_w_first -and "$($prev.power_limit_w_first)") {
                 $limitFirst = [double]$prev.power_limit_w_first
             }
@@ -158,15 +163,27 @@ if ($Resume -and (Test-Path $statePath)) {
             # пределах одного сеанса её не видно.
             if ($prev.power_limit_regimes) {
                 $script:ResumedRegimes = @($prev.power_limit_regimes | ForEach-Object {
-                    [pscustomobject]@{ W = [double]$_.w; Seconds = [int]$_.seconds }
+                    # Признак «режим подтверждён» переносится как есть и заново
+                    # не вычисляется: иначе возобновление с другим -IntervalSeconds
+                    # задним числом снимало бы уже доказанный откат лимита.
+                    [pscustomobject]@{ W = [double]$_.w; Seconds = [int]$_.seconds; Settled = [bool]$_.settled }
                 })
             } elseif ($prev.power_limit_values) {
                 # Состояние от прежней версии набора: список значений без
-                # времени. Владелец мог обновить инструменты посреди окна, и
-                # уже зафиксированный откат лимита терять нельзя.
+                # времени. Та версия записывала значение после двух подряд
+                # одинаковых опросов — то есть могла записать и переходное
+                # показание после перезагрузки. Отличить одно от другого
+                # задним числом нельзя, поэтому значения переносятся
+                # НЕподтверждёнными: они не запирают выход, но и не теряются —
+                # подтвердятся наблюдением, если режим действительно такой.
                 $script:ResumedRegimes = @($prev.power_limit_values | ForEach-Object {
-                    [pscustomobject]@{ W = [double]$_; Seconds = [int]$LimitSettleSeconds }
+                    [pscustomobject]@{ W = [double]$_; Seconds = 0; Settled = $false }
                 })
+                $script:MigratedLegacyLimits = $true
+                # Часы, набранные ДО миграции, засчитываются в длину окна, но
+                # что именно они измеряли по питанию — неизвестно. Значит
+                # доказательство по лимиту должно быть набрано заново.
+                $script:ObservedAtMigration = $priorObserved
             }
             $resumed = $true
         }
@@ -181,6 +198,8 @@ $end = $segmentStart.AddHours($Hours)
 # Показания до этого момента не копятся: сразу после запуска (а чаще — сразу
 # после перезагрузки) лимит ещё не закреплён.
 $settleUntil = $segmentStart.AddSeconds($LimitSettleSeconds)
+# Одиночное показание режимом не считается: режим должен занять два опроса.
+$noiseFloor = [math]::Max(2 * $IntervalSeconds, 1)
 
 Write-Host ''
 Write-Host 'Sofia AI Studio — наблюдение за стабильностью хоста (READ-ONLY)' -ForegroundColor White
@@ -191,6 +210,10 @@ if ($resumed) {
 Write-Host ("Старт   : {0}" -f $segmentStart)
 Write-Host ("Финиш   : {0}  ({1} ч, опрос каждые {2} с)" -f $end, $Hours, $IntervalSeconds)
 Write-Host ("Порог   : {0} ч непрерывного окна для выхода из hold" -f $RequiredHours)
+if ($script:MigratedLegacyLimits) {
+    Write-Host 'Состояние окна от прежней версии набора: режимы power limit перенесены' -ForegroundColor Yellow
+    Write-Host 'как неподтверждённые и будут подтверждены наблюдением заново.' -ForegroundColor Yellow
+}
 Write-Host ("Вывод   : {0}" -f $OutDir)
 Write-Host 'Прервать можно Ctrl+C — собранные данные останутся на месте.' -ForegroundColor DarkGray
 Write-Host ''
@@ -230,11 +253,12 @@ function Save-WindowState {
         window_start       = $windowStart.ToString('o')
         last_segment_start = $segmentStart.ToString('o')
         last_seen_at       = (Get-Date).ToString('o')
+        observed_at_migration = $script:ObservedAtMigration
         observed_hours     = [math]::Round($ObservedHours, 4)
         segments           = $segmentIndex
         required_hours     = $RequiredHours
         power_limit_w_first = $limitFirst
-        power_limit_regimes = @($limitRegimes | ForEach-Object { [ordered]@{ w = $_.W; seconds = $_.Seconds } })
+        power_limit_regimes = @($limitRegimes | ForEach-Object { [ordered]@{ w = $_.W; seconds = $_.Seconds; settled = $_.Settled } })
         csv                = $csv
     } | ConvertTo-Json -Depth 5 | Out-File -FilePath $statePath -Encoding UTF8
 }
@@ -269,7 +293,14 @@ while ((Get-Date) -lt $end) {
                     if ($now -ge $settleUntil) {
                         $hit = @($limitRegimes | Where-Object { [math]::Abs($_.W - $lv) -le 1 })
                         if ($hit.Count -gt 0) { $hit[0].Seconds += $IntervalSeconds }
-                        else { $limitRegimes += [pscustomobject]@{ W = $lv; Seconds = $IntervalSeconds } }
+                        else {
+                            $hit = @([pscustomobject]@{ W = $lv; Seconds = $IntervalSeconds; Settled = $false })
+                            $limitRegimes += $hit[0]
+                        }
+                        # Подтверждение выставляется один раз и не снимается:
+                        # доказанное наблюдением не должно исчезать от смены
+                        # параметров запуска.
+                        if ($hit[0].Seconds -ge $noiseFloor) { $hit[0].Settled = $true }
                     }
                 }
             }
@@ -353,18 +384,28 @@ $verdict = if ($everBlocked) { 'NOT_MEASURED' } elseif ($clean) { 'PASS' } else 
 # Смягчение, которое не держалось всё окно, обесценивает окно: наблюдали
 # один режим питания, а в production вернётся другой.
 #
-# Переходные показания уже отброшены периодом стабилизации, поэтому здесь
-# остаётся отсечь только одиночный шум: режим должен занять хотя бы два опроса.
-$noiseFloor = [math]::Max(2 * $IntervalSeconds, 1)
-$settled = @($limitRegimes | Where-Object { $_.Seconds -ge $noiseFloor })
+# Переходные показания отброшены периодом стабилизации, одиночный шум —
+# порогом в два опроса. Подтверждение хранится в самом режиме, поэтому смена
+# параметров запуска его не отменяет.
+$settled = @($limitRegimes | Where-Object { $_.Settled })
 $limitChanged = ($settled.Count -gt 1)
 
-# Окно может закончиться прямо в период стабилизации после перезагрузки: тогда
-# измеренный режим один, а карта уже стоит на другом лимите. Закрывать окно в
-# этот момент нельзя — но и запирать навсегда тоже: признак снимается сам,
-# стоит продолжить наблюдение.
-$limitUnsettled = ($null -ne $limitLast -and $settled.Count -eq 1 -and
-                   [math]::Abs($settled[0].W - $limitLast) -gt 1)
+# Окно может закончиться прямо в периоде стабилизации после перезагрузки, или
+# вовсе не набрать ни одного подтверждённого режима. И то и другое означает
+# одно: доказательств, что смягчение держалось, нет. Закрывать окно нельзя —
+# но и запирать навсегда тоже: признак снимается сам, стоит продолжить окно.
+$limitUnsettled = $false
+$limitUnsettledWhy = ''
+if ($null -ne $limitLast) {
+    if ($settled.Count -eq 0) {
+        $limitUnsettled = $true
+        $limitUnsettledWhy = ("ни один режим не подтверждён наблюдением, карта сейчас на {0} W" -f [int]$limitLast)
+    } elseif ($settled.Count -eq 1 -and [math]::Abs($settled[0].W - $limitLast) -gt 1) {
+        $limitUnsettled = $true
+        $limitUnsettledWhy = ("измеряли при {0} W, а карта сейчас на {1} W и это ещё не подтверждено наблюдением" -f `
+                              [int]$settled[0].W, [int]$limitLast)
+    }
+}
 
 $blockers = @()
 if ($everBlocked)               { $blockers += 'event_log_blocked: журнал System не читался, крахи могли быть не видны' }
@@ -377,8 +418,19 @@ if ($limitChanged) {
     $shape = ($settled | ForEach-Object { "{0} W ({1} ч)" -f [int]$_.W, [math]::Round($_.Seconds / 3600, 1) }) -join ', '
     $blockers += ("power_limit_changed: за окно держались разные режимы — {0}" -f $shape)
 } elseif ($limitUnsettled) {
-    $blockers += ("power_limit_unsettled: измеряли при {0} W, а карта сейчас на {1} W и это ещё не подтверждено наблюдением — продолжить окно" -f `
-                  [int]$settled[0].W, [int]$limitLast)
+    $blockers += ("power_limit_unsettled: {0} — продолжить окно" -f $limitUnsettledWhy)
+}
+
+# Состояние прежней версии набора не говорит, какой режим питания измеряли
+# набранные до него часы. Засчитывать их как доказательство по лимиту нельзя,
+# поэтому окно по питанию набирается заново — и этот блокер снимается сам,
+# как только после миграции набрано требуемое наблюдение.
+if ($null -ne $script:ObservedAtMigration) {
+    $sinceMigration = [math]::Round($observed - [double]$script:ObservedAtMigration, 2)
+    if ($sinceMigration -lt $RequiredHours) {
+        $blockers += ("power_limit_state_migrated: после переноса состояния набрано {0} ч из требуемых {1} ч — чем питались прежние часы, состояние не говорит" -f `
+                      $sinceMigration, $RequiredHours)
+    }
 }
 
 $holdExitReady = ($blockers.Count -eq 0)
@@ -401,8 +453,9 @@ $result = [ordered]@{
     power_limit_changed = $limitChanged
     power_limit_settle_seconds = $LimitSettleSeconds
     power_limit_unsettled = $limitUnsettled
+    power_limit_state_migrated = ($null -ne $script:ObservedAtMigration)
     power_limit_regimes = @($limitRegimes | ForEach-Object {
-        [ordered]@{ w = $_.W; seconds = $_.Seconds; settled = ($_.Seconds -ge $noiseFloor) }
+        [ordered]@{ w = $_.W; seconds = $_.Seconds; settled = $_.Settled }
     })
     events_detected     = @($eventsSeen)
     whea_detected       = @($wheaSeen)

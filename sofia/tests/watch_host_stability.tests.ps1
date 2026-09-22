@@ -134,7 +134,7 @@ Test 'откат power limit посреди окна снимает право �
         # LimitSettleSeconds = 2: опрос раз в секунду, поэтому первые два
         # показания сеанса не копятся. В production период 600 с.
         $r = Invoke-Watcher -OutDir (Join-Path $sb.Dir 'out') `
-                            -Arguments @{ Hours = 0.0035; LimitSettleSeconds = 2 }
+                            -Arguments @{ Hours = 0.005; LimitSettleSeconds = 2 }
 
         Assert-Equal 'PASS' $r.verdict 'крахов не было'
         Assert-True ([bool]$r.power_limit_changed) 'смена лимита обязана быть замечена'
@@ -267,7 +267,67 @@ Test 'состояние от прежней версии набора не те
         $r = Invoke-Watcher -OutDir $out `
                             -Arguments @{ Resume = $true; RequiredHours = 0; Hours = 0.0025; LimitSettleSeconds = 2 }
 
-        Assert-True ([bool]$r.power_limit_changed) 'откат, записанный прежней версией, должен сохраниться'
-        Assert-True (-not $r.hold_exit_ready) 'и продолжать блокировать выход'
+        # Прежняя версия записывала значение после двух одинаковых опросов, то
+        # есть могла записать и переходное показание после перезагрузки.
+        # Отличить одно от другого задним числом нельзя, поэтому значения
+        # переносятся НЕподтверждёнными: запереть выход навсегда они не могут,
+        # но и не теряются — подтвердятся наблюдением, если режим такой и есть.
+        $regimes = @($r.power_limit_regimes)
+        Assert-Equal 2 $regimes.Count 'оба значения перенесены, ничего не потеряно'
+
+        $migrated = @($regimes | Where-Object { [int]$_.w -eq 450 })
+        Assert-Equal 1 $migrated.Count 'значение из старого состояния на месте'
+        Assert-True (-not $migrated[0].settled) 'но подтверждённым оно не считается'
+
+        Assert-True (-not $r.power_limit_changed) 'неподтверждённое значение не запирает выход навсегда'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'перенесённый режим подтверждается наблюдением, если он настоящий' {
+    # Обратная сторона: если лимит действительно откатился, наблюдение это
+    # подтвердит само, и блокер появится честно.
+    $sb = New-Sandbox 'watch_pl_migrate_confirm'
+    try {
+        $out = Join-Path $sb.Dir 'out'
+        Install-FakeNvidiaSmi -Dir $sb.Dir -State @{ power_limit = 450 } | Out-Null
+        Set-WinEventStub -Mode ok -Events @()
+
+        Invoke-Watcher -OutDir $out -Arguments @{ Hours = 0.004; LimitSettleSeconds = 2 } | Out-Null
+
+        $statePath = Join-Path $out 'window_state.json'
+        $st = Get-Content $statePath -Raw | ConvertFrom-Json
+        $st.PSObject.Properties.Remove('power_limit_regimes')
+        $st | Add-Member -NotePropertyName power_limit_values -NotePropertyValue @(450) -Force
+        $st | ConvertTo-Json -Depth 6 | Out-File -FilePath $statePath -Encoding UTF8
+
+        # После обновления инструментов лимит действительно откатился.
+        $gs = Join-Path $sb.Dir 'bin/gpu_state.json'
+        $g = Get-Content $gs -Raw | ConvertFrom-Json
+        $g.power_limit = 600
+        $g | ConvertTo-Json -Depth 6 | Out-File -FilePath $gs -Encoding UTF8
+
+        $r = Invoke-Watcher -OutDir $out `
+                            -Arguments @{ Resume = $true; RequiredHours = 1; Hours = 0.004; LimitSettleSeconds = 2 }
+
+        Assert-True ([bool]$r.power_limit_state_migrated) 'перенос состояния должен быть отмечен'
+        Assert-True (-not $r.hold_exit_ready) 'окно не может быть закрыто'
+        Assert-Match 'power_limit_state_migrated' ($r.hold_exit_blockers -join ';') `
+                     'часы, набранные до переноса, не доказывают режим питания'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'без единого подтверждённого режима окно не закрывается' {
+    # Сеанс целиком уложился в период стабилизации: карта лимит показывает, но
+    # доказательств, что он держался, нет вовсе.
+    $sb = New-Sandbox 'watch_pl_none'
+    try {
+        Install-FakeNvidiaSmi -Dir $sb.Dir -State @{ power_limit = 450 } | Out-Null
+        Set-WinEventStub -Mode ok -Events @()
+        $r = Invoke-Watcher -OutDir (Join-Path $sb.Dir 'out') `
+                            -Arguments @{ RequiredHours = 0; Hours = 0.0005; LimitSettleSeconds = 3600 }
+
+        Assert-Equal 0 @($r.power_limit_regimes | Where-Object { $_.settled }).Count 'подтверждённых режимов нет'
+        Assert-True ([bool]$r.power_limit_unsettled) 'это должно быть замечено'
+        Assert-True (-not $r.hold_exit_ready) 'и закрывать окно нельзя'
     } finally { Remove-Sandbox $sb }
 }
