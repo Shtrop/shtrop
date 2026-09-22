@@ -29,10 +29,27 @@ function Test {
         Write-Host ("  PASS  {0}" -f $Name) -ForegroundColor Green
     } catch {
         $sw.Stop()
-        $global:SofiaTestResults += [pscustomobject]@{ Name = $Name; Status = 'FAIL'; Error = $_.Exception.Message; Ms = $sw.ElapsedMilliseconds }
+        $msg = $_.Exception.Message
+        if ($msg -like 'SOFIA_TEST_SKIP:*') {
+            $reason = $msg.Substring('SOFIA_TEST_SKIP:'.Length)
+            $global:SofiaTestResults += [pscustomobject]@{ Name = $Name; Status = 'SKIP'; Error = $reason; Ms = $sw.ElapsedMilliseconds }
+            Write-Host ("  SKIP  {0}" -f $Name) -ForegroundColor Yellow
+            Write-Host ("        {0}" -f $reason) -ForegroundColor DarkYellow
+            return
+        }
+        $global:SofiaTestResults += [pscustomobject]@{ Name = $Name; Status = 'FAIL'; Error = $msg; Ms = $sw.ElapsedMilliseconds }
         Write-Host ("  FAIL  {0}" -f $Name) -ForegroundColor Red
-        Write-Host ("        {0}" -f $_.Exception.Message) -ForegroundColor DarkRed
+        Write-Host ("        {0}" -f $msg) -ForegroundColor DarkRed
     }
+}
+
+function Skip {
+    <#
+        Пропустить тест: среда не даёт выполнить его безопасно.
+        Пропуск не равен успеху и печатается отдельно.
+    #>
+    param([string] $Reason = 'условия окружения')
+    throw ("SOFIA_TEST_SKIP:{0}" -f $Reason)
 }
 
 function Assert-True {
@@ -159,6 +176,45 @@ function Install-FakeSchtasks {
         $env:PATH = $binDir + [System.IO.Path]::PathSeparator + $env:PATH
     }
     Join-Path $binDir 'tasks.json'
+}
+
+function Install-FakeBcdedit {
+    <#
+        Ставит заглушку bcdedit.exe в PATH и возвращает путь к файлу состояния.
+
+        Возвращает $null, если подменить настоящий bcdedit нельзя (Windows:
+        реальный bcdedit.exe останется первым в PATH). Тест в этом случае
+        обязан пропустить себя, а не работать с загрузочной конфигурацией
+        настоящей машины.
+    #>
+    param([Parameter(Mandatory)][string] $Dir)
+    if ($IsWindows) { return $null }
+
+    $binDir = Join-Path $Dir 'bin'
+    New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+    Copy-Item (Join-Path $PSScriptRoot 'fake_bcdedit.ps1') (Join-Path $binDir 'fake_bcdedit.ps1') -Force
+    New-ShimExecutable -Dir $binDir -Name 'bcdedit.exe' -ScriptPath (Join-Path $binDir 'fake_bcdedit.ps1') | Out-Null
+    if (($env:PATH -split [System.IO.Path]::PathSeparator) -notcontains $binDir) {
+        $env:PATH = $binDir + [System.IO.Path]::PathSeparator + $env:PATH
+    }
+
+    $statePath = Join-Path $binDir 'badmemory.json'
+    @{ list = @() } | ConvertTo-Json | Out-File -FilePath $statePath -Encoding UTF8
+
+    # Убедиться, что в PATH первым стоит именно заглушка.
+    $resolved = (Get-Command bcdedit.exe -ErrorAction SilentlyContinue)
+    if (-not $resolved -or $resolved.Source -notlike ("{0}*" -f $binDir)) { return $null }
+    $statePath
+}
+
+function Get-FakeBadMemoryList {
+    param([Parameter(Mandatory)][string] $StatePath)
+    @((Get-Content $StatePath -Raw | ConvertFrom-Json).list | Where-Object { $_ })
+}
+
+function Get-FakeBadMemoryAccess {
+    param([Parameter(Mandatory)][string] $StatePath)
+    "$((Get-Content $StatePath -Raw | ConvertFrom-Json).access)"
 }
 
 function Get-FakeTasks {
