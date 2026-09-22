@@ -52,8 +52,15 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet('PowerLimit','MemoryCompression','Rollback','Status')]
+    [ValidateSet('PowerLimit','MemoryCompression','BadMemoryList','Rollback','Status')]
     [string] $Action = 'Status',
+
+    # Дополнительные физические адреса сбойной памяти, например из отчёта MemTest86.
+    # Принимаются как 0x... или десятичные.
+    [string[]] $Address = @(),
+
+    # Глубина поиска событий WHEA для действия BadMemoryList.
+    [int] $WheaDays = 90,
 
     [ValidateRange(50,100)]
     [int] $Percent = 80,
@@ -68,6 +75,53 @@ param(
 $ErrorActionPreference = 'Stop'
 $rollbackPath = Join-Path $StateDir ("gpu{0}_powerlimit_rollback.json" -f $GpuIndex)
 $mcRollbackPath = Join-Path $StateDir 'memory_compression_rollback.json'
+$bmRollbackPath = Join-Path $StateDir 'badmemorylist_rollback.json'
+
+function Get-WheaMemoryAddresses {
+    param([int] $Days)
+    $out = @()
+    try {
+        $ev = @(Get-WinEvent -FilterHashtable @{
+            LogName      = 'System'
+            ProviderName = 'Microsoft-Windows-WHEA-Logger'
+            StartTime    = (Get-Date).AddDays(-$Days)
+        } -ErrorAction Stop)
+        foreach ($e in $ev) {
+            try {
+                $x = [xml]$e.ToXml()
+                foreach ($d in $x.Event.EventData.Data) {
+                    if ("$($d.Name)" -eq 'PhysicalAddress') {
+                        $v = "$($d.'#text')"
+                        if ($v -and $v -ne '0') {
+                            $out += [pscustomobject]@{ Time = $e.TimeCreated; Raw = $v }
+                        }
+                    }
+                }
+            } catch { }
+        }
+    } catch { }
+    $out
+}
+
+function ConvertTo-UInt64Address {
+    param([string] $Value)
+    $v = $Value.Trim()
+    if ($v -match '^0x') { return [Convert]::ToUInt64($v.Substring(2), 16) }
+    if ($v -match '^[0-9]+$') { return [uint64]$v }
+    return [Convert]::ToUInt64($v, 16)
+}
+
+function Get-CurrentBadMemoryList {
+    if (-not (Get-Command bcdedit.exe -ErrorAction SilentlyContinue)) { return $null }
+    $raw = & bcdedit.exe /enum '{badmemory}' 2>&1 | Out-String
+    $list = @()
+    foreach ($m in [regex]::Matches($raw, '(?im)^\s*badmemorylist\s+(.+)$')) {
+        foreach ($tok in ($m.Groups[1].Value -split '\s+')) {
+            if ($tok) { $list += $tok.Trim() }
+        }
+    }
+    [pscustomobject]@{ Raw = $raw.Trim(); List = $list }
+}
 
 function Get-MemoryCompressionState {
     if (-not (Get-Command Get-MMAgent -ErrorAction SilentlyContinue)) { return $null }
@@ -243,8 +297,118 @@ switch ($Action) {
         }
     }
 
+    'BadMemoryList' {
+        # Windows умеет исключать страницы физической памяти из использования.
+        # Это обход дефекта, а не ремонт: планка остаётся сбойной.
+        if (-not (Get-Command bcdedit.exe -ErrorAction SilentlyContinue)) {
+            Write-Host 'bcdedit не найден — действие доступно только на Windows.' -ForegroundColor Red
+            exit 2
+        }
+
+        $addrs = @()
+        foreach ($a in (Get-WheaMemoryAddresses -Days $WheaDays)) {
+            $addrs += [pscustomobject]@{ Source = ("WHEA {0}" -f $a.Time); Value = $a.Raw }
+        }
+        foreach ($a in $Address) { $addrs += [pscustomobject]@{ Source = 'параметр -Address'; Value = $a } }
+
+        if ($addrs.Count -eq 0) {
+            Write-Host ''
+            Write-Host ("Адресов сбойной памяти не найдено: событий WHEA с PhysicalAddress за {0} дн. нет." -f $WheaDays) -ForegroundColor Yellow
+            Write-Host 'Адреса из отчёта MemTest86 можно передать вручную:' -ForegroundColor DarkGray
+            Write-Host '  .\apply_safehold_fix.ps1 -Action BadMemoryList -Address 0x1F93E53D27 -Confirm' -ForegroundColor DarkGray
+            break
+        }
+
+        $pfns = @{}
+        Write-Host ''
+        Write-Host 'Найденные адреса и их номера страниц (PFN = адрес / 4096):' -ForegroundColor White
+        foreach ($a in $addrs) {
+            try {
+                $u = ConvertTo-UInt64Address -Value $a.Value
+                $pfn = [uint64]([math]::Floor($u / 4096))
+                $hex = ('0x{0:X}' -f $pfn)
+                $pfns[$hex] = $true
+                Write-Host ("  {0,-34} адрес {1}  ->  PFN {2}  (~{3} ГиБ)" -f `
+                            $a.Source, ('0x{0:X}' -f $u), $hex, [math]::Round($u / 1GB, 1))
+            } catch {
+                Write-Host ("  {0}: адрес {1} не разобран" -f $a.Source, $a.Value) -ForegroundColor DarkGray
+            }
+        }
+
+        $current = Get-CurrentBadMemoryList
+        Write-Host ''
+        Write-Host ("Сейчас в списке исключений: {0}" -f $(if ($current.List.Count) { $current.List -join ' ' } else { 'пусто' }))
+
+        $merged = @($current.List + $pfns.Keys | Where-Object { $_ } | Select-Object -Unique)
+        Write-Host ("Станет: {0}" -f ($merged -join ' ')) -ForegroundColor Cyan
+        Write-Host ''
+        Write-Host 'Команды, которые будут выполнены:' -ForegroundColor DarkGray
+        Write-Host ("  bcdedit /set {{badmemory}} badmemorylist {0}" -f ($merged -join ' ')) -ForegroundColor DarkGray
+        Write-Host  '  bcdedit /set {badmemory} badmemoryaccess no' -ForegroundColor DarkGray
+
+        Write-Host ''
+        Write-Host 'Это обход, а не ремонт: сбойная планка остаётся сбойной, а исключается' -ForegroundColor Yellow
+        Write-Host 'лишь та страница, по которой ошибка уже произошла. Полный список даёт MemTest86.' -ForegroundColor Yellow
+
+        if (-not $Confirm) {
+            Write-Host ''
+            Write-Host 'DRY-RUN: ничего не изменено. Для применения добавьте -Confirm.' -ForegroundColor Yellow
+            break
+        }
+
+        New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
+        if (-not (Test-Path $bmRollbackPath)) {
+            [ordered]@{
+                setting       = 'badmemorylist'
+                original_list = @($current.List)
+                original_enum = $current.Raw
+                saved_at      = (Get-Date).ToString('o')
+                rollback_note = 'пустой original_list означает bcdedit /deletevalue {badmemory} badmemorylist'
+            } | ConvertTo-Json -Depth 4 | Out-File -FilePath $bmRollbackPath -Encoding UTF8
+            Write-Host ("Файл отката сохранён: {0}" -f $bmRollbackPath) -ForegroundColor Green
+        }
+
+        $args1 = @('/set', '{badmemory}', 'badmemorylist') + $merged
+        $r1 = & bcdedit.exe @args1 2>&1 | Out-String
+        $r2 = & bcdedit.exe /set '{badmemory}' badmemoryaccess no 2>&1 | Out-String
+        Write-Host $r1.Trim()
+        Write-Host $r2.Trim()
+
+        $after = Get-CurrentBadMemoryList
+        $missing = @($merged | Where-Object { $after.List -notcontains $_ })
+        if ($missing.Count -eq 0) {
+            Write-Host ''
+            Write-Host ("PASS: список исключений — {0}" -f ($after.List -join ' ')) -ForegroundColor Green
+            Write-Host 'Вступит в силу после перезагрузки, которую выполняет владелец.' -ForegroundColor Yellow
+            Write-Host 'Откат: .\apply_safehold_fix.ps1 -Action Rollback -Confirm' -ForegroundColor DarkGray
+        } else {
+            Write-Host ''
+            Write-Host ("FAIL: не попали в список {0}. Нужны права администратора." -f ($missing -join ' ')) -ForegroundColor Red
+            exit 1
+        }
+    }
+
     'Rollback' {
         $didSomething = $false
+
+        if (Test-Path $bmRollbackPath) {
+            $bmRb = Get-Content $bmRollbackPath -Raw | ConvertFrom-Json
+            $orig = @($bmRb.original_list)
+            Write-Host ''
+            Write-Host ("Список исключений памяти -> {0}" -f $(if ($orig.Count) { $orig -join ' ' } else { 'очистить' })) -ForegroundColor Cyan
+            if ($Confirm) {
+                if ($orig.Count) {
+                    $a = @('/set', '{badmemory}', 'badmemorylist') + $orig
+                    & bcdedit.exe @a 2>&1 | Out-String | Write-Host
+                } else {
+                    & bcdedit.exe /deletevalue '{badmemory}' badmemorylist 2>&1 | Out-String | Write-Host
+                }
+                Write-Host 'PASS: исходный список исключений восстановлен (нужна перезагрузка).' -ForegroundColor Green
+                $didSomething = $true
+            } else {
+                Write-Host 'DRY-RUN: добавьте -Confirm.' -ForegroundColor Yellow
+            }
+        }
 
         if (Test-Path $mcRollbackPath) {
             $mcRb = Get-Content $mcRollbackPath -Raw | ConvertFrom-Json
