@@ -17,6 +17,8 @@
 
 | `get_sofia_tools.ps1` | Загружает все инструменты по SHA коммита в обход кэша CDN, показывает хэш каждого файла | Нет |
 
+`sofia/COMMANDS.md` — шпаргалка со всеми командами.
+
 `RUNBOOK_host_safe_hold.md` — порядок действий, пороги и критерии выхода из hold.
 
 Ни один скрипт не снимает `HOST_SAFE_HOLD.flag`, не меняет publishing state,
