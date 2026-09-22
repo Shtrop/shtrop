@@ -184,7 +184,18 @@ function Get-GpuOwnerReport {
 
     $apps = @($Apps | Where-Object { $_ })
     $classified = @()
+    $stale = 0
     foreach ($a in $apps) {
+        $alive  = (-not $checkLive) -or ($LivePids -contains [int]$a.Pid)
+        $listed = (-not $recheck)   -or ($stillListed -contains [int]$a.Pid)
+
+        # Процесса нет в системе, и карта его больше не числит: он честно
+        # закончился между двумя опросами. Запись устарела целиком, вместе с
+        # объёмом памяти, — держать её как владельца нельзя, иначе две копии
+        # ComfyUI дадут ложное нарушение ONE HEAVY GPU OWNER с несуществующим
+        # pid, а её память замаскирует настоящую ничью VRAM.
+        if (-not $alive -and -not $listed) { $stale++; continue }
+
         $used = [int]$a.UsedMiB
         $known = [bool]$a.MemKnown
         $source = if ($known) { 'nvidia-smi' } else { '' }
@@ -198,11 +209,8 @@ function Get-GpuOwnerReport {
 
         # Процесс, которого уже нет, но который nvidia-smi всё ещё перечисляет —
         # незакрытый контекст: память за ним числится, а освобождать её некому.
-        # Процесса нет в системе — но объявлять контекст незакрытым можно лишь
-        # тогда, когда карта всё ещё числит его за собой: иначе рендер,
-        # завершившийся между двумя опросами, попал бы в «мёртвые».
-        $isDead = $checkLive -and ($LivePids -notcontains [int]$a.Pid)
-        if ($isDead -and $recheck) { $isDead = ($stillListed -contains [int]$a.Pid) }
+        # Процесса нет, а карта его всё ещё числит — вот это висящий контекст.
+        $isDead = (-not $alive)
 
         $isDesktop = $script:GpuDesktopProcesses -contains $a.Name
         $isRender  = Test-GpuRenderProcess -Name $a.Name -Path $a.Path
@@ -313,6 +321,7 @@ function Get-GpuOwnerReport {
         HeavyCount      = $heavy.Count
         DeadOwners      = @($dead)
         DeadCount       = $dead.Count
+        StaleCount      = $stale
         LiveChecked     = $checkLive
         HeavyUsedMiB    = $heavyMib
         AttributedMiB   = $attributed

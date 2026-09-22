@@ -220,11 +220,32 @@ Test 'рендер, завершившийся между опросами, не
     # Между списком процессов от nvidia-smi и снимком процессов системы рендер
     # может честно закончиться. Без повторного опроса карты он выглядел бы как
     # висящий контекст — и диагностика советовала бы перезагрузку на ровном месте.
+    # Рендер закончился — вместе с ним освободилась и его память, поэтому
+    # занятая VRAM тоже упала. Запись о нём устарела целиком.
     $apps = ConvertFrom-NvidiaComputeApps -Text '19692, C:\ComfyUI\python.exe, 2917 MiB'
-    $r = Get-GpuOwnerReport -Apps $apps -MemoryUsedMiB 3000 -LivePids @(27900) -StillListedPids @()
+    $r = Get-GpuOwnerReport -Apps $apps -MemoryUsedMiB 300 -LivePids @(27900) -StillListedPids @()
 
     Assert-Equal 0 $r.DeadCount 'карта его больше не числит — значит он просто закончился'
+    Assert-Equal 1 $r.StaleCount 'устаревшая запись должна быть отброшена'
+    Assert-Equal 0 $r.HeavyCount 'и владельцем он тоже не считается'
     Assert-Equal 'PASS' $r.Status 'поводов для отказа нет'
+}
+
+Test 'устаревшая запись не создаёт ложного нарушения ONE HEAVY GPU OWNER' {
+    # Две копии ComfyUI в списке nvidia-smi, но одна уже закончилась и карта
+    # её больше не числит. Объявлять конкуренцию владельцев, называя pid,
+    # которого нет, — худший вид ложной тревоги: искать будет нечего.
+    $apps = ConvertFrom-NvidiaComputeApps -Text @"
+27900, C:\ComfyUI\python.exe, 2917 MiB
+19692, C:\ComfyUI\python.exe, 2917 MiB
+"@
+    $r = Get-GpuOwnerReport -Apps $apps -MemoryUsedMiB 3000 -LivePids @(27900) -StillListedPids @(27900)
+
+    Assert-Equal 1 $r.HeavyCount 'владелец один'
+    Assert-Equal 1 $r.StaleCount 'вторая запись устарела'
+    Assert-Equal 0 $r.DeadCount 'и висящим контекстом она не является'
+    Assert-NotMatch 'ONE HEAVY GPU OWNER' $r.Evidence 'конкуренции нет'
+    Assert-Equal 'PASS' $r.Status 'и отказа тоже'
 }
 
 Test 'процесс, которого нет, но которого карта всё ещё числит, остаётся мёртвым' {

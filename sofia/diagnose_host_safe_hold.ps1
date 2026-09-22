@@ -493,7 +493,15 @@ Invoke-Section 'gpu' {
             $stillListed = $null
             if ($livePids.Count -gt 0) {
                 $procText2 = (& nvidia-smi -i 0 --query-compute-apps='pid,process_name,used_memory' --format=csv,noheader 2>&1 | Out-String).Trim()
-                $stillListed = @((ConvertFrom-NvidiaComputeApps -Text $procText2) | ForEach-Object { [int]$_.Pid })
+                # Сверка засчитывается ТОЛЬКО при успешном втором опросе.
+                # Иначе ошибка nvidia-smi дала бы пустой список, а пустой
+                # список означал бы «карта никого не числит» — и настоящий
+                # висящий контекст молча превратился бы в PASS.
+                if ($LASTEXITCODE -eq 0) {
+                    $stillListed = @((ConvertFrom-NvidiaComputeApps -Text $procText2) | ForEach-Object { [int]$_.Pid })
+                } else {
+                    Write-Host '  повторный опрос GPU не удался — сверка по завершившимся процессам пропущена' -ForegroundColor DarkGray
+                }
             }
 
             $own = Get-GpuOwnerReport -Apps $apps -MemoryUsedMiB $memUsed -MemoryTotalMiB $memTotal `
@@ -503,6 +511,7 @@ Invoke-Section 'gpu' {
             $script:Report.sections['gpu_owners'] = [ordered]@{
                 heavy_count      = $own.HeavyCount
                 dead_count       = $own.DeadCount
+                stale_dropped    = $own.StaleCount
                 live_checked     = $own.LiveChecked
                 heavy_used_mib   = $own.HeavyUsedMiB
                 attributed_mib   = $own.AttributedMiB

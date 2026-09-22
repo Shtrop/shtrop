@@ -128,10 +128,13 @@ Test 'откат power limit посреди окна снимает право �
     try {
         Install-FakeNvidiaSmi -Dir $sb.Dir -State @{
             power_limit          = 450
-            power_limit_sequence = @(450, 600, 600)
+            power_limit_sequence = @(450, 450, 600, 600, 600)
         } | Out-Null
         Set-WinEventStub -Mode ok -Events @()
-        $r = Invoke-Watcher -OutDir (Join-Path $sb.Dir 'out') -Arguments @{ Hours = 0.0012 }
+        # LimitSettleSeconds = 2: в тесте опрос раз в секунду, поэтому режимом
+        # считается то, что продержалось два опроса. В production порог 600 с.
+        $r = Invoke-Watcher -OutDir (Join-Path $sb.Dir 'out') `
+                            -Arguments @{ Hours = 0.0025; LimitSettleSeconds = 2 }
 
         Assert-Equal 'PASS' $r.verdict 'крахов не было'
         Assert-True ([bool]$r.power_limit_changed) 'смена лимита обязана быть замечена'
@@ -145,7 +148,8 @@ Test 'стабильный power limit не мешает выходу из hold'
     try {
         Install-FakeNvidiaSmi -Dir $sb.Dir -State @{ power_limit = 450 } | Out-Null
         Set-WinEventStub -Mode ok -Events @()
-        $r = Invoke-Watcher -OutDir (Join-Path $sb.Dir 'out') -Arguments @{ RequiredHours = 0 }
+        $r = Invoke-Watcher -OutDir (Join-Path $sb.Dir 'out') `
+                            -Arguments @{ RequiredHours = 0; Hours = 0.002; LimitSettleSeconds = 2 }
 
         Assert-Equal 'PASS' $r.verdict 'крахов не было'
         Assert-True (-not $r.power_limit_changed) 'лимит не менялся'
@@ -163,19 +167,20 @@ Test 'смена power limit на перезагрузке замечается 
         Install-FakeNvidiaSmi -Dir $sb.Dir -State @{ power_limit = 450 } | Out-Null
         Set-WinEventStub -Mode ok -Events @()
 
-        Invoke-Watcher -OutDir $out | Out-Null
+        Invoke-Watcher -OutDir $out -Arguments @{ Hours = 0.0025; LimitSettleSeconds = 2 } | Out-Null
 
         $statePath = Join-Path $out 'window_state.json'
         $st = Get-Content $statePath -Raw | ConvertFrom-Json
-        Assert-True (@($st.power_limit_values).Count -ge 1) 'значения лимита должны сохраняться в состоянии окна'
+        Assert-True (@($st.power_limit_regimes).Count -ge 1) 'время удержания режимов должно сохраняться в состоянии окна'
 
-        # После перезагрузки лимит вернулся к максимуму платы.
+        # После перезагрузки лимит вернулся к максимуму платы и там остался.
         $gs = Join-Path $sb.Dir 'bin/gpu_state.json'
         $g = Get-Content $gs -Raw | ConvertFrom-Json
         $g.power_limit = 600
         $g | ConvertTo-Json -Depth 6 | Out-File -FilePath $gs -Encoding UTF8
 
-        $r = Invoke-Watcher -OutDir $out -Arguments @{ Resume = $true; RequiredHours = 0 }
+        $r = Invoke-Watcher -OutDir $out `
+                            -Arguments @{ Resume = $true; RequiredHours = 0; Hours = 0.0025; LimitSettleSeconds = 2 }
 
         Assert-True ([bool]$r.power_limit_changed) 'смена лимита между сеансами обязана быть замечена'
         Assert-True (-not $r.hold_exit_ready) 'окно измеряло два разных режима питания'
@@ -195,16 +200,18 @@ Test 'одиночное показание на старте системы н�
         Install-FakeNvidiaSmi -Dir $sb.Dir -State @{ power_limit = 450 } | Out-Null
         Set-WinEventStub -Mode ok -Events @()
 
-        Invoke-Watcher -OutDir $out -Arguments @{ Hours = 0.0012 } | Out-Null
+        Invoke-Watcher -OutDir $out -Arguments @{ Hours = 0.0025; LimitSettleSeconds = 2 } | Out-Null
 
-        # Перезагрузка: первый опрос застаёт максимум платы, дальше лимит на месте.
+        # Перезагрузка: первый опрос застаёт максимум платы, дальше лимит на
+        # месте. Переходное показание не должно стать режимом.
         $gs = Join-Path $sb.Dir 'bin/gpu_state.json'
         $g = Get-Content $gs -Raw | ConvertFrom-Json
         $g.power_limit = 600
-        $g.power_limit_sequence = @(600, 450, 450, 450, 450)
+        $g.power_limit_sequence = @(600, 450, 450, 450, 450, 450)
         $g | ConvertTo-Json -Depth 6 | Out-File -FilePath $gs -Encoding UTF8
 
-        $r = Invoke-Watcher -OutDir $out -Arguments @{ Resume = $true; RequiredHours = 0; Hours = 0.0018 }
+        $r = Invoke-Watcher -OutDir $out `
+                            -Arguments @{ Resume = $true; RequiredHours = 0; Hours = 0.003; LimitSettleSeconds = 2 }
 
         Assert-Equal 450 ([int]$r.power_limit_w_last) 'на конце окна лимит на месте'
         Assert-True (-not $r.power_limit_changed) 'одиночное показание — не смена режима'
