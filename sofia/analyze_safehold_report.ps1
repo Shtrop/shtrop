@@ -100,6 +100,13 @@ if ($s.kernel_power -is [array]) {
 $findings = @($r.findings)
 function Get-Finding { param([string]$Name) ($findings | Where-Object { $_.component -eq $Name } | Select-Object -First 1) }
 
+# Секция kernel_power_stats пишется только при непустом списке событий, поэтому
+# её отсутствие само по себе не означает «событий не было»: так же выглядит
+# отчёт, в котором сбор упал или который собран старой версией. Ноль событий
+# засчитывается только при положительном доказательстве — находке PASS от
+# самого сбора. Иначе улика считается неизмеренной, а не чистой.
+$kpMeasured = [bool]($stats -or ((Get-Finding 'Kernel-Power 41') -and (Get-Finding 'Kernel-Power 41').status -eq 'PASS'))
+
 $fTemp     = Get-Finding 'GPU температура'
 $fLimit    = Get-Finding 'GPU power limit'
 $fThrottle = Get-Finding 'GPU throttle reasons'
@@ -263,6 +270,11 @@ if ($blocked41) {
     $verdict = 'BLOCKED'
     $next += 'Перезапустить PowerShell от имени администратора и повторить diagnose_host_safe_hold.ps1:'
     $next += '  без журнала System диагноз поставить нельзя.'
+} elseif (-not $kpMeasured) {
+    $verdict = 'NOT_MEASURED'
+    $next += 'В отчёте нет ни статистики по событиям 41, ни отметки о том, что сбор прошёл.'
+    $next += 'Это не «событий не было», а «не измерили»: собрать отчёт заново.'
+    $next += '  .\diagnose_host_safe_hold.ps1 -Days 14'
 } elseif ($count41 -eq 0) {
     $verdict = if ($holdActive) { 'WARN' } else { 'PASS' }
     $next += 'События 41 не подтвердились. Открыть последний incident-файл governor из секции'
