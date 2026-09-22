@@ -80,6 +80,15 @@ function New-Sandbox {
     param([string] $Label = 'sofia_test')
     $dir = Join-Path ([System.IO.Path]::GetTempPath()) ("{0}_{1}" -f $Label, [guid]::NewGuid().ToString('N').Substring(0, 8))
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
+
+    # Заглушки живут в глобальных переменных, поэтому состояние прошлого теста
+    # обязано сбрасываться здесь: иначе результат зависит от порядка тестов.
+    $global:SofiaTest_LivePids = $null
+    $global:SofiaTest_GpuCounters = $null
+    $global:SofiaTest_Tasks = $null
+    $global:SofiaTest_WinEventMode = 'ok'
+    $global:SofiaTest_WinEvents = @()
+
     [pscustomobject]@{ Dir = $dir }
 }
 
@@ -291,9 +300,12 @@ function Get-Process {
         нужен самому набору тестов (поиск пути к pwsh), и подменять его нельзя.
     #>
     [CmdletBinding()]
-    param([int] $Id)
+    param([int] $Id, [string[]] $Name)
     if ($PSBoundParameters.ContainsKey('Id')) {
         return Microsoft.PowerShell.Management\Get-Process -Id $Id
+    }
+    if ($PSBoundParameters.ContainsKey('Name')) {
+        return Microsoft.PowerShell.Management\Get-Process -Name $Name
     }
     if ($null -ne $global:SofiaTest_LivePids) {
         return @($global:SofiaTest_LivePids | ForEach-Object { [pscustomobject]@{ Id = [int]$_ } })

@@ -99,3 +99,27 @@ Test 'событие без вердикта не выдаётся ни за PAS
     $out = Invoke-MemCheck
     Assert-Match 'NOT_MEASURED\s*\]\s*Проверка памяти Windows' $out 'вердикта нет — значит не измерено'
 }
+
+Test 'свежий чистый прогон перевешивает старый прогон с ошибками' {
+    # Планку заменили и перепроверили. Старое 1202 не должно вечно держать
+    # машину в статусе сбойной.
+    Set-WinEventStub -Mode ok -Events @(
+        (New-TestEvent -Id 1202 -Provider 'Microsoft-Windows-MemoryDiagnostics-Results' `
+                       -Time (Get-Date).AddDays(-20) -Message 'Hardware problems were detected.'),
+        (New-TestEvent -Id 1201 -Provider 'Microsoft-Windows-MemoryDiagnostics-Results' `
+                       -Time (Get-Date).AddDays(-1) -Message 'detected no errors.')
+    )
+    $out = Invoke-MemCheck -Days 60
+    Assert-Match 'PASS\s*\]\s*Проверка памяти Windows' $out 'вердикт берётся по самому свежему прогону'
+}
+
+Test 'свежий прогон с ошибками перевешивает старый чистый' {
+    Set-WinEventStub -Mode ok -Events @(
+        (New-TestEvent -Id 1201 -Provider 'Microsoft-Windows-MemoryDiagnostics-Results' `
+                       -Time (Get-Date).AddDays(-20) -Message 'detected no errors.'),
+        (New-TestEvent -Id 1202 -Provider 'Microsoft-Windows-MemoryDiagnostics-Results' `
+                       -Time (Get-Date).AddDays(-1) -Message 'Hardware problems were detected.')
+    )
+    $out = Invoke-MemCheck -Days 60
+    Assert-Match 'FAIL\s*\]\s*Проверка памяти Windows' $out 'и в обратную сторону тоже'
+}

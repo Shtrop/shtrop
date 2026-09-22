@@ -182,3 +182,32 @@ Test 'смена power limit на перезагрузке замечается 
         Assert-Match 'power_limit_changed' ($r.hold_exit_blockers -join ';') 'причина должна быть названа'
     } finally { Remove-Sandbox $sb }
 }
+
+Test 'одиночное показание на старте системы не блокирует выход навсегда' {
+    # Задача закрепления срабатывает с задержкой, поэтому сразу после загрузки
+    # один опрос видит максимум платы. Если засчитывать такие показания как
+    # режим, они копятся в состоянии окна и блокируют выход из hold навсегда:
+    # исправить это можно было бы только удалением файла состояния вместе с
+    # набранными часами.
+    $sb = New-Sandbox 'watch_pl_blip'
+    try {
+        $out = Join-Path $sb.Dir 'out'
+        Install-FakeNvidiaSmi -Dir $sb.Dir -State @{ power_limit = 450 } | Out-Null
+        Set-WinEventStub -Mode ok -Events @()
+
+        Invoke-Watcher -OutDir $out -Arguments @{ Hours = 0.0012 } | Out-Null
+
+        # Перезагрузка: первый опрос застаёт максимум платы, дальше лимит на месте.
+        $gs = Join-Path $sb.Dir 'bin/gpu_state.json'
+        $g = Get-Content $gs -Raw | ConvertFrom-Json
+        $g.power_limit = 600
+        $g.power_limit_sequence = @(600, 450, 450, 450, 450)
+        $g | ConvertTo-Json -Depth 6 | Out-File -FilePath $gs -Encoding UTF8
+
+        $r = Invoke-Watcher -OutDir $out -Arguments @{ Resume = $true; RequiredHours = 0; Hours = 0.0018 }
+
+        Assert-Equal 450 ([int]$r.power_limit_w_last) 'на конце окна лимит на месте'
+        Assert-True (-not $r.power_limit_changed) 'одиночное показание — не смена режима'
+        Assert-True ([bool]$r.hold_exit_ready) 'и оно не должно запирать выход из hold'
+    } finally { Remove-Sandbox $sb }
+}

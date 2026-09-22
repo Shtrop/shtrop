@@ -154,6 +154,11 @@ function Get-GpuOwnerReport {
                         отдельно: это незакрытые контексты, и именно они
                         объясняют занятую память без живого владельца.
                         Пустой список означает «не проверяли».
+        StillListedPids — pid из ПОВТОРНОГО опроса nvidia-smi. Между первым
+                        опросом и снимком процессов рендер может честно
+                        завершиться, и без этой сверки он выглядел бы как
+                        незакрытый контекст. Мёртвым считается только тот, кого
+                        карта всё ещё числит за собой. $null — сверки не было.
 
         Проверяются два независимых дефекта:
           1. сколько тяжёлых владельцев на карте (правило ONE HEAVY GPU OWNER);
@@ -169,10 +174,13 @@ function Get-GpuOwnerReport {
         [int] $HeavyMiB = 2048,
         [int] $OrphanMiB = 2048,
         [hashtable] $CounterMemory = @{},
-        [int[]] $LivePids = @()
+        [int[]] $LivePids = @(),
+        $StillListedPids = $null
     )
 
     $checkLive = (@($LivePids).Count -gt 0)
+    $recheck = ($null -ne $StillListedPids)
+    $stillListed = @($StillListedPids | ForEach-Object { [int]$_ })
 
     $apps = @($Apps | Where-Object { $_ })
     $classified = @()
@@ -190,7 +198,11 @@ function Get-GpuOwnerReport {
 
         # Процесс, которого уже нет, но который nvidia-smi всё ещё перечисляет —
         # незакрытый контекст: память за ним числится, а освобождать её некому.
+        # Процесса нет в системе — но объявлять контекст незакрытым можно лишь
+        # тогда, когда карта всё ещё числит его за собой: иначе рендер,
+        # завершившийся между двумя опросами, попал бы в «мёртвые».
         $isDead = $checkLive -and ($LivePids -notcontains [int]$a.Pid)
+        if ($isDead -and $recheck) { $isDead = ($stillListed -contains [int]$a.Pid) }
 
         $isDesktop = $script:GpuDesktopProcesses -contains $a.Name
         $isRender  = Test-GpuRenderProcess -Name $a.Name -Path $a.Path
@@ -284,7 +296,8 @@ function Get-GpuOwnerReport {
         # который читают глазами при инциденте, выглядит как ошибка данных.
         $attrEvidence = (@($attrEvidence, ("в списке nvidia-smi есть процессы, которых больше нет в системе — {0} шт. ({1}): контексты GPU не закрыты" -f $dead.Count, $deadNames)) |
                          Where-Object { $_ }) -join '; '
-        $attrNext = 'память за завершившимися процессами драйвер не отдаст сам: освободить штатным механизмом студии, иначе только перезагрузка'
+        $attrNext = (@($attrNext, 'память за завершившимися процессами драйвер не отдаст сам: освободить штатным механизмом студии, иначе только перезагрузка') |
+                     Where-Object { $_ }) -join '; '
     }
 
     # ---- Свести -----------------------------------------------------------

@@ -189,7 +189,8 @@ $samples     = 0
 $eventsSeen  = @()
 $wheaSeen    = @()
 $limitLast   = $null
-$limitValues = @()
+$limitValues = @()          # режимы, продержавшиеся хотя бы два опроса подряд
+$prevSampleLimit = $null    # предыдущее показание текущего сеанса
 if ($script:ResumedLimitValues) { $limitValues = @($script:ResumedLimitValues) }
 
 # Доступ к журналу проверяется пробой на каждом опросе: если права пропали
@@ -240,7 +241,15 @@ while ((Get-Date) -lt $end) {
                     $lv = [double]$limit
                     $limitLast = $lv
                     if ($null -eq $limitFirst) { $limitFirst = $lv }
-                    if (-not ($limitValues | Where-Object { [math]::Abs($_ - $lv) -le 1 })) { $limitValues += $lv }
+                    # Режим засчитывается только после двух подряд одинаковых
+                    # опросов. Задача закрепления срабатывает на старте системы
+                    # с задержкой, поэтому одиночное показание «максимум платы»
+                    # сразу после загрузки — это не смена режима, и блокировать
+                    # им выход из hold навсегда нельзя.
+                    if ($null -ne $prevSampleLimit -and [math]::Abs($prevSampleLimit - $lv) -le 1) {
+                        if (-not ($limitValues | Where-Object { [math]::Abs($_ - $lv) -le 1 })) { $limitValues += $lv }
+                    }
+                    $prevSampleLimit = $lv
                 }
             }
         } catch { }
@@ -321,10 +330,16 @@ $clean   = ($eventsSeen.Count -eq 0 -and $wheaSeen.Count -eq 0)
 $verdict = if ($everBlocked) { 'NOT_MEASURED' } elseif ($clean) { 'PASS' } else { 'FAIL' }
 
 # Смягчение, которое не держалось всё окно, обесценивает окно: наблюдали
-# один режим питания, а в production вернётся другой. Значения копятся по
-# всему окну, включая прошлые сеансы: смена лимита на перезагрузке — штатный
-# способ его потерять, и не заметить её было бы хуже всего.
-$limitChanged = ($limitValues.Count -gt 1)
+# один режим питания, а в production вернётся другой.
+#
+# Два независимых признака, и оба нужны:
+#   - устойчивых режимов за окно больше одного (лимит менялся посреди работы);
+#   - лимит на конце окна отличается от лимита на его начале (смена на
+#     перезагрузке между сеансами — её одиночными показаниями не поймать).
+$sustainedChange = ($limitValues.Count -gt 1)
+$endpointChange  = ($null -ne $limitFirst -and $null -ne $limitLast -and
+                    [math]::Abs($limitFirst - $limitLast) -gt 1)
+$limitChanged = ($sustainedChange -or $endpointChange)
 
 $blockers = @()
 if ($everBlocked)               { $blockers += 'event_log_blocked: журнал System не читался, крахи могли быть не видны' }
@@ -333,7 +348,11 @@ if (-not $clean)                { $blockers += ("crash_or_whea_in_window: соб
 # возобновление давно брошенного окна дало бы «48 ч» за пять минут работы.
 if ($observed -lt $RequiredHours) { $blockers += ("window_short: наблюдения {0} ч из требуемых {1} ч" -f $observed, $RequiredHours) }
 if ($coverageGap -gt 1) { $blockers += ("coverage_gap: {0} ч окна прошли без наблюдения — нагрузка за это время не подтверждена" -f $coverageGap) }
-if ($limitChanged)              { $blockers += ("power_limit_changed: за окно лимит был {0} W" -f (($limitValues | ForEach-Object { [int]$_ }) -join ' -> ')) }
+if ($limitChanged) {
+    $shape = if ($endpointChange) { "{0} W в начале окна, {1} W в конце" -f [int]$limitFirst, [int]$limitLast }
+             else { "устойчивые режимы за окно: {0} W" -f (($limitValues | ForEach-Object { [int]$_ }) -join ', ') }
+    $blockers += ("power_limit_changed: {0}" -f $shape)
+}
 
 $holdExitReady = ($blockers.Count -eq 0)
 

@@ -215,3 +215,34 @@ Test 'все процессы живы — мёртвых нет' {
     Assert-Equal 0 $r.DeadCount 'мёртвых нет'
     Assert-Equal 'PASS' $r.Status 'всё в порядке'
 }
+
+Test 'рендер, завершившийся между опросами, не объявляется незакрытым контекстом' {
+    # Между списком процессов от nvidia-smi и снимком процессов системы рендер
+    # может честно закончиться. Без повторного опроса карты он выглядел бы как
+    # висящий контекст — и диагностика советовала бы перезагрузку на ровном месте.
+    $apps = ConvertFrom-NvidiaComputeApps -Text '19692, C:\ComfyUI\python.exe, 2917 MiB'
+    $r = Get-GpuOwnerReport -Apps $apps -MemoryUsedMiB 3000 -LivePids @(27900) -StillListedPids @()
+
+    Assert-Equal 0 $r.DeadCount 'карта его больше не числит — значит он просто закончился'
+    Assert-Equal 'PASS' $r.Status 'поводов для отказа нет'
+}
+
+Test 'процесс, которого нет, но которого карта всё ещё числит, остаётся мёртвым' {
+    $apps = ConvertFrom-NvidiaComputeApps -Text '19692, C:\ComfyUI\python.exe, 2917 MiB'
+    $r = Get-GpuOwnerReport -Apps $apps -MemoryUsedMiB 3000 -LivePids @(27900) -StillListedPids @(19692)
+
+    Assert-Equal 1 $r.DeadCount 'контекст висит'
+    Assert-Equal 'FAIL' $r.Status 'это отказ'
+}
+
+Test 'мёртвый владелец не затирает совет по не отнесённой памяти' {
+    $apps = ConvertFrom-NvidiaComputeApps -Text @"
+27900, C:\ComfyUI\python.exe, [N/A]
+19692, C:\ComfyUI\python.exe, [N/A]
+"@
+    $r = Get-GpuOwnerReport -Apps $apps -MemoryUsedMiB 31794 -MemoryTotalMiB 32607 `
+                            -LivePids @(27900) -StillListedPids @(19692)
+
+    Assert-Match 'драйвер не отдаст' $r.NextAction 'совет про висящий контекст'
+    Assert-Match 'счётчик|WDDM' $r.NextAction 'и совет про измерение памяти — оба нужны'
+}

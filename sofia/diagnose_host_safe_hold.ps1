@@ -451,7 +451,7 @@ Invoke-Section 'gpu' {
             }
         }
 
-        $thr = & nvidia-smi -q -d PERFORMANCE 2>&1
+        $thr = & nvidia-smi -i 0 -q -d PERFORMANCE 2>&1
         $script:Report.sections['gpu_throttle'] = ($thr | Out-String).Trim()
         $active = @($thr | Select-String -Pattern ':\s*Active' )
         if ($active.Count -gt 0) {
@@ -464,7 +464,9 @@ Invoke-Section 'gpu' {
 
         # «На GPU есть задачи» — не вывод. Важно, сколько тяжёлых владельцев и
         # не держится ли VRAM без владельца вовсе: это разные дефекты.
-        $procs = & nvidia-smi --query-compute-apps='pid,process_name,used_memory' --format=csv,noheader 2>&1
+        # -i 0 обязателен и здесь: иначе рендеры со второй карты считаются
+        # владельцами первой, а её занятая память их не объясняет.
+        $procs = & nvidia-smi -i 0 --query-compute-apps='pid,process_name,used_memory' --format=csv,noheader 2>&1
         $procText = ($procs | Out-String).Trim()
         $script:Report.sections['gpu_processes'] = $procText
 
@@ -485,8 +487,18 @@ Invoke-Section 'gpu' {
             $livePids = @()
             try { $livePids = @(Get-Process -ErrorAction Stop | ForEach-Object { [int]$_.Id }) } catch { }
 
+            # Повторный опрос карты уже ПОСЛЕ снимка процессов: рендер, честно
+            # завершившийся между двумя шагами, из этого списка уйдёт, и в
+            # «мёртвые» не попадёт. Останется только тот, чей контекст висит.
+            $stillListed = $null
+            if ($livePids.Count -gt 0) {
+                $procText2 = (& nvidia-smi -i 0 --query-compute-apps='pid,process_name,used_memory' --format=csv,noheader 2>&1 | Out-String).Trim()
+                $stillListed = @((ConvertFrom-NvidiaComputeApps -Text $procText2) | ForEach-Object { [int]$_.Pid })
+            }
+
             $own = Get-GpuOwnerReport -Apps $apps -MemoryUsedMiB $memUsed -MemoryTotalMiB $memTotal `
-                                      -HoldActive $holdActive -CounterMemory $counterMem -LivePids $livePids
+                                      -HoldActive $holdActive -CounterMemory $counterMem `
+                                      -LivePids $livePids -StillListedPids $stillListed
 
             $script:Report.sections['gpu_owners'] = [ordered]@{
                 heavy_count      = $own.HeavyCount

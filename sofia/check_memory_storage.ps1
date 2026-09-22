@@ -171,8 +171,12 @@ foreach ($m in $md) {
 # ошибок». Прежнее условие превращало чистый прогон памяти в FAIL и отправляло
 # владельца искать несуществующий дефект RAM.
 # Решает идентификатор: 1201 — ошибок нет, 1202 — ошибки найдены.
-$bad  = @($md | Where-Object { $_.Id -eq 1202 })
-$good = @($md | Where-Object { $_.Id -eq 1201 })
+# Берём САМЫЙ СВЕЖИЙ вердикт, а не любой из последних пяти: иначе старое 1202
+# перевешивает новое 1201, и машина с уже заменённой планкой вечно числится
+# сбойной. $md приходит от свежих к старым.
+$verdicts = @($md | Where-Object { $_.Id -eq 1201 -or $_.Id -eq 1202 } | Sort-Object TimeCreated -Descending)
+$bad  = @($verdicts | Select-Object -First 1 | Where-Object { $_.Id -eq 1202 })
+$good = @($verdicts | Select-Object -First 1 | Where-Object { $_.Id -eq 1201 })
 if ($md.Count -eq 0) {
     Add-F -Status 'NOT_MEASURED' -Component 'Проверка памяти Windows' -Evidence 'никогда не запускалась' `
           -Next 'встроенная проверка слабее MemTest86, но дешевле: mdsched.exe'
