@@ -42,9 +42,12 @@ function Test-SystemLogReadable {
 
 function Get-SystemEvents {
     param([hashtable] $Filter, [int] $MaxEvents = 0)
-    $p = @{ FilterHashtable = $Filter; ErrorAction = 'SilentlyContinue' }
+    # Несуществующий провайдер или неподходящая комбинация фильтра дают
+    # EventLogException, которую -ErrorAction SilentlyContinue не подавляет,
+    # поэтому глушим через try/catch и возвращаем пустой результат.
+    $p = @{ FilterHashtable = $Filter; ErrorAction = 'Stop' }
     if ($MaxEvents -gt 0) { $p['MaxEvents'] = $MaxEvents }
-    @(Get-WinEvent @p)
+    try { @(Get-WinEvent @p) } catch { @() }
 }
 
 $since = (Get-Date).AddDays(-$Days)
@@ -176,8 +179,14 @@ if ($md.Count -eq 0) {
 # ---------------------------------------------------------------------------
 Write-Head '4/6  Ошибки дисковой подсистемы в журнале'
 $diskProviders = 'disk','Disk','Ntfs','volmgr','storahci','stornvme','nvme'
+# Спрашиваем только про провайдеров, которые на этой системе зарегистрированы.
+$known = @{}
+try {
+    foreach ($lp in (Get-WinEvent -ListProvider * -ErrorAction Stop)) { $known[$lp.Name.ToLower()] = $true }
+} catch { }
 $diskEvents = @()
 foreach ($p in $diskProviders) {
+    if ($known.Count -gt 0 -and -not $known.ContainsKey($p.ToLower())) { continue }
     $diskEvents += Get-SystemEvents -Filter @{ LogName='System'; ProviderName=$p; StartTime=$since; Level=1,2,3 }
 }
 if ($diskEvents.Count -eq 0) {
