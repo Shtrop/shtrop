@@ -476,11 +476,19 @@ Invoke-Section 'gpu' {
                 [ordered]@{ pid = $_; used_mib = $counterMem[$_] }
             })
 
+            # Процессы, которых уже нет: nvidia-smi перечисляет их, пока
+            # драйвер держит контекст. Это самая определённая причина занятой
+            # памяти без живого владельца.
+            $livePids = @()
+            try { $livePids = @(Get-Process -ErrorAction Stop | ForEach-Object { [int]$_.Id }) } catch { }
+
             $own = Get-GpuOwnerReport -Apps $apps -MemoryUsedMiB $memUsed -MemoryTotalMiB $memTotal `
-                                      -HoldActive $holdActive -CounterMemory $counterMem
+                                      -HoldActive $holdActive -CounterMemory $counterMem -LivePids $livePids
 
             $script:Report.sections['gpu_owners'] = [ordered]@{
                 heavy_count      = $own.HeavyCount
+                dead_count       = $own.DeadCount
+                live_checked     = $own.LiveChecked
                 heavy_used_mib   = $own.HeavyUsedMiB
                 attributed_mib   = $own.AttributedMiB
                 unattributed_mib = $own.UnattributedMiB

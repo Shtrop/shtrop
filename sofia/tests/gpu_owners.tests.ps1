@@ -165,3 +165,53 @@ Test 'счётчик делает тяжёлым владельцем проце
     $r = Get-GpuOwnerReport -Apps $apps -MemoryUsedMiB 9000 -CounterMemory @{ 5555 = 8800 }
     Assert-Equal 1 $r.HeavyCount '8,8 ГиБ — это рендер, как бы он ни назывался'
 }
+
+# --------------------------------------------------------------------------
+# Мёртвые владельцы: nvidia-smi перечисляет процесс, пока драйвер держит его
+# контекст, даже если самого процесса уже нет. Это объясняет занятую память
+# без живого владельца определённее, чем просто разрыв в цифрах.
+# --------------------------------------------------------------------------
+
+Test 'без списка живых процессов проверка не выполняется и ничего не выдумывает' {
+    $apps = ConvertFrom-NvidiaComputeApps -Text '27900, C:\ComfyUI\python.exe, 2917 MiB'
+    $r = Get-GpuOwnerReport -Apps $apps -MemoryUsedMiB 3000
+    Assert-True (-not $r.LiveChecked) 'проверка не проводилась'
+    Assert-Equal 0 $r.DeadCount 'мёртвых не выдумываем'
+}
+
+Test 'процесс, которого больше нет, помечается отдельно и объясняет ничью память' {
+    $apps = ConvertFrom-NvidiaComputeApps -Text @"
+27900, C:\ComfyUI\python.exe, [N/A]
+19692, C:\ComfyUI\python.exe, [N/A]
+"@
+    $r = Get-GpuOwnerReport -Apps $apps -MemoryUsedMiB 31794 -MemoryTotalMiB 32607 `
+                            -CounterMemory @{ 27900 = 1915 } -LivePids @(27900)
+
+    Assert-Equal 1 $r.DeadCount 'один владелец мёртв'
+    Assert-Equal 1 $r.HeavyCount 'мёртвый не считается тяжёлым владельцем'
+    Assert-Equal 'FAIL' $r.Status 'незакрытый контекст — это отказ'
+    Assert-Match 'которых больше нет' $r.Evidence 'причина должна быть названа прямо'
+    Assert-Match '19692' $r.Evidence 'и виновник тоже'
+    Assert-Match 'драйвер не отдаст|перезагрузка' $r.NextAction 'следующий шаг должен быть честным'
+}
+
+Test 'мёртвый владелец не превращает счётчик тяжёлых в ложный FAIL' {
+    # Две копии python, но одна уже мертва: нарушения ONE HEAVY GPU OWNER нет,
+    # а есть незакрытый контекст. Это разные проблемы с разным лечением.
+    $apps = ConvertFrom-NvidiaComputeApps -Text @"
+27900, C:\ComfyUI\python.exe, 2917 MiB
+19692, C:\ComfyUI\python.exe, 2917 MiB
+"@
+    $r = Get-GpuOwnerReport -Apps $apps -MemoryUsedMiB 6000 -LivePids @(27900)
+    Assert-Equal 1 $r.HeavyCount 'живой владелец один'
+    Assert-Equal 1 $r.DeadCount 'второй мёртв'
+    Assert-NotMatch 'ONE HEAVY GPU OWNER' $r.Evidence 'конкуренции владельцев здесь нет'
+}
+
+Test 'все процессы живы — мёртвых нет' {
+    $apps = ConvertFrom-NvidiaComputeApps -Text '27900, C:\ComfyUI\python.exe, 2917 MiB'
+    $r = Get-GpuOwnerReport -Apps $apps -MemoryUsedMiB 3000 -LivePids @(27900, 1, 4)
+    Assert-True ([bool]$r.LiveChecked) 'проверка проводилась'
+    Assert-Equal 0 $r.DeadCount 'мёртвых нет'
+    Assert-Equal 'PASS' $r.Status 'всё в порядке'
+}

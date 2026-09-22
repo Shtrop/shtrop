@@ -276,6 +276,31 @@ function Set-WinEventStub {
     $global:SofiaTest_WinEvents = @($Events)
 }
 
+function Set-LiveProcessStub {
+    <#
+        Задаёт, какие pid считаются существующими. $null — отдавать настоящий
+        список процессов машины.
+    #>
+    param([int[]] $Pids)
+    $global:SofiaTest_LivePids = $Pids
+}
+
+function Get-Process {
+    <#
+        Заглушка Get-Process. Вызов с -Id проходит к настоящему cmdlet: он
+        нужен самому набору тестов (поиск пути к pwsh), и подменять его нельзя.
+    #>
+    [CmdletBinding()]
+    param([int] $Id)
+    if ($PSBoundParameters.ContainsKey('Id')) {
+        return Microsoft.PowerShell.Management\Get-Process -Id $Id
+    }
+    if ($null -ne $global:SofiaTest_LivePids) {
+        return @($global:SofiaTest_LivePids | ForEach-Object { [pscustomobject]@{ Id = [int]$_ } })
+    }
+    Microsoft.PowerShell.Management\Get-Process
+}
+
 function Set-ScheduledTaskStub {
     <#
         Задаёт, какие задачи «видит» планировщик.

@@ -382,6 +382,13 @@ if ($s.gpu_owners -and [int]$s.gpu_owners.orphan_vram_mib -gt 0) {
     if ("$($s.gpu_owners.attribution)" -eq 'not_measured') {
         $alsoDo += '  Владельца установить не удалось: ни nvidia-smi, ни счётчики Windows не отдали память по процессам.'
     }
+    if ([int]$s.gpu_owners.dead_count -gt 0) {
+        $deadNames = @($s.gpu_owners.apps | Where-Object { "$($_.class)" -eq 'dead' } |
+                       ForEach-Object { "{0}:{1}" -f $_.name, $_.pid }) -join ', '
+        $alsoDo += ("  Причина найдена: nvidia-smi числит процессы, которых больше нет — {0} шт. ({1})." -f `
+                    $s.gpu_owners.dead_count, $deadNames)
+        $alsoDo += '  Это незакрытые контексты GPU. Сам драйвер их не отдаст.'
+    }
     $alsoDo += '  Освободить штатным механизмом студии. Если не отдаётся — память не вернул драйвер'
     $alsoDo += '  после завершившихся процессов, и она уйдёт только с перезагрузкой.'
 }

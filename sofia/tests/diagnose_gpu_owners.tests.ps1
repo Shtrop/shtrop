@@ -39,6 +39,7 @@ Test 'два тяжёлых владельца попадают в отчёт к
             )
         } | Out-Null
         Set-WinEventStub -Mode ok -Events @()
+        Set-LiveProcessStub -Pids @(100, 201, 10, 11, 55, 2056, 14464, 21384, 27900, 19692)
 
         $root = New-StudioRoot -Dir (Join-Path $sb.Dir 'studio') -HoldActive $true
         $r = Invoke-Diagnose -SofiaRoot $root -OutDir (Join-Path $sb.Dir 'out')
@@ -61,6 +62,7 @@ Test 'занятая VRAM без единой задачи попадает в �
     try {
         Install-FakeNvidiaSmi -Dir $sb.Dir -State @{ memory_used = 11000; compute_apps = @() } | Out-Null
         Set-WinEventStub -Mode ok -Events @()
+        Set-LiveProcessStub -Pids @(100, 201, 10, 11, 55, 2056, 14464, 21384, 27900, 19692)
 
         $root = New-StudioRoot -Dir (Join-Path $sb.Dir 'studio') -HoldActive $true
         $r = Invoke-Diagnose -SofiaRoot $root -OutDir (Join-Path $sb.Dir 'out')
@@ -76,6 +78,7 @@ Test 'простаивающая карта при hold — PASS' {
     try {
         Install-FakeNvidiaSmi -Dir $sb.Dir -State @{ memory_used = 400; compute_apps = @() } | Out-Null
         Set-WinEventStub -Mode ok -Events @()
+        Set-LiveProcessStub -Pids @(100, 201, 10, 11, 55, 2056, 14464, 21384, 27900, 19692)
 
         $root = New-StudioRoot -Dir (Join-Path $sb.Dir 'studio') -HoldActive $true
         $r = Invoke-Diagnose -SofiaRoot $root -OutDir (Join-Path $sb.Dir 'out')
@@ -117,6 +120,7 @@ Test 'WDDM: used_memory не отдаётся — диагностика гов�
             )
         } | Out-Null
         Set-WinEventStub -Mode ok -Events @()
+        Set-LiveProcessStub -Pids @(100, 201, 10, 11, 55, 2056, 14464, 21384, 27900, 19692)
         Set-GpuCounterStub -PerPid $null   # счётчики тоже не дались
 
         $root = New-StudioRoot -Dir (Join-Path $sb.Dir 'studio') -HoldActive $true
@@ -145,6 +149,7 @@ Test 'счётчики Windows закрывают пробел nvidia-smi и п�
             )
         } | Out-Null
         Set-WinEventStub -Mode ok -Events @()
+        Set-LiveProcessStub -Pids @(100, 201, 10, 11, 55, 2056, 14464, 21384, 27900, 19692)
         Set-GpuCounterStub -PerPid @{ 27900 = 27000; 2056 = 593 }
 
         $root = New-StudioRoot -Dir (Join-Path $sb.Dir 'studio') -HoldActive $true
@@ -158,5 +163,37 @@ Test 'счётчики Windows закрывают пробел nvidia-smi и п�
         $python = @($owners.apps | Where-Object { $_.pid -eq 27900 })
         Assert-Equal 'perf-counter' $python[0].mem_source 'источник памяти должен быть записан'
         Assert-True (@($r.sections.gpu_process_counters).Count -ge 2) 'сырые счётчики должны сохраниться в отчёте'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'мёртвый владелец GPU доезжает до отчёта как причина ничьей памяти' {
+    # Прямой аналог картины с машины студии: nvidia-smi числит два python,
+    # но одного из них в системе уже нет.
+    $sb = New-Sandbox 'diag_dead_owner'
+    try {
+        Install-FakeNvidiaSmi -Dir $sb.Dir -State @{
+            memory_used  = 31794
+            memory_total = 32607
+            compute_apps = @(
+                @{ pid = 27900; process_name = 'C:\AI\ComfyUI\python.exe'; used_memory = 'N/A' },
+                @{ pid = 19692; process_name = 'C:\AI\ComfyUI\python.exe'; used_memory = 'N/A' }
+            )
+        } | Out-Null
+        Set-WinEventStub -Mode ok -Events @()
+        Set-GpuCounterStub -PerPid @{ 27900 = 1915 }
+        Set-LiveProcessStub -Pids @(27900)
+
+        $root = New-StudioRoot -Dir (Join-Path $sb.Dir 'studio') -HoldActive $true
+        $r = Invoke-Diagnose -SofiaRoot $root -OutDir (Join-Path $sb.Dir 'out')
+
+        $owners = $r.sections.gpu_owners
+        Assert-True ([bool]$owners.live_checked) 'проверка живых процессов должна была пройти'
+        Assert-Equal 1 $owners.dead_count 'один владелец мёртв'
+        Assert-Equal 1 $owners.heavy_count 'живой владелец один'
+
+        $f = @($r.findings | Where-Object { $_.component -eq 'GPU owners' })
+        Assert-Equal 'FAIL' $f[0].status 'незакрытый контекст — отказ'
+        Assert-Match 'которых больше нет' $f[0].evidence 'причина должна быть названа'
+        Assert-Match '19692' $f[0].evidence 'и виновник'
     } finally { Remove-Sandbox $sb }
 }

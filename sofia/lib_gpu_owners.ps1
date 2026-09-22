@@ -149,6 +149,11 @@ function Get-GpuOwnerReport {
                         чем» от «карта занята неизвестно чем целиком».
         CounterMemory — @{ pid = MiB } от Get-GpuProcessMemoryMiB: подставляется
                         там, где nvidia-smi не отдал used_memory.
+        LivePids      — идентификаторы существующих процессов. Если задан,
+                        владельцы, которых уже нет в системе, помечаются
+                        отдельно: это незакрытые контексты, и именно они
+                        объясняют занятую память без живого владельца.
+                        Пустой список означает «не проверяли».
 
         Проверяются два независимых дефекта:
           1. сколько тяжёлых владельцев на карте (правило ONE HEAVY GPU OWNER);
@@ -163,8 +168,11 @@ function Get-GpuOwnerReport {
         [bool] $HoldActive = $false,
         [int] $HeavyMiB = 2048,
         [int] $OrphanMiB = 2048,
-        [hashtable] $CounterMemory = @{}
+        [hashtable] $CounterMemory = @{},
+        [int[]] $LivePids = @()
     )
+
+    $checkLive = (@($LivePids).Count -gt 0)
 
     $apps = @($Apps | Where-Object { $_ })
     $classified = @()
@@ -180,10 +188,14 @@ function Get-GpuOwnerReport {
             $source = 'perf-counter'
         }
 
+        # Процесс, которого уже нет, но который nvidia-smi всё ещё перечисляет —
+        # незакрытый контекст: память за ним числится, а освобождать её некому.
+        $isDead = $checkLive -and ($LivePids -notcontains [int]$a.Pid)
+
         $isDesktop = $script:GpuDesktopProcesses -contains $a.Name
         $isRender  = Test-GpuRenderProcess -Name $a.Name -Path $a.Path
-        $isHeavy   = (-not $isDesktop) -and ($isRender -or ($known -and $used -ge $HeavyMiB))
-        $class = if ($isHeavy) { 'heavy' } elseif ($isDesktop) { 'desktop' } else { 'other' }
+        $isHeavy   = (-not $isDead) -and (-not $isDesktop) -and ($isRender -or ($known -and $used -ge $HeavyMiB))
+        $class = if ($isDead) { 'dead' } elseif ($isHeavy) { 'heavy' } elseif ($isDesktop) { 'desktop' } else { 'other' }
 
         $classified += [pscustomobject]@{
             Pid = $a.Pid; Path = $a.Path; Name = $a.Name
@@ -225,6 +237,8 @@ function Get-GpuOwnerReport {
         $ownerEvidence = ("тяжёлых владельцев GPU нет, занято {0} MiB" -f $MemoryUsedMiB)
     }
 
+    $dead = @($classified | Where-Object Class -eq 'dead')
+
     # ---- 2. Сходится ли память -------------------------------------------
     $withMem = @($classified | Where-Object MemKnown)
     $attributed = 0
@@ -261,6 +275,18 @@ function Get-GpuOwnerReport {
         }
     }
 
+    # Мёртвые владельцы — отдельная и куда более определённая улика, чем просто
+    # разрыв в цифрах: они объясняют, ПОЧЕМУ память ничья.
+    if ($dead.Count -gt 0) {
+        $attrStatus = 'FAIL'
+        $deadNames = (($dead | Select-Object -First 5 | ForEach-Object { "{0}:{1}" -f $_.Name, $_.Pid }) -join ', ')
+        # Формулировка без согласования по числу: «1 процессов» в отчёте,
+        # который читают глазами при инциденте, выглядит как ошибка данных.
+        $attrEvidence = (@($attrEvidence, ("в списке nvidia-smi есть процессы, которых больше нет в системе — {0} шт. ({1}): контексты GPU не закрыты" -f $dead.Count, $deadNames)) |
+                         Where-Object { $_ }) -join '; '
+        $attrNext = 'память за завершившимися процессами драйвер не отдаст сам: освободить штатным механизмом студии, иначе только перезагрузка'
+    }
+
     # ---- Свести -----------------------------------------------------------
     $rank = @{ 'PASS' = 0; 'WARN' = 1; 'FAIL' = 2 }
     $status = if ($rank[$attrStatus] -gt $rank[$ownerStatus]) { $attrStatus } else { $ownerStatus }
@@ -272,6 +298,9 @@ function Get-GpuOwnerReport {
         Apps            = @($classified)
         HeavyOwners     = @($heavy)
         HeavyCount      = $heavy.Count
+        DeadOwners      = @($dead)
+        DeadCount       = $dead.Count
+        LiveChecked     = $checkLive
         HeavyUsedMiB    = $heavyMib
         AttributedMiB   = $attributed
         UnattributedMiB = $unattributed
