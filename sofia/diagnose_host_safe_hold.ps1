@@ -119,6 +119,20 @@ function Invoke-Section {
     }
 }
 
+function Invoke-Probe {
+    # Секция состоит из независимых зондов, и один сбойный не должен уносить
+    # остальные: отказ WMI иначе прячет и ИБП, и схему питания, и планировщик
+    # под одной строкой NOT_MEASURED — ровно тогда, когда они нужнее всего.
+    param([string]$Name, [scriptblock]$Body)
+    try {
+        & $Body
+    } catch {
+        Add-Finding -Status 'NOT_MEASURED' -Component $Name `
+                    -Evidence ("зонд не выполнен: {0}" -f $_.Exception.Message) `
+                    -NextAction 'остальные проверки секции не пострадали — разбирать только этот источник'
+    }
+}
+
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $transcript = Join-Path $OutDir 'console.log'
 try { Start-Transcript -Path $transcript -Force | Out-Null } catch { }
@@ -136,6 +150,14 @@ $since = (Get-Date).AddDays(-$Days)
 # 1. Kernel-Power 41 и родственные события
 # ---------------------------------------------------------------------------
 Write-Head '1/6  Журнал Windows: Kernel-Power 41 / 6008 / BugCheck 1001'
+$gpuLib = Join-Path $PSScriptRoot 'lib_gpu_owners.ps1'
+$script:HasGpuLib = Test-Path $gpuLib
+if ($script:HasGpuLib) { . $gpuLib }
+
+$taskLib = Join-Path $PSScriptRoot 'lib_task_results.ps1'
+$script:HasTaskLib = Test-Path $taskLib
+if ($script:HasTaskLib) { . $taskLib }
+
 Invoke-Section 'kernel_power' {
     if (-not (Test-SystemLogReadable)) {
         Add-Finding -Status 'BLOCKED' -Component 'Kernel-Power 41' `
@@ -401,7 +423,12 @@ Invoke-Section 'gpu' {
     if (-not $nvsmi) {
         Add-Finding -Status 'NOT_MEASURED' -Component 'GPU' -Evidence 'nvidia-smi не найден в PATH'
     } else {
-        $q = & nvidia-smi --query-gpu='name,temperature.gpu,power.draw,power.limit,power.max_limit,clocks.sm,utilization.gpu,memory.used,memory.total' --format=csv,noheader 2>&1
+        $memUsed = 0
+        $memTotal = 0
+        # Без -i вывод многокарточной системы — несколько строк, а Out-String
+        # склеивает их в одну: Split(',') тогда смешивает поля разных карт, и
+        # memory.total превращается в мусор вроде 326075090.
+        $q = & nvidia-smi -i 0 --query-gpu='name,temperature.gpu,power.draw,power.limit,power.max_limit,clocks.sm,utilization.gpu,memory.used,memory.total' --format=csv,noheader 2>&1
         $script:Report.sections['gpu_query'] = ($q | Out-String).Trim()
         Write-Host ("  {0}" -f ($q | Out-String).Trim())
 
@@ -411,6 +438,8 @@ Invoke-Section 'gpu' {
             $draw  = [double]($fields[2] -replace '[^\d\.]', '')
             $limit = [double]($fields[3] -replace '[^\d\.]', '')
             $maxL  = [double]($fields[4] -replace '[^\d\.]', '')
+            if ($fields.Count -ge 8) { $memUsed = [int]([double]($fields[7] -replace '[^\d\.]', '')) }
+            if ($fields.Count -ge 9) { $memTotal = [int]([double]($fields[8] -replace '[^\d\.]', '')) }
             $tSt = if ($temp -ge 83) { 'FAIL' } elseif ($temp -ge 75) { 'WARN' } else { 'PASS' }
             Add-Finding -Status $tSt -Component 'GPU температура' -Evidence ("{0} C" -f $temp)
             if ($limit -ge $maxL) {
@@ -422,7 +451,7 @@ Invoke-Section 'gpu' {
             }
         }
 
-        $thr = & nvidia-smi -q -d PERFORMANCE 2>&1
+        $thr = & nvidia-smi -i 0 -q -d PERFORMANCE 2>&1
         $script:Report.sections['gpu_throttle'] = ($thr | Out-String).Trim()
         $active = @($thr | Select-String -Pattern ':\s*Active' )
         if ($active.Count -gt 0) {
@@ -433,16 +462,97 @@ Invoke-Section 'gpu' {
             Add-Finding -Status 'PASS' -Component 'GPU throttle reasons' -Evidence 'активных причин нет'
         }
 
-        $procs = & nvidia-smi --query-compute-apps='pid,process_name,used_memory' --format=csv,noheader 2>&1
-        $script:Report.sections['gpu_processes'] = ($procs | Out-String).Trim()
-        if (($procs | Out-String).Trim()) {
-            Write-Host '  --- активные GPU-процессы ---' -ForegroundColor DarkGray
-            $procs | Write-Host
-            Add-Finding -Status 'WARN' -Component 'GPU processes' `
-                        -Evidence 'на GPU есть активные задачи' `
-                        -NextAction 'при активном safe hold рендеров быть не должно — проверить, кто владелец процесса'
+        # «На GPU есть задачи» — не вывод. Важно, сколько тяжёлых владельцев и
+        # не держится ли VRAM без владельца вовсе: это разные дефекты.
+        # -i 0 обязателен и здесь: иначе рендеры со второй карты считаются
+        # владельцами первой, а её занятая память их не объясняет.
+        $procs = & nvidia-smi -i 0 --query-compute-apps='pid,process_name,used_memory' --format=csv,noheader 2>&1
+        $procText = ($procs | Out-String).Trim()
+        $script:Report.sections['gpu_processes'] = $procText
+
+        if ($script:HasGpuLib) {
+            $holdActive = [bool]$script:Report.sections['host_safe_hold']
+            $apps = ConvertFrom-NvidiaComputeApps -Text $procText
+
+            # Под WDDM nvidia-smi не отдаёт used_memory, поэтому память берём
+            # из счётчиков Windows. Без этого занятая VRAM остаётся ничьей.
+            $counterMem = Get-GpuProcessMemoryMiB
+            $script:Report.sections['gpu_process_counters'] = @($counterMem.Keys | ForEach-Object {
+                [ordered]@{ pid = $_; used_mib = $counterMem[$_] }
+            })
+
+            # Процессы, которых уже нет: nvidia-smi перечисляет их, пока
+            # драйвер держит контекст. Это самая определённая причина занятой
+            # памяти без живого владельца.
+            $livePids = @()
+            try { $livePids = @(Get-Process -ErrorAction Stop | ForEach-Object { [int]$_.Id }) } catch { }
+
+            # Повторный опрос карты уже ПОСЛЕ снимка процессов: рендер, честно
+            # завершившийся между двумя шагами, из этого списка уйдёт, и в
+            # «мёртвые» не попадёт. Останется только тот, чей контекст висит.
+            $stillListed = $null
+            if ($livePids.Count -gt 0) {
+                $procText2 = (& nvidia-smi -i 0 --query-compute-apps='pid,process_name,used_memory' --format=csv,noheader 2>&1 | Out-String).Trim()
+                # Сверка засчитывается ТОЛЬКО при успешном втором опросе.
+                # Иначе ошибка nvidia-smi дала бы пустой список, а пустой
+                # список означал бы «карта никого не числит» — и настоящий
+                # висящий контекст молча превратился бы в PASS.
+                if ($LASTEXITCODE -eq 0) {
+                    $stillListed = @((ConvertFrom-NvidiaComputeApps -Text $procText2) | ForEach-Object { [int]$_.Pid })
+                } else {
+                    Write-Host '  повторный опрос GPU не удался — сверка по завершившимся процессам пропущена' -ForegroundColor DarkGray
+                }
+            }
+
+            $own = Get-GpuOwnerReport -Apps $apps -MemoryUsedMiB $memUsed -MemoryTotalMiB $memTotal `
+                                      -HoldActive $holdActive -CounterMemory $counterMem `
+                                      -LivePids $livePids -StillListedPids $stillListed
+
+            $script:Report.sections['gpu_owners'] = [ordered]@{
+                heavy_count      = $own.HeavyCount
+                dead_count       = $own.DeadCount
+                stale_dropped    = $own.StaleCount
+                live_checked     = $own.LiveChecked
+                heavy_used_mib   = $own.HeavyUsedMiB
+                attributed_mib   = $own.AttributedMiB
+                unattributed_mib = $own.UnattributedMiB
+                attribution      = $own.Attribution
+                orphan_vram_mib  = $own.OrphanVramMiB
+                memory_used_mib  = $memUsed
+                memory_total_mib = $memTotal
+                hold_active      = $holdActive
+                apps             = @($own.Apps | ForEach-Object {
+                    [ordered]@{
+                        pid = $_.Pid; name = $_.Name; used_mib = $_.UsedMiB
+                        mem_known = $_.MemKnown; mem_source = $_.MemSource; class = $_.Class
+                    }
+                })
+            }
+
+            if ($own.Apps.Count -gt 0) {
+                Write-Host '  --- владельцы GPU ---' -ForegroundColor DarkGray
+                foreach ($a in $own.Apps) {
+                    $mem = if ($a.MemKnown) { "{0,7} MiB" -f $a.UsedMiB } else { '  не отдана' }
+                    $src = if ($a.MemSource -eq 'perf-counter') { ' (счётчик)' } else { '' }
+                    Write-Host ("    {0,-24} pid {1,-8} {2}{3}  [{4}]" -f $a.Name, $a.Pid, $mem, $src, $a.Class)
+                }
+                Write-Host ("    отнесено {0} MiB из занятых {1} MiB (не отнесено {2} MiB)" -f `
+                            $own.AttributedMiB, $memUsed, $own.UnattributedMiB) -ForegroundColor DarkGray
+            }
+
+            Add-Finding -Status $own.Status -Component 'GPU owners' `
+                        -Evidence $own.Evidence -NextAction $own.NextAction
         } else {
-            Add-Finding -Status 'PASS' -Component 'GPU processes' -Evidence 'активных GPU-задач нет (ожидаемо при hold)'
+            # Библиотеки рядом нет — не отказываемся собирать доказательства.
+            if ($procText) {
+                Write-Host '  --- активные GPU-процессы ---' -ForegroundColor DarkGray
+                $procs | Write-Host
+                Add-Finding -Status 'WARN' -Component 'GPU processes' `
+                            -Evidence 'на GPU есть активные задачи, lib_gpu_owners.ps1 рядом не найден' `
+                            -NextAction 'скачать lib_gpu_owners.ps1 из того же каталога репозитория и повторить'
+            } else {
+                Add-Finding -Status 'PASS' -Component 'GPU processes' -Evidence 'активных GPU-задач нет (ожидаемо при hold)'
+            }
         }
     }
 
@@ -552,6 +662,7 @@ Invoke-Section 'services' {
 # ---------------------------------------------------------------------------
 Write-Head '6/6  Аптайм, профиль питания, задачи Sofia (read-only)'
 Invoke-Section 'host' {
+  Invoke-Probe 'Uptime' {
     $os = Get-CimInstance Win32_OperatingSystem
     $up = (Get-Date) - $os.LastBootUpTime
     $script:Report.sections['uptime'] = [ordered]@{
@@ -561,7 +672,9 @@ Invoke-Section 'host' {
     Add-Finding -Status $(if ($up.TotalHours -lt 12) { 'WARN' } else { 'PASS' }) `
                 -Component 'Uptime' `
                 -Evidence ("последняя загрузка {0} ({1} ч назад)" -f $os.LastBootUpTime, [math]::Round($up.TotalHours,1))
+  }
 
+  Invoke-Probe 'UPS/батарея' {
     $bat = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue
     $script:Report.sections['ups_battery'] = if ($bat) {
         @($bat | ForEach-Object { [ordered]@{ name = $_.Name; status = $_.Status; charge = $_.EstimatedChargeRemaining } })
@@ -573,11 +686,15 @@ Invoke-Section 'host' {
                     -Evidence 'ИБП системе не виден' `
                     -NextAction 'при подтверждённых событиях 41 без BSOD — ИБП закрывает класс причин целиком'
     }
+  }
 
+  Invoke-Probe 'Схема питания' {
     $scheme = (& powercfg /getactivescheme 2>&1 | Out-String).Trim()
     $script:Report.sections['power_scheme'] = $scheme
     Write-Host ("  {0}" -f $scheme)
+  }
 
+  Invoke-Probe 'Task Scheduler' {
     try {
         $tasks = Get-ScheduledTask -ErrorAction Stop |
                  Where-Object { $_.TaskName -match 'sofia|comfy|reel|render|govern' -or $_.TaskPath -match 'Sofia' }
@@ -593,20 +710,60 @@ Invoke-Section 'host' {
             }
         })
         $script:Report.sections['scheduled_tasks'] = $trows
-        if ($trows.Count -gt 0) {
+        if ($trows.Count -gt 0 -and $script:HasTaskLib) {
+            # «Ненулевой код» — не синоним отказа: планировщик возвращает и свои
+            # коды состояния (выполняется, ни разу не запускалась, в очереди).
+            # Считать их провалами — получить десятки несуществующих отказов.
+            $sum = Get-TaskFailureSummary -Tasks ($trows | ForEach-Object { [pscustomobject]$_ })
+
+            $script:Report.sections['scheduled_tasks_summary'] = [ordered]@{
+                total        = $sum.Total
+                ok_count     = $sum.OkCount
+                info_count   = $sum.InfoCount
+                failed_count = $sum.FailedCount
+                groups       = @($sum.Groups | ForEach-Object {
+                    [ordered]@{ hex = $_.Hex; count = $_.Count; name = $_.ResultName; hint = $_.Hint; examples = @($_.Examples) }
+                })
+            }
+
+            Write-Host ("  задач Sofia: {0}   успешно: {1}   состояние планировщика: {2}   отказов: {3}" -f `
+                        $sum.Total, $sum.OkCount, $sum.InfoCount, $sum.FailedCount)
+
+            if ($sum.FailedCount -gt 0) {
+                Write-Host '  --- причины отказов ---' -ForegroundColor DarkGray
+                foreach ($g in $sum.Groups) {
+                    Write-Host ("    {0}  x{1,-4} {2}" -f $g.Hex, $g.Count, $g.ResultName) -ForegroundColor Yellow
+                    Write-Host ("      {0}" -f $g.Hint) -ForegroundColor DarkGray
+                    Write-Host ("      например: {0}" -f ($g.Examples -join ', ')) -ForegroundColor DarkGray
+                }
+            }
+
+            if ($sum.FailedCount -gt 0) {
+                $topG = $sum.Groups[0]
+                Add-Finding -Status 'WARN' -Component 'Task Scheduler' `
+                            -Evidence ("задач Sofia: {0}, отказов: {1} (чаще всего {2} {3} — {4} шт.); состояний планировщика, не отказов: {5}" -f `
+                                       $sum.Total, $sum.FailedCount, $topG.Hex, $topG.ResultName, $topG.Count, $sum.InfoCount) `
+                            -NextAction ("разбирать по самой частой причине: {0}; задачи не изменять — только чтение" -f $topG.Hint)
+            } else {
+                Add-Finding -Status 'PASS' -Component 'Task Scheduler' `
+                            -Evidence ("задач Sofia: {0}, отказов нет ({1} в состоянии планировщика)" -f $sum.Total, $sum.InfoCount) `
+                            -NextAction 'задачи не изменять — только чтение'
+            }
+        } elseif ($trows.Count -gt 0) {
             $trows | ForEach-Object { [pscustomobject]$_ } |
                 Select-Object name, state, last_run, last_code, next_run |
                 Format-Table -AutoSize | Out-String | Write-Host
             $bad = @($trows | Where-Object { $_.last_code -ne 0 -and $_.last_code -ne $null })
             Add-Finding -Status $(if ($bad.Count) { 'WARN' } else { 'PASS' }) -Component 'Task Scheduler' `
-                        -Evidence ("задач Sofia: {0}, с ненулевым кодом: {1}" -f $trows.Count, $bad.Count) `
-                        -NextAction 'задачи не изменять — только чтение'
+                        -Evidence ("задач Sofia: {0}, с ненулевым кодом: {1}; lib_task_results.ps1 рядом не найден" -f $trows.Count, $bad.Count) `
+                        -NextAction 'скачать lib_task_results.ps1 из того же каталога репозитория и повторить'
         } else {
             Add-Finding -Status 'NOT_MEASURED' -Component 'Task Scheduler' -Evidence 'задачи Sofia не найдены по маске'
         }
     } catch {
         Add-Finding -Status 'NOT_MEASURED' -Component 'Task Scheduler' -Evidence 'нет доступа к планировщику'
     }
+  }
 }
 
 # ---------------------------------------------------------------------------

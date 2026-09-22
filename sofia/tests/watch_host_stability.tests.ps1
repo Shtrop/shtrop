@@ -1,0 +1,380 @@
+﻿<#
+    Контракт watch_host_stability.ps1.
+
+    Окно наблюдения — единственное доказательство, по которому владелец снимает
+    HOST_SAFE_HOLD. Поэтому цена ложного PASS здесь максимальная: он возвращает
+    производство на хост, который продолжает падать. Тесты защищают именно это.
+#>
+
+$watcher = Join-Path (Split-Path $PSScriptRoot -Parent) 'watch_host_stability.ps1'
+
+function Invoke-Watcher {
+    param(
+        [hashtable] $Arguments = @{},
+        [string] $OutDir
+    )
+    $p = @{ Hours = 0.0006; IntervalSeconds = 1; OutDir = $OutDir }
+    foreach ($k in $Arguments.Keys) { $p[$k] = $Arguments[$k] }
+    & $watcher @p | Out-Null
+    $summary = Join-Path $OutDir 'stability_summary.json'
+    if (-not (Test-Path $summary)) { throw 'итоговый JSON не создан' }
+    Get-Content $summary -Raw | ConvertFrom-Json
+}
+
+# --------------------------------------------------------------------------
+
+Test 'недоступный журнал System даёт NOT_MEASURED, а не PASS' {
+    $sb = New-Sandbox 'watch_denied'
+    try {
+        Set-WinEventStub -Mode denied
+        $r = Invoke-Watcher -OutDir (Join-Path $sb.Dir 'out')
+        Assert-Equal 'NOT_MEASURED' $r.verdict 'вердикт при недоступном журнале'
+        Assert-True ([bool]$r.event_log_blocked) 'флаг event_log_blocked должен быть выставлен'
+        Assert-True (-not $r.hold_exit_ready) 'выход из hold не может быть разрешён без измерения'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'чистое, но короткое окно не разрешает выход из hold' {
+    $sb = New-Sandbox 'watch_short'
+    try {
+        Set-WinEventStub -Mode ok -Events @()
+        $r = Invoke-Watcher -OutDir (Join-Path $sb.Dir 'out')
+        Assert-Equal 'PASS' $r.verdict 'событий нет — вердикт по стабильности PASS'
+        Assert-True (-not $r.hold_exit_ready) 'окна в секунды недостаточно для выхода из hold'
+        Assert-Match 'window_short' ($r.hold_exit_blockers -join ';') 'причина отказа должна быть названа'
+        Assert-Equal 48 $r.required_hours 'порог по умолчанию — 48 ч из runbook'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'событие Kernel-Power 41 внутри окна даёт FAIL' {
+    $sb = New-Sandbox 'watch_kp41'
+    try {
+        Set-WinEventStub -Mode ok -Events @(
+            New-TestEvent -Id 41 -Provider 'Microsoft-Windows-Kernel-Power' -Time (Get-Date).AddSeconds(30)
+        )
+        $r = Invoke-Watcher -OutDir (Join-Path $sb.Dir 'out')
+        Assert-Equal 'FAIL' $r.verdict 'краш внутри окна'
+        Assert-True (-not $r.hold_exit_ready) 'при FAIL выход из hold запрещён'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'новая ошибка WHEA без краха тоже даёт FAIL' {
+    $sb = New-Sandbox 'watch_whea'
+    try {
+        Set-WinEventStub -Mode ok -Events @(
+            New-TestEvent -Id 47 -Provider 'Microsoft-Windows-WHEA-Logger' -Time (Get-Date).AddSeconds(30) -PhysicalAddress '0x3f8a21000'
+        )
+        $r = Invoke-Watcher -OutDir (Join-Path $sb.Dir 'out')
+        Assert-Equal 'FAIL' $r.verdict 'корректируемая ошибка — тоже грязное окно'
+        Assert-Equal 1 @($r.whea_detected).Count 'ошибка WHEA должна попасть в отчёт'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'возобновление окна после ресета видит событие, случившееся до перезапуска' {
+    $sb = New-Sandbox 'watch_resume'
+    try {
+        $out = Join-Path $sb.Dir 'out'
+        New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+        # Первый прогон: окно стартовало 3 часа назад, потом хост ушёл в ресет.
+        Set-WinEventStub -Mode ok -Events @()
+        Invoke-Watcher -OutDir $out | Out-Null
+
+        $statePath = Join-Path $out 'window_state.json'
+        Assert-True (Test-Path $statePath) 'состояние окна должно сохраняться для возобновления'
+        $st = Get-Content $statePath -Raw | ConvertFrom-Json
+        $st.window_start = (Get-Date).AddHours(-3).ToString('o')
+        $st | ConvertTo-Json -Depth 6 | Out-File -FilePath $statePath -Encoding UTF8
+
+        # Ресет случился час назад: событие 41 уже в журнале, но до перезапуска скрипта.
+        Set-WinEventStub -Mode ok -Events @(
+            New-TestEvent -Id 41 -Provider 'Microsoft-Windows-Kernel-Power' -Time (Get-Date).AddHours(-1)
+        )
+        $r = Invoke-Watcher -OutDir $out -Arguments @{ Resume = $true }
+
+        Assert-Equal 'FAIL' $r.verdict 'событие до перезапуска обязано обнулить окно'
+        Assert-True ($r.window_span_hours -ge 2.5) ('окно должно считаться от исходного старта, получено ' + $r.window_span_hours)
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'возобновление давно брошенного окна не засчитывается как выполненный порог' {
+    $sb = New-Sandbox 'watch_stale_resume'
+    try {
+        $out = Join-Path $sb.Dir 'out'
+        New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+        Set-WinEventStub -Mode ok -Events @()
+        Invoke-Watcher -OutDir $out | Out-Null
+
+        # Окно якобы открыто месяц назад, а наблюдали за ним секунды.
+        $statePath = Join-Path $out 'window_state.json'
+        $st = Get-Content $statePath -Raw | ConvertFrom-Json
+        $st.window_start = (Get-Date).AddDays(-30).ToString('o')
+        $st.observed_hours = 0.001
+        $st | ConvertTo-Json -Depth 6 | Out-File -FilePath $statePath -Encoding UTF8
+
+        $r = Invoke-Watcher -OutDir $out -Arguments @{ Resume = $true }
+
+        Assert-Equal 'PASS' $r.verdict 'крахов не было'
+        Assert-True ($r.window_span_hours -ge 700) 'календарный размах действительно большой'
+        Assert-True (-not $r.hold_exit_ready) 'но наблюдения за это окно почти не было'
+        Assert-Match 'window_short' ($r.hold_exit_blockers -join ';') 'порог считается по наблюдению'
+        Assert-Match 'coverage_gap' ($r.hold_exit_blockers -join ';') 'пропуск окна должен быть назван'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'откат power limit посреди окна снимает право на выход из hold' {
+    $sb = New-Sandbox 'watch_pl_drift'
+    try {
+        Install-FakeNvidiaSmi -Dir $sb.Dir -State @{
+            power_limit          = 450
+            power_limit_sequence = @(450, 450, 450, 450, 600, 600, 600, 600)
+        } | Out-Null
+        Set-WinEventStub -Mode ok -Events @()
+        # LimitSettleSeconds = 2: опрос раз в секунду, поэтому первые два
+        # показания сеанса не копятся. В production период 600 с.
+        $r = Invoke-Watcher -OutDir (Join-Path $sb.Dir 'out') `
+                            -Arguments @{ Hours = 0.005; LimitSettleSeconds = 2 }
+
+        Assert-Equal 'PASS' $r.verdict 'крахов не было'
+        Assert-True ([bool]$r.power_limit_changed) 'смена лимита обязана быть замечена'
+        Assert-True (-not $r.hold_exit_ready) 'смягчение не держалось всё окно — окно не доказательство'
+        Assert-Match 'power_limit_changed' ($r.hold_exit_blockers -join ';') 'причина отказа должна быть названа'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'стабильный power limit не мешает выходу из hold' {
+    $sb = New-Sandbox 'watch_pl_stable'
+    try {
+        Install-FakeNvidiaSmi -Dir $sb.Dir -State @{ power_limit = 450 } | Out-Null
+        Set-WinEventStub -Mode ok -Events @()
+        $r = Invoke-Watcher -OutDir (Join-Path $sb.Dir 'out') `
+                            -Arguments @{ RequiredHours = 0; Hours = 0.002; LimitSettleSeconds = 2 }
+
+        Assert-Equal 'PASS' $r.verdict 'крахов не было'
+        Assert-True (-not $r.power_limit_changed) 'лимит не менялся'
+        Assert-True ([bool]$r.hold_exit_ready) 'при нулевом пороге и чистом окне выход разрешён'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'смена power limit на перезагрузке замечается после -Resume' {
+    # Лимит теряется именно на перезагрузке, а окно её переживает. Если
+    # набор виденных значений сбрасывать посессионно, в новом сеансе значение
+    # одно — и «лимит не менялся» выглядело бы правдой при смене 450 -> 600.
+    $sb = New-Sandbox 'watch_pl_resume'
+    try {
+        $out = Join-Path $sb.Dir 'out'
+        Install-FakeNvidiaSmi -Dir $sb.Dir -State @{ power_limit = 450 } | Out-Null
+        Set-WinEventStub -Mode ok -Events @()
+
+        Invoke-Watcher -OutDir $out -Arguments @{ Hours = 0.0025; LimitSettleSeconds = 2 } | Out-Null
+
+        $statePath = Join-Path $out 'window_state.json'
+        $st = Get-Content $statePath -Raw | ConvertFrom-Json
+        Assert-True (@($st.power_limit_regimes).Count -ge 1) 'время удержания режимов должно сохраняться в состоянии окна'
+
+        # После перезагрузки лимит вернулся к максимуму платы и там остался.
+        $gs = Join-Path $sb.Dir 'bin/gpu_state.json'
+        $g = Get-Content $gs -Raw | ConvertFrom-Json
+        $g.power_limit = 600
+        $g | ConvertTo-Json -Depth 6 | Out-File -FilePath $gs -Encoding UTF8
+
+        $r = Invoke-Watcher -OutDir $out `
+                            -Arguments @{ Resume = $true; RequiredHours = 0; Hours = 0.0025; LimitSettleSeconds = 2 }
+
+        Assert-True ([bool]$r.power_limit_changed) 'смена лимита между сеансами обязана быть замечена'
+        Assert-True (-not $r.hold_exit_ready) 'окно измеряло два разных режима питания'
+        Assert-Match 'power_limit_changed' ($r.hold_exit_blockers -join ';') 'причина должна быть названа'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'одиночное показание на старте системы не блокирует выход навсегда' {
+    # Задача закрепления срабатывает с задержкой, поэтому сразу после загрузки
+    # один опрос видит максимум платы. Если засчитывать такие показания как
+    # режим, они копятся в состоянии окна и блокируют выход из hold навсегда:
+    # исправить это можно было бы только удалением файла состояния вместе с
+    # набранными часами.
+    $sb = New-Sandbox 'watch_pl_blip'
+    try {
+        $out = Join-Path $sb.Dir 'out'
+        Install-FakeNvidiaSmi -Dir $sb.Dir -State @{ power_limit = 450 } | Out-Null
+        Set-WinEventStub -Mode ok -Events @()
+
+        Invoke-Watcher -OutDir $out -Arguments @{ Hours = 0.0025; LimitSettleSeconds = 2 } | Out-Null
+
+        # Перезагрузка: первый опрос застаёт максимум платы, дальше лимит на
+        # месте. Переходное показание не должно стать режимом.
+        $gs = Join-Path $sb.Dir 'bin/gpu_state.json'
+        $g = Get-Content $gs -Raw | ConvertFrom-Json
+        $g.power_limit = 600
+        $g.power_limit_sequence = @(600, 600, 450, 450, 450, 450, 450, 450)
+        $g | ConvertTo-Json -Depth 6 | Out-File -FilePath $gs -Encoding UTF8
+
+        $r = Invoke-Watcher -OutDir $out `
+                            -Arguments @{ Resume = $true; RequiredHours = 0; Hours = 0.0035; LimitSettleSeconds = 2 }
+
+        Assert-Equal 450 ([int]$r.power_limit_w_last) 'на конце окна лимит на месте'
+        Assert-True (-not $r.power_limit_changed) 'одиночное показание — не смена режима'
+        Assert-True ([bool]$r.hold_exit_ready) 'и оно не должно запирать выход из hold'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'окно, кончившееся сразу после перезагрузки, не закрывается по старому режиму' {
+    # Сеанс оборвался в периоде стабилизации: измеряли при 450 W, а карта уже
+    # на 600 W и это ещё ничем не подтверждено. Закрывать окно нельзя — но и
+    # запирать навсегда тоже: признак снимается продолжением наблюдения.
+    $sb = New-Sandbox 'watch_pl_unsettled'
+    try {
+        $out = Join-Path $sb.Dir 'out'
+        Install-FakeNvidiaSmi -Dir $sb.Dir -State @{ power_limit = 450 } | Out-Null
+        Set-WinEventStub -Mode ok -Events @()
+
+        Invoke-Watcher -OutDir $out -Arguments @{ Hours = 0.0025; LimitSettleSeconds = 2 } | Out-Null
+
+        $gs = Join-Path $sb.Dir 'bin/gpu_state.json'
+        $g = Get-Content $gs -Raw | ConvertFrom-Json
+        $g.power_limit = 600
+        $g | ConvertTo-Json -Depth 6 | Out-File -FilePath $gs -Encoding UTF8
+
+        # Сеанс короче периода стабилизации: 600 W ещё не измерен.
+        $r = Invoke-Watcher -OutDir $out `
+                            -Arguments @{ Resume = $true; RequiredHours = 0; Hours = 0.0005; LimitSettleSeconds = 30 }
+
+        Assert-True (-not $r.power_limit_changed) 'новый режим ещё не подтверждён'
+        Assert-True ([bool]$r.power_limit_unsettled) 'но и старым закрывать окно нельзя'
+        Assert-True (-not $r.hold_exit_ready) 'выход из hold не разрешён'
+        Assert-Match 'power_limit_unsettled' ($r.hold_exit_blockers -join ';') 'причина должна быть названа'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'состояние от прежней версии набора не теряет зафиксированный откат лимита' {
+    # Владелец обновил инструменты посреди окна. Прежняя версия писала список
+    # значений без времени — уже зафиксированную смену режима терять нельзя.
+    $sb = New-Sandbox 'watch_pl_migrate'
+    try {
+        $out = Join-Path $sb.Dir 'out'
+        Install-FakeNvidiaSmi -Dir $sb.Dir -State @{ power_limit = 600 } | Out-Null
+        Set-WinEventStub -Mode ok -Events @()
+
+        Invoke-Watcher -OutDir $out -Arguments @{ Hours = 0.0005 } | Out-Null
+
+        $statePath = Join-Path $out 'window_state.json'
+        $st = Get-Content $statePath -Raw | ConvertFrom-Json
+        $st.PSObject.Properties.Remove('power_limit_regimes')
+        $st | Add-Member -NotePropertyName power_limit_values -NotePropertyValue @(450, 600) -Force
+        $st | ConvertTo-Json -Depth 6 | Out-File -FilePath $statePath -Encoding UTF8
+
+        $r = Invoke-Watcher -OutDir $out `
+                            -Arguments @{ Resume = $true; RequiredHours = 0; Hours = 0.0025; LimitSettleSeconds = 2 }
+
+        # Прежняя версия записывала значение после двух одинаковых опросов, то
+        # есть могла записать и переходное показание после перезагрузки.
+        # Отличить одно от другого задним числом нельзя, поэтому значения
+        # переносятся НЕподтверждёнными: запереть выход навсегда они не могут,
+        # но и не теряются — подтвердятся наблюдением, если режим такой и есть.
+        $regimes = @($r.power_limit_regimes)
+        Assert-Equal 2 $regimes.Count 'оба значения перенесены, ничего не потеряно'
+
+        $migrated = @($regimes | Where-Object { [int]$_.w -eq 450 })
+        Assert-Equal 1 $migrated.Count 'значение из старого состояния на месте'
+        Assert-True (-not $migrated[0].settled) 'но подтверждённым оно не считается'
+
+        Assert-True (-not $r.power_limit_changed) 'неподтверждённое значение не запирает выход навсегда'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'перенесённый режим подтверждается наблюдением, если он настоящий' {
+    # Обратная сторона: если лимит действительно откатился, наблюдение это
+    # подтвердит само, и блокер появится честно.
+    $sb = New-Sandbox 'watch_pl_migrate_confirm'
+    try {
+        $out = Join-Path $sb.Dir 'out'
+        Install-FakeNvidiaSmi -Dir $sb.Dir -State @{ power_limit = 450 } | Out-Null
+        Set-WinEventStub -Mode ok -Events @()
+
+        Invoke-Watcher -OutDir $out -Arguments @{ Hours = 0.004; LimitSettleSeconds = 2 } | Out-Null
+
+        $statePath = Join-Path $out 'window_state.json'
+        $st = Get-Content $statePath -Raw | ConvertFrom-Json
+        $st.PSObject.Properties.Remove('power_limit_regimes')
+        $st | Add-Member -NotePropertyName power_limit_values -NotePropertyValue @(450) -Force
+        $st | ConvertTo-Json -Depth 6 | Out-File -FilePath $statePath -Encoding UTF8
+
+        # После обновления инструментов лимит действительно откатился.
+        $gs = Join-Path $sb.Dir 'bin/gpu_state.json'
+        $g = Get-Content $gs -Raw | ConvertFrom-Json
+        $g.power_limit = 600
+        $g | ConvertTo-Json -Depth 6 | Out-File -FilePath $gs -Encoding UTF8
+
+        $r = Invoke-Watcher -OutDir $out `
+                            -Arguments @{ Resume = $true; RequiredHours = 1; Hours = 0.004; LimitSettleSeconds = 2 }
+
+        Assert-True ([bool]$r.power_limit_state_migrated) 'перенос состояния должен быть отмечен'
+        Assert-True (-not $r.hold_exit_ready) 'окно не может быть закрыто'
+        Assert-Match 'power_limit_state_migrated' ($r.hold_exit_blockers -join ';') `
+                     'часы, набранные до переноса, не доказывают режим питания'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'без единого подтверждённого режима окно не закрывается' {
+    # Сеанс целиком уложился в период стабилизации: карта лимит показывает, но
+    # доказательств, что он держался, нет вовсе.
+    $sb = New-Sandbox 'watch_pl_none'
+    try {
+        Install-FakeNvidiaSmi -Dir $sb.Dir -State @{ power_limit = 450 } | Out-Null
+        Set-WinEventStub -Mode ok -Events @()
+        $r = Invoke-Watcher -OutDir (Join-Path $sb.Dir 'out') `
+                            -Arguments @{ RequiredHours = 0; Hours = 0.0005; LimitSettleSeconds = 3600 }
+
+        Assert-Equal 0 @($r.power_limit_regimes | Where-Object { $_.settled }).Count 'подтверждённых режимов нет'
+        Assert-True ([bool]$r.power_limit_unsettled) 'это должно быть замечено'
+        Assert-True (-not $r.hold_exit_ready) 'и закрывать окно нельзя'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'состояние промежуточной версии не теряет подтверждённый режим' {
+    # Промежуточная версия писала режимы без признака подтверждения. Считать их
+    # неподтверждёнными нельзя: доказанный откат лимита молча перестал бы
+    # блокировать выход из hold.
+    $sb = New-Sandbox 'watch_pl_noflag'
+    try {
+        $out = Join-Path $sb.Dir 'out'
+        Install-FakeNvidiaSmi -Dir $sb.Dir -State @{ power_limit = 600 } | Out-Null
+        Set-WinEventStub -Mode ok -Events @()
+
+        Invoke-Watcher -OutDir $out -Arguments @{ Hours = 0.004; LimitSettleSeconds = 2 } | Out-Null
+
+        # Состояние без поля settled, но с накопленным временем.
+        $statePath = Join-Path $out 'window_state.json'
+        $st = Get-Content $statePath -Raw | ConvertFrom-Json
+        $st.power_limit_regimes = @(
+            [pscustomobject]@{ w = 450; seconds = 7200 },
+            [pscustomobject]@{ w = 600; seconds = 7200 }
+        )
+        $st | ConvertTo-Json -Depth 6 | Out-File -FilePath $statePath -Encoding UTF8
+
+        $r = Invoke-Watcher -OutDir $out `
+                            -Arguments @{ Resume = $true; RequiredHours = 0; Hours = 0.003; LimitSettleSeconds = 2 }
+
+        Assert-True ([bool]$r.power_limit_changed) 'два набранных режима должны остаться подтверждёнными'
+        Assert-True (-not $r.hold_exit_ready) 'и продолжать блокировать выход'
+    } finally { Remove-Sandbox $sb }
+}
+
+Test 'нечитаемый power limit при живом nvidia-smi не проходит молча' {
+    $sb = New-Sandbox 'watch_pl_unreadable'
+    try {
+        # Заглушка отвечает мусором: полей меньше, чем ждёт скрипт.
+        Install-FakeNvidiaSmi -Dir $sb.Dir | Out-Null
+        $fake = Join-Path $sb.Dir 'bin/fake_nvidia_smi.ps1'
+        "'Unable to determine the device handle for GPU 0000:01:00.0'`nexit 0`n" |
+            Out-File -FilePath $fake -Encoding UTF8
+
+        Set-WinEventStub -Mode ok -Events @()
+        $r = Invoke-Watcher -OutDir (Join-Path $sb.Dir 'out') -Arguments @{ RequiredHours = 0 }
+
+        Assert-True ([bool]$r.power_limit_unsettled) 'лимит не прочитан — доказательств нет'
+        Assert-True (-not $r.hold_exit_ready) 'закрывать окно нельзя'
+        Assert-Match 'не прочитался' ($r.hold_exit_blockers -join ';') 'причина должна быть названа'
+    } finally { Remove-Sandbox $sb }
+}

@@ -105,12 +105,23 @@ $fLimit    = Get-Finding 'GPU power limit'
 $fThrottle = Get-Finding 'GPU throttle reasons'
 $fUps      = Get-Finding 'UPS/батарея'
 $fHold     = Get-Finding 'HOST_SAFE_HOLD.flag'
+$fOwners   = Get-Finding 'GPU owners'
 
 $holdActive = ($fHold -and $fHold.status -eq 'FAIL')
 $noUps      = ($fUps -and $fUps.status -eq 'WARN')
 $thermalHit = (($fTemp -and $fTemp.status -in @('WARN','FAIL')) -or
                ($fThrottle -and $fThrottle.status -eq 'WARN'))
 $limitAtMax = ($fLimit -and $fLimit.status -eq 'WARN')
+# Несколько тяжёлых владельцев GPU — это не «две задачи», а удвоенный
+# транзиентный пик на той же линии питания.
+#
+# Считать по числу владельцев, а не по статусу находки: FAIL у «GPU owners»
+# бывает и по другой причине — когда карта занята, а владельца установить
+# нельзя. Это не про питание, и вес гипотезы транзиентов от него расти не должен.
+$multiOwner = ($s.gpu_owners -and [int]$s.gpu_owners.heavy_count -ge 2)
+$orphanVram = ($s.gpu_owners -and [int]$s.gpu_owners.orphan_vram_mib -gt 0)
+$ownerUnknown = ($s.gpu_owners -and "$($s.gpu_owners.attribution)" -eq 'not_measured' -and `
+                 [int]$s.gpu_owners.unattributed_mib -gt 0)
 
 Write-Head 'Улики'
 if ($blocked41) {
@@ -139,6 +150,16 @@ if ($corr.Count -gt 0) {
     Write-Host ("  Совпало с рендером      : {0} из {1} событий" -f $corrHits, $corr.Count)
 }
 Write-Host ("  HOST_SAFE_HOLD.flag     : {0}" -f $(if ($holdActive) { 'активен' } else { 'не активен' }))
+if ($s.gpu_owners) {
+    Write-Host ("  Тяжёлых владельцев GPU  : {0}{1}" -f $s.gpu_owners.heavy_count, `
+                $(if ($orphanVram) { (", осиротевшая VRAM {0} MiB" -f $s.gpu_owners.orphan_vram_mib) } else { '' })) `
+               -ForegroundColor $(if ($multiOwner) { 'Red' } else { 'Gray' })
+    if ($ownerUnknown) {
+        Write-Host ("  ВНИМАНИЕ: занято {0} MiB, владелец не установлен — per-process VRAM" -f $s.gpu_owners.memory_used_mib) -ForegroundColor Yellow
+        Write-Host '            под WDDM nvidia-smi не отдаёт. Пока владелец неизвестен,' -ForegroundColor Yellow
+        Write-Host '            тяжёлый маршрут не запускать: память может не освободиться.' -ForegroundColor Yellow
+    }
+}
 
 # ---------------------------------------------------------------------------
 # Взвешивание гипотез
@@ -214,6 +235,10 @@ if (-not $blocked41) {
             $h.gpu_transient += 1
             $why.gpu_transient += 'power limit равен максимуму платы — транзиентные пики ничем не ограничены'
         }
+        if ($multiOwner) {
+            $h.gpu_transient += 2
+            $why.gpu_transient += ("нарушено ONE HEAVY GPU OWNER: {0} тяжёлых владельцев GPU одновременно — пики складываются" -f $s.gpu_owners.heavy_count)
+        }
         if ($noUps) {
             $h.mains_psu += 1
             $why.mains_psu += 'ИБП системе не виден — просадки сети ничем не сглажены'
@@ -271,9 +296,39 @@ if ($blocked41) {
     $verdict = 'FAIL'
     switch ($top.Key) {
         'driver_bsod' {
-            $next += 'Получить код остановки и виновника — без установки отладчика:'
-            $next += '  .\analyze_minidump.ps1'
-            $next += 'Скрипт читает событие 1001, заголовок дампа и, если есть, прогоняет !analyze -v.'
+            if ($stopCodes.Count -gt 0) {
+                # Код остановки уже вытащен из событий 1001 выше по отчёту.
+                # Отправлять за ним второй раз — гонять владельца по кругу:
+                # дальше идут по КЛАССУ кода, а не за самим кодом.
+                $cls = @($stopCodes | Group-Object Class | Sort-Object Count -Descending)[0].Name
+                $next += ("Код остановки уже известен: {0} {1}, класс {2}. Дальше — по классу:" -f `
+                          $stopCodes[0].Hex, $stopCodes[0].Name, $cls)
+                if ($haveLib) { $next += ('  ' + (Get-BugCheckClassAdvice -Class $cls)) }
+                switch ($cls) {
+                    'memory' {
+                        $next += '  .\check_memory_storage.ps1                     — XMP/EXPO, WHEA, SMART, диски'
+                        $next += '  отключить XMP/EXPO в BIOS — бесплатно и обратимо, закрывает самую частую причину'
+                        $next += '  MemTest86 с флешки, минимум 4 прохода — только он укажет сбойную планку'
+                        $next += '  .\apply_safehold_fix.ps1 -Action BadMemoryList -Confirm   — исключить страницы из WHEA'
+                    }
+                    'gpu' {
+                        $next += '  .\apply_safehold_fix.ps1 -Action PowerLimit -Percent 80 -Confirm'
+                        $next += '  .\apply_safehold_fix.ps1 -Action PowerLimitPersist -Confirm  — иначе лимит уйдёт на reboot'
+                        $next += '  драйвер NVIDIA начисто через DDU, снять любой OC'
+                    }
+                    'storage' {
+                        $next += '  .\check_memory_storage.ps1                     — SMART и события диска'
+                        $next += '  прошивка NVMe и драйвер контроллера системного диска'
+                    }
+                    default {
+                        $next += '  .\analyze_minidump.ps1                         — имя виновного драйвера'
+                    }
+                }
+            } else {
+                $next += 'Получить код остановки и виновника — без установки отладчика:'
+                $next += '  .\analyze_minidump.ps1'
+                $next += 'Скрипт читает событие 1001, заголовок дампа и, если есть, прогоняет !analyze -v.'
+            }
             $uncovered = $count41 - [math]::Max($bugchecks, $dumps)
             if ($uncovered -gt 0) {
                 $next += ''
@@ -289,7 +344,10 @@ if ($blocked41) {
         'gpu_transient' {
             $next += 'Применить минимальный обратимый fix — ограничить power limit GPU:'
             $next += '  .\apply_safehold_fix.ps1 -Action PowerLimit -Percent 80 -Confirm'
-            $next += 'Скрипт сохранит исходное значение и создаст файл отката.'
+            $next += '  .\apply_safehold_fix.ps1 -Action PowerLimitPersist -Confirm'
+            $next += 'Первая команда сохранит исходное значение и создаст файл отката,'
+            $next += 'вторая закрепит лимит: иначе он исчезнет на ближайшей перезагрузке,'
+            $next += 'а выход из hold её требует.'
         }
         'mains_psu' {
             $next += 'События вне окон рендера — питание вне GPU. Порядок проверки:'
@@ -304,6 +362,66 @@ if ($blocked41) {
     }
 }
 
+# Гипотеза задаёт только главное направление. Часть находок закрывается
+# независимо от того, какая гипотеза наверху, и раньше они просто не попадали
+# в план: владелец видел их в списке FAIL и решал сам, что с ними делать.
+$alsoDo = @()
+
+if ($s.gpu_owners -and [int]$s.gpu_owners.heavy_count -ge 2) {
+    $names = @($s.gpu_owners.apps | Where-Object { "$($_.class)" -eq 'heavy' } |
+               ForEach-Object { "{0}:{1}" -f $_.name, $_.pid }) -join ', '
+    $alsoDo += ("Нарушено ONE HEAVY GPU OWNER: тяжёлых владельцев {0} ({1})." -f $s.gpu_owners.heavy_count, $names)
+    $alsoDo += '  Конкурирующие рендеры делят VRAM и питание, их пики складываются на одной линии 12V.'
+    $alsoDo += '  Закрыть лишнего штатным механизмом студии; при активном hold рендеров быть не должно вовсе.'
+    $alsoDo += '  До этого нагрузочные прогоны и окно наблюдения меряют не тот режим.'
+}
+
+if ($s.gpu_owners -and [int]$s.gpu_owners.orphan_vram_mib -gt 0) {
+    $alsoDo += ("Не отнесено {0} MiB VRAM из занятых {1} MiB — память не закреплена ни за одним живым процессом." -f `
+                $s.gpu_owners.orphan_vram_mib, $s.gpu_owners.memory_used_mib)
+    if ("$($s.gpu_owners.attribution)" -eq 'not_measured') {
+        $alsoDo += '  Владельца установить не удалось: ни nvidia-smi, ни счётчики Windows не отдали память по процессам.'
+    }
+    $alsoDo += '  Освободить штатным механизмом студии. Если не отдаётся — память не вернул драйвер'
+    $alsoDo += '  после завершившихся процессов, и она уйдёт только с перезагрузкой.'
+}
+
+# Мёртвые владельцы — отдельная находка, а не приписка к разрыву в памяти:
+# контекст бывает не закрыт и тогда, когда не отнесённой памяти мало.
+if ($s.gpu_owners -and [int]$s.gpu_owners.dead_count -gt 0) {
+    $deadNames = @($s.gpu_owners.apps | Where-Object { "$($_.class)" -eq 'dead' } |
+                   ForEach-Object { "{0}:{1}" -f $_.name, $_.pid }) -join ', '
+    $alsoDo += ("nvidia-smi числит процессы, которых больше нет в системе — {0} шт. ({1})." -f `
+                $s.gpu_owners.dead_count, $deadNames)
+    $alsoDo += '  Это незакрытые контексты GPU: память числится за тем, кого некому попросить её отдать.'
+    $alsoDo += '  Сам драйвер их не освободит — либо штатный механизм студии, либо перезагрузка.'
+}
+
+if ($limitAtMax -and $top.Key -ne 'gpu_transient') {
+    $alsoDo += 'power limit равен максимуму платы — транзиентные пики ничем не ограничены.'
+    $alsoDo += '  Проверка стоит одной команды и полностью обратима:'
+    $alsoDo += '    .\apply_safehold_fix.ps1 -Action PowerLimit -Percent 80 -Confirm'
+    $alsoDo += '    .\apply_safehold_fix.ps1 -Action PowerLimitPersist -Confirm'
+}
+
+$fServices = @($findings | Where-Object { $_.component -like 'сервис *' -and $_.status -eq 'FAIL' })
+if ($fServices.Count -gt 0) {
+    $svcNames = @($fServices | ForEach-Object { ($_.component -replace '^сервис\s*', '') }) -join ', '
+    $alsoDo += ("Не отвечают сервисы ({0}): {1}." -f $fServices.Count, $svcNames)
+    $alsoDo += '  При активном hold часть из них остановлена штатно — сверить с тем, что governor должен был остановить.'
+    $alsoDo += '  Сервисы не перезапускать: это маскирует симптом и ломает доказательную базу.'
+}
+
+$taskSum = $s.scheduled_tasks_summary
+if ($taskSum -and [int]$taskSum.failed_count -gt 0) {
+    $g = @($taskSum.groups)[0]
+    $alsoDo += ("Задачи планировщика: отказов {0} из {1} (состояний планировщика, не отказов: {2})." -f `
+                $taskSum.failed_count, $taskSum.total, $taskSum.info_count)
+    $alsoDo += ("  Самая частая причина: {0} {1} — {2} шт." -f $g.hex, $g.name, $g.count)
+    $alsoDo += ("  {0}" -f $g.hint)
+    $alsoDo += ("  Например: {0}" -f (@($g.examples) -join ', '))
+}
+
 if ($holdActive) {
     $ownerDecision += 'HOST_SAFE_HOLD.flag не снимать до закрытия root cause и 48 ч без новых событий 41'
 }
@@ -311,6 +429,13 @@ if ($holdActive) {
 Write-Head ("ВЕРДИКТ: {0}" -f $verdict)
 Write-Host '  Следующий шаг:' -ForegroundColor White
 foreach ($n in $next) { Write-Host ("    {0}" -f $n) }
+
+if ($alsoDo.Count -gt 0) {
+    Write-Host ''
+    Write-Host '  Закрыть независимо от гипотезы:' -ForegroundColor White
+    foreach ($a in $alsoDo) { Write-Host ("    {0}" -f $a) -ForegroundColor Gray }
+}
+
 if ($ownerDecision.Count -gt 0) {
     Write-Host ''
     Write-Host '  Решение владельца:' -ForegroundColor Yellow

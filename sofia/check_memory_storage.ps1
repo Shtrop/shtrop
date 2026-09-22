@@ -166,19 +166,36 @@ $md = Get-SystemEvents -Filter @{ LogName='System'; ProviderName='Microsoft-Wind
 foreach ($m in $md) {
     Write-Host ("  {0}  {1}" -f $m.TimeCreated, (($m.Message -replace '\s+',' '))) -ForegroundColor DarkGray
 }
-$bad = @($md | Where-Object { $_.Id -eq 1202 -or $_.Message -match 'обнаруж|error|problem' })
+# Решать по тексту события нельзя дважды: он локализован, И сообщение об
+# УСПЕХЕ само содержит слово об ошибках — «detected no errors», «не обнаружило
+# ошибок». Прежнее условие превращало чистый прогон памяти в FAIL и отправляло
+# владельца искать несуществующий дефект RAM.
+# Решает идентификатор: 1201 — ошибок нет, 1202 — ошибки найдены.
+# Берём САМЫЙ СВЕЖИЙ вердикт, а не любой из последних пяти: иначе старое 1202
+# перевешивает новое 1201, и машина с уже заменённой планкой вечно числится
+# сбойной. $md приходит от свежих к старым.
+$verdicts = @($md | Where-Object { $_.Id -eq 1201 -or $_.Id -eq 1202 } | Sort-Object TimeCreated -Descending)
+$bad  = @($verdicts | Select-Object -First 1 | Where-Object { $_.Id -eq 1202 })
+$good = @($verdicts | Select-Object -First 1 | Where-Object { $_.Id -eq 1201 })
 if ($md.Count -eq 0) {
     Add-F -Status 'NOT_MEASURED' -Component 'Проверка памяти Windows' -Evidence 'никогда не запускалась' `
           -Next 'встроенная проверка слабее MemTest86, но дешевле: mdsched.exe'
 } elseif ($bad.Count -gt 0) {
-    Add-F -Status 'FAIL' -Component 'Проверка памяти Windows' -Evidence 'прошлый прогон нашёл ошибки'
+    Add-F -Status 'FAIL' -Component 'Проверка памяти Windows' -Evidence 'прошлый прогон нашёл ошибки (событие 1202)'
+} elseif ($good.Count -gt 0) {
+    Add-F -Status 'PASS' -Component 'Проверка памяти Windows' -Evidence 'прошлый прогон ошибок не нашёл (событие 1201)'
 } else {
-    Add-F -Status 'PASS' -Component 'Проверка памяти Windows' -Evidence 'прошлый прогон ошибок не нашёл'
+    Add-F -Status 'NOT_MEASURED' -Component 'Проверка памяти Windows' `
+          -Evidence ("события есть, но вердикта среди них нет (нет 1201/1202): {0}" -f (($md | ForEach-Object { $_.Id } | Sort-Object -Unique) -join ', ')) `
+          -Next 'прогнать проверку заново: mdsched.exe, либо сразу MemTest86'
 }
 
 # ---------------------------------------------------------------------------
 Write-Head '4/6  Ошибки дисковой подсистемы в журнале'
-$diskProviders = 'disk','Disk','Ntfs','volmgr','storahci','stornvme','nvme'
+# Имена провайдеров регистронезависимы, поэтому 'disk' и 'Disk' — один и тот
+# же провайдер: дубль в списке считал каждое событие диска дважды.
+$diskProviders = @('disk','Ntfs','volmgr','storahci','stornvme','nvme') |
+                 Sort-Object -Property { $_.ToLower() } -Unique
 # Спрашиваем только про провайдеров, которые на этой системе зарегистрированы.
 $known = @{}
 try {

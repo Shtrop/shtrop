@@ -10,16 +10,20 @@
     Чего скрипт не делает НИКОГДА:
       - не снимает HOST_SAFE_HOLD.flag и не трогает control_flags;
       - не меняет publishing state, FROZEN и автопост;
-      - не перезапускает сервисы, не трогает Task Scheduler, не делает reboot;
+      - не перезапускает сервисы и не делает reboot;
+      - не трогает Task Scheduler НИ В КАКОМ действии, кроме
+        PowerLimitPersist -Confirm: там создаётся ровно одна именованная
+        задача на старт системы, и Rollback её снимает;
       - не удаляет ни одного файла;
       - не правит конфиги студии (схему подтвердить неоткуда — fail-closed).
 
     Без -Confirm выполняется dry-run: показывает, что было бы сделано.
 
 .PARAMETER Action
-    PowerLimit - ограничить энергопотребление GPU.
-    Rollback   - вернуть значение из файла отката.
-    Status     - показать текущие и сохранённые значения.
+    PowerLimit        - ограничить энергопотребление GPU.
+    PowerLimitPersist - закрепить текущий лимит, чтобы он пережил перезагрузку.
+    Rollback          - вернуть значения из файлов отката.
+    Status            - показать текущие и сохранённые значения.
 
 .PARAMETER Percent
     Доля от максимального лимита платы, 50..100. По умолчанию 80.
@@ -46,13 +50,15 @@
     .\apply_safehold_fix.ps1 -Action Rollback -Confirm
 
 .NOTES
-    nvidia-smi -pl требует прав администратора. Ограничение не сохраняется
-    после перезагрузки: после reboot применить заново или закрепить штатно.
+    nvidia-smi -pl требует прав администратора. Само по себе ограничение НЕ
+    сохраняется после перезагрузки, а выход из hold по runbook требует reboot:
+    без закрепления смягчение исчезнет ровно в тот момент, когда производство
+    вернётся под нагрузку. Закрепление: -Action PowerLimitPersist -Confirm.
 #>
 
 [CmdletBinding()]
 param(
-    [ValidateSet('PowerLimit','MemoryCompression','BadMemoryList','Rollback','Status')]
+    [ValidateSet('PowerLimit','PowerLimitPersist','MemoryCompression','BadMemoryList','Rollback','Status')]
     [string] $Action = 'Status',
 
     # Дополнительные физические адреса сбойной памяти, например из отчёта MemTest86.
@@ -69,11 +75,30 @@ param(
 
     [string] $StateDir = (Join-Path ([System.IO.Path]::GetTempPath()) 'sofia_safehold_fix'),
 
+    # Каталог для обёртки закрепления: переживает очистку %TEMP% и читается
+    # из-под SYSTEM на старте системы.
+    [string] $PersistDir = '',
+
     [switch] $Confirm
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Ненулевой код возврата внешней команды здесь — ожидаемый ответ, а не сбой:
+# «задачи нет» у schtasks, «нет прав» у nvidia-smi. В PowerShell 7 такой код
+# может стать завершающей ошибкой из-за ErrorActionPreference = 'Stop', и тогда
+# безобидный -Action Status падал бы на машине без закреплённой задачи.
+# В Windows PowerShell 5.1 переменной нет — проверка это учитывает.
+if (Test-Path Variable:PSNativeCommandUseErrorActionPreference) {
+    $PSNativeCommandUseErrorActionPreference = $false
+}
+
 $rollbackPath = Join-Path $StateDir ("gpu{0}_powerlimit_rollback.json" -f $GpuIndex)
+$plPersistPath = Join-Path $StateDir ("gpu{0}_powerlimit_persist_rollback.json" -f $GpuIndex)
+$plTaskName = "SofiaAIStudio_GpuPowerLimit_{0}" -f $GpuIndex
+if (-not $PersistDir) {
+    $PersistDir = if ($env:ProgramData) { Join-Path $env:ProgramData 'SofiaAIStudio' } else { $StateDir }
+}
 $mcRollbackPath = Join-Path $StateDir 'memory_compression_rollback.json'
 $bmRollbackPath = Join-Path $StateDir 'badmemorylist_rollback.json'
 
@@ -172,6 +197,91 @@ function Get-GpuPower {
     }
 }
 
+function Get-NvidiaSmiPath {
+    $c = Get-Command nvidia-smi -ErrorAction SilentlyContinue
+    if ($c) { return $c.Source }
+    $null
+}
+
+function Test-PersistTask {
+    # $null — проверить нечем (нет schtasks); иначе есть задача или нет.
+    if (-not (Get-Command schtasks -ErrorAction SilentlyContinue)) { return $null }
+    try {
+        $null = & schtasks /Query /TN $plTaskName 2>&1
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        # Отсутствие задачи не должно выглядеть как сбой инструмента.
+        return $false
+    }
+}
+
+function New-PowerLimitWrapper {
+    <#
+        Обёртка для задачи на старт системы. Нужна по двум причинам:
+        путь к nvidia-smi может содержать пробелы (quoting в /TR ненадёжен),
+        а на старте драйвер бывает ещё не готов — поэтому здесь повторы.
+
+        Содержимое намеренно только ASCII: .cmd исполняется в кодовой странице
+        консоли, и кириллица в нём превратилась бы в мусор в логе.
+    #>
+    param(
+        [Parameter(Mandatory)][string] $Dir,
+        [Parameter(Mandatory)][string] $NvSmi,
+        [Parameter(Mandatory)][int] $Index,
+        [Parameter(Mandatory)][int] $Watts
+    )
+    New-Item -ItemType Directory -Force -Path $Dir | Out-Null
+    $cmdPath = Join-Path $Dir ("sofia_gpu{0}_powerlimit.cmd" -f $Index)
+    $logPath = Join-Path $Dir ("sofia_gpu{0}_powerlimit.log" -f $Index)
+    $lines = @(
+        '@echo off',
+        'setlocal',
+        'rem Sofia AI Studio: re-apply GPU power limit after boot.',
+        'rem Created by apply_safehold_fix.ps1 -Action PowerLimitPersist.',
+        ('set "NVSMI={0}"' -f $NvSmi),
+        ('set "LOGF={0}"' -f $logPath),
+        'for /L %%i in (1,1,10) do (',
+        ('  "%NVSMI%" -i {0} -pl {1} >> "%LOGF%" 2>&1 && goto ok' -f $Index, $Watts),
+        '  ping -n 16 127.0.0.1 > nul',
+        ')',
+        ('echo [%date% %time%] FAIL: power limit {0} W was not applied >> "%LOGF%"' -f $Watts),
+        'exit /b 1',
+        ':ok',
+        ('echo [%date% %time%] OK: power limit {0} W applied >> "%LOGF%"' -f $Watts),
+        'exit /b 0'
+    )
+    ($lines -join "`r`n") + "`r`n" | Out-File -FilePath $cmdPath -Encoding ASCII -NoNewline
+    [pscustomobject]@{ Cmd = $cmdPath; Log = $logPath }
+}
+
+function Show-PersistState {
+    param($Gpu)
+    $task = Test-PersistTask
+    Write-Host ''
+    if ($null -eq $task) {
+        Write-Host 'Закрепление  : проверить нечем (нет schtasks)' -ForegroundColor DarkGray
+        return
+    }
+    if ($task) {
+        Write-Host ("Закрепление  : лимит закреплён задачей {0} (переживёт перезагрузку)" -f $plTaskName) -ForegroundColor Green
+        if (Test-Path $plPersistPath) {
+            $rb = Get-Content $plPersistPath -Raw | ConvertFrom-Json
+            Write-Host ("  задача      : {0} W, обёртка {1}" -f $rb.watts, $rb.wrapper_cmd) -ForegroundColor DarkGray
+            if ($rb.wrapper_log -and (Test-Path $rb.wrapper_log)) {
+                $last = @(Get-Content $rb.wrapper_log -ErrorAction SilentlyContinue | Where-Object { $_ } | Select-Object -Last 1)
+                if ($last.Count) { Write-Host ("  последний старт: {0}" -f $last[0]) -ForegroundColor DarkGray }
+            }
+        }
+    } elseif ($Gpu -and $Gpu.Limit -lt $Gpu.MaxLim) {
+        Write-Host 'Закрепление  : лимит НЕ закреплён — не переживёт перезагрузку' -ForegroundColor Yellow
+        Write-Host '               выход из hold по runbook требует reboot, после него' -ForegroundColor Yellow
+        Write-Host '               смягчение исчезнет вместе с доказательствами окна.' -ForegroundColor Yellow
+        Write-Host '               Закрепить: .\apply_safehold_fix.ps1 -Action PowerLimitPersist -Confirm' -ForegroundColor DarkGray
+    } else {
+        Write-Host 'Закрепление  : не требуется — лимит не ограничен' -ForegroundColor DarkGray
+    }
+}
+
 function Show-State {
     param($Gpu)
     Write-Host ''
@@ -197,7 +307,7 @@ $gpu = $null
 $gpuError = $null
 try { $gpu = Get-GpuPower -Index $GpuIndex } catch { $gpuError = $_.Exception.Message }
 
-if (-not $gpu -and $Action -eq 'PowerLimit') {
+if (-not $gpu -and @('PowerLimit','PowerLimitPersist') -contains $Action) {
     Write-Host ("Не удалось прочитать состояние GPU: {0}" -f $gpuError) -ForegroundColor Red
     Write-Host 'Проверьте, что драйвер NVIDIA установлен и nvidia-smi доступен в PATH.' -ForegroundColor Red
     exit 2
@@ -234,6 +344,7 @@ switch ($Action) {
                 Write-Host 'Исключённых страниц памяти нет.'
             }
         }
+        Show-PersistState -Gpu $gpu
         Write-Host ''
         Write-Host 'HOST_SAFE_HOLD.flag этот скрипт не трогает ни при каких параметрах.' -ForegroundColor Yellow
     }
@@ -328,6 +439,12 @@ switch ($Action) {
         if ([math]::Abs($after.Limit - $target) -le 1) {
             Write-Host ''
             Write-Host ("PASS: power limit = {0} W" -f $after.Limit) -ForegroundColor Green
+            Write-Host ''
+            Write-Host 'ВНИМАНИЕ: это значение не переживёт перезагрузку, а выход из hold' -ForegroundColor Yellow
+            Write-Host '          по runbook требует reboot. Без закрепления смягчение' -ForegroundColor Yellow
+            Write-Host '          исчезнет ровно тогда, когда производство вернётся под нагрузку.' -ForegroundColor Yellow
+            Write-Host '          Закрепить: .\apply_safehold_fix.ps1 -Action PowerLimitPersist -Confirm' -ForegroundColor DarkGray
+            Write-Host ''
             Write-Host 'Дальше: контрольный локальный прогон пайплайна в --no-publish и' -ForegroundColor White
             Write-Host '        наблюдение .\watch_host_stability.ps1 -Hours 24' -ForegroundColor White
             Write-Host ("Откат : .\apply_safehold_fix.ps1 -Action Rollback -Confirm") -ForegroundColor DarkGray
@@ -336,6 +453,77 @@ switch ($Action) {
             Write-Host ("FAIL: лимит остался {0} W. Нужны права администратора или лимит заблокирован." -f $after.Limit) -ForegroundColor Red
             exit 1
         }
+    }
+
+    'PowerLimitPersist' {
+        # nvidia-smi -pl живёт до перезагрузки. Runbook требует reboot перед
+        # выходом из hold, поэтому без закрепления окно наблюдения измеряет
+        # один режим питания, а производство возвращается в другой.
+        if (-not (Get-Command schtasks -ErrorAction SilentlyContinue)) {
+            Write-Host 'schtasks не найден — закрепление доступно только на Windows.' -ForegroundColor Red
+            exit 2
+        }
+        $nvsmi = Get-NvidiaSmiPath
+        if (-not $nvsmi) {
+            Write-Host 'nvidia-smi не найден в PATH — закреплять нечем.' -ForegroundColor Red
+            exit 2
+        }
+
+        Show-State -Gpu $gpu
+        Show-PersistState -Gpu $gpu
+
+        if ($gpu.Limit -ge $gpu.MaxLim) {
+            Write-Host ''
+            Write-Host ("Текущий лимит {0} W — это максимум платы, закреплять нечего." -f $gpu.Limit) -ForegroundColor Yellow
+            Write-Host 'Сначала ограничить: .\apply_safehold_fix.ps1 -Action PowerLimit -Percent 80 -Confirm' -ForegroundColor DarkGray
+            break
+        }
+
+        $watts = [int]$gpu.Limit
+        Write-Host ''
+        Write-Host ("Планируется закрепить {0} W задачей на старт системы:" -f $watts) -ForegroundColor Cyan
+        Write-Host ("  имя задачи : {0}" -f $plTaskName)
+        Write-Host ("  запуск     : при старте системы, от SYSTEM, с задержкой 1 мин")
+        Write-Host ("  команда    : nvidia-smi -i {0} -pl {1} (через обёртку с повторами)" -f $GpuIndex, $watts)
+        Write-Host ("  каталог    : {0}" -f $PersistDir)
+        Write-Host 'Откат снимает задачу целиком: -Action Rollback -Confirm' -ForegroundColor DarkGray
+
+        if (-not $Confirm) {
+            Write-Host ''
+            Write-Host 'DRY-RUN: ничего не изменено. Для применения добавьте -Confirm.' -ForegroundColor Yellow
+            break
+        }
+
+        $wrap = New-PowerLimitWrapper -Dir $PersistDir -NvSmi $nvsmi -Index $GpuIndex -Watts $watts
+        Write-Host ("Обёртка создана: {0}" -f $wrap.Cmd) -ForegroundColor Green
+
+        $out = & schtasks /Create /TN $plTaskName /TR $wrap.Cmd /SC ONSTART /DELAY '0001:00' /RU 'SYSTEM' /RL 'HIGHEST' /F 2>&1
+        Write-Host ($out | Out-String).Trim()
+
+        if ((Test-PersistTask) -ne $true) {
+            Write-Host ''
+            Write-Host 'FAIL: задача не создана. Нужны права администратора.' -ForegroundColor Red
+            exit 1
+        }
+
+        New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
+        [ordered]@{
+            gpu_index        = $GpuIndex
+            task_name        = $plTaskName
+            watts            = $watts
+            wrapper_cmd      = $wrap.Cmd
+            wrapper_log      = $wrap.Log
+            nvidia_smi       = $nvsmi
+            saved_at         = (Get-Date).ToString('o')
+            rollback_command = ("schtasks /Delete /TN {0} /F" -f $plTaskName)
+        } | ConvertTo-Json -Depth 4 | Out-File -FilePath $plPersistPath -Encoding UTF8
+
+        Write-Host ''
+        Write-Host ("PASS: лимит {0} W закреплён — он вернётся после перезагрузки." -f $watts) -ForegroundColor Green
+        Write-Host ("Файл отката: {0}" -f $plPersistPath) -ForegroundColor DarkGray
+        Write-Host 'Проверить после ближайшей перезагрузки:' -ForegroundColor White
+        Write-Host '    .\apply_safehold_fix.ps1 -Action Status' -ForegroundColor DarkGray
+        Write-Host ("    журнал применения: {0}" -f $wrap.Log) -ForegroundColor DarkGray
     }
 
     'BadMemoryList' {
@@ -434,6 +622,31 @@ switch ($Action) {
 
     'Rollback' {
         $didSomething = $false
+
+        # Закрепление снимается первым: иначе откат лимита прожил бы только до
+        # следующей перезагрузки, после которой задача вернула бы старое значение.
+        if ((Test-PersistTask) -eq $true) {
+            Write-Host ''
+            Write-Host ("Закрепление лимита -> снять задачу {0}" -f $plTaskName) -ForegroundColor Cyan
+            if ($Confirm) {
+                & schtasks /Delete /TN $plTaskName /F 2>&1 | Out-String | Write-Host
+                if ((Test-PersistTask) -eq $true) {
+                    Write-Host 'FAIL: задача осталась — нужны права администратора.' -ForegroundColor Red
+                    exit 1
+                }
+                if (Test-Path $plPersistPath) {
+                    $plRb = Get-Content $plPersistPath -Raw | ConvertFrom-Json
+                    # Обёртку убираем, журнал применения оставляем: он доказательство.
+                    if ($plRb.wrapper_cmd -and (Test-Path $plRb.wrapper_cmd)) {
+                        Remove-Item -LiteralPath $plRb.wrapper_cmd -Force -ErrorAction SilentlyContinue
+                    }
+                }
+                Write-Host 'PASS: закрепление снято, лимит больше не восстанавливается на старте.' -ForegroundColor Green
+                $didSomething = $true
+            } else {
+                Write-Host 'DRY-RUN: добавьте -Confirm.' -ForegroundColor Yellow
+            }
+        }
 
         if (Test-Path $bmRollbackPath) {
             $bmRb = Get-Content $bmRollbackPath -Raw | ConvertFrom-Json
