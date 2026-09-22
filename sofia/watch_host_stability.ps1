@@ -48,9 +48,12 @@ function Test-SystemLogReadable {
 
 function Get-SystemEvents {
     param([hashtable] $Filter, [int] $MaxEvents = 0)
-    $p = @{ FilterHashtable = $Filter; ErrorAction = 'SilentlyContinue' }
+    # Несуществующий провайдер или неподходящая комбинация фильтра дают
+    # EventLogException, которую -ErrorAction SilentlyContinue не подавляет,
+    # поэтому глушим через try/catch и возвращаем пустой результат.
+    $p = @{ FilterHashtable = $Filter; ErrorAction = 'Stop' }
     if ($MaxEvents -gt 0) { $p['MaxEvents'] = $MaxEvents }
-    @(Get-WinEvent @p)
+    try { @(Get-WinEvent @p) } catch { @() }
 }
 
 
