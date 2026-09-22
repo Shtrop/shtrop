@@ -114,13 +114,39 @@ function ConvertTo-UInt64Address {
 function Get-CurrentBadMemoryList {
     if (-not (Get-Command bcdedit.exe -ErrorAction SilentlyContinue)) { return $null }
     $raw = & bcdedit.exe /enum '{badmemory}' 2>&1 | Out-String
+    $lines = $raw -split "`r?`n"
     $list = @()
-    foreach ($m in [regex]::Matches($raw, '(?im)^\s*badmemorylist\s+(.+)$')) {
-        foreach ($tok in ($m.Groups[1].Value -split '\s+')) {
-            if ($tok) { $list += $tok.Trim() }
+    $inList = $false
+
+    foreach ($line in $lines) {
+        if ($line -match '(?i)^\s*badmemorylist\s+(.*)$') {
+            # Первая строка поля: имя и первые значения.
+            $inList = $true
+            foreach ($tok in ($Matches[1] -split '\s+')) { if ($tok) { $list += $tok.Trim().ToLower() } }
+            continue
+        }
+        if ($inList) {
+            # bcdedit печатает длинный список продолжением: отступ и только числа.
+            # Любая другая строка означает, что поле закончилось.
+            if ($line -match '^\s+((?:0x[0-9a-fA-F]+|\d+)(?:\s+(?:0x[0-9a-fA-F]+|\d+))*)\s*$') {
+                foreach ($tok in ($Matches[1] -split '\s+')) { if ($tok) { $list += $tok.Trim().ToLower() } }
+            } else {
+                $inList = $false
+            }
         }
     }
-    [pscustomobject]@{ Raw = $raw.Trim(); List = $list }
+    [pscustomobject]@{ Raw = $raw.Trim(); List = @($list) }
+}
+
+function Test-PfnInList {
+    param([string[]] $List, [string] $Pfn)
+    # bcdedit нормализует регистр и может опускать ведущие нули,
+    # поэтому сравниваем числовые значения, а не строки.
+    $target = ConvertTo-UInt64Address -Value $Pfn
+    foreach ($item in $List) {
+        try { if ((ConvertTo-UInt64Address -Value $item) -eq $target) { return $true } } catch { }
+    }
+    $false
 }
 
 function Get-MemoryCompressionState {
@@ -192,6 +218,21 @@ switch ($Action) {
             $rb = Get-Content $mcRollbackPath -Raw | ConvertFrom-Json
             Write-Host ("  откат        : вернуть в {0} (сохранено {1})" -f `
                         $(if ($rb.original_enabled) { 'включено' } else { 'выключено' }), $rb.saved_at) -ForegroundColor DarkGray
+        }
+        $bm = Get-CurrentBadMemoryList
+        if ($bm) {
+            Write-Host ''
+            if ($bm.List.Count) {
+                Write-Host ("Исключённые страницы памяти ({0}):" -f $bm.List.Count)
+                foreach ($pfn in $bm.List) {
+                    try {
+                        $addr = (ConvertTo-UInt64Address -Value $pfn) * 4096
+                        Write-Host ("  PFN {0,-12} адрес 0x{1:X}  (~{2} ГиБ)" -f $pfn, $addr, [math]::Round($addr / 1GB, 1))
+                    } catch { Write-Host ("  PFN {0}" -f $pfn) }
+                }
+            } else {
+                Write-Host 'Исключённых страниц памяти нет.'
+            }
         }
         Write-Host ''
         Write-Host 'HOST_SAFE_HOLD.flag этот скрипт не трогает ни при каких параметрах.' -ForegroundColor Yellow
@@ -339,7 +380,10 @@ switch ($Action) {
         Write-Host ''
         Write-Host ("Сейчас в списке исключений: {0}" -f $(if ($current.List.Count) { $current.List -join ' ' } else { 'пусто' }))
 
-        $merged = @($current.List + $pfns.Keys | Where-Object { $_ } | Select-Object -Unique)
+        $merged = @($current.List)
+        foreach ($k in $pfns.Keys) {
+            if (-not (Test-PfnInList -List $merged -Pfn $k)) { $merged += $k.ToLower() }
+        }
         Write-Host ("Станет: {0}" -f ($merged -join ' ')) -ForegroundColor Cyan
         Write-Host ''
         Write-Host 'Команды, которые будут выполнены:' -ForegroundColor DarkGray
@@ -375,7 +419,7 @@ switch ($Action) {
         Write-Host $r2.Trim()
 
         $after = Get-CurrentBadMemoryList
-        $missing = @($merged | Where-Object { $after.List -notcontains $_ })
+        $missing = @($merged | Where-Object { -not (Test-PfnInList -List $after.List -Pfn $_) })
         if ($missing.Count -eq 0) {
             Write-Host ''
             Write-Host ("PASS: список исключений — {0}" -f ($after.List -join ' ')) -ForegroundColor Green
