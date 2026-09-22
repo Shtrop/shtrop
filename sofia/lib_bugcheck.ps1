@@ -35,6 +35,26 @@ $script:BugCheckTable = @{
     0x00000141 = @{ name = 'VIDEO_ENGINE_TIMEOUT_DETECTED';      class = 'gpu';      hint = 'движок GPU не ответил вовремя' }
     0x0000014C = @{ name = 'FATAL_ABNORMAL_RESET_ERROR';         class = 'hardware'; hint = 'аварийный сброс платформы' }
     0x000001CA = @{ name = 'SYNTHETIC_WATCHDOG_TIMEOUT';         class = 'hardware'; hint = 'сторожевой таймер платформы' }
+
+    0x00000018 = @{ name = 'REFERENCE_BY_POINTER';                class = 'driver';   hint = 'ошибка подсчёта ссылок в драйвере' }
+    0x00000019 = @{ name = 'BAD_POOL_HEADER';                     class = 'memory';   hint = 'повреждён заголовок пула: драйвер или сбойная RAM' }
+    0x0000003D = @{ name = 'INTERRUPT_EXCEPTION_NOT_HANDLED';     class = 'driver';   hint = 'необработанное исключение в обработчике прерывания' }
+    0x0000004E = @{ name = 'PFN_LIST_CORRUPT';                    class = 'memory';   hint = 'повреждён список страниц — почти всегда RAM или драйвер памяти' }
+    0x0000005C = @{ name = 'HAL_INITIALIZATION_FAILED';           class = 'hardware'; hint = 'сбой инициализации HAL' }
+    0x00000077 = @{ name = 'KERNEL_STACK_INPAGE_ERROR';           class = 'storage';  hint = 'не прочитана страница стека с диска — диск или контроллер' }
+    0x0000007A = @{ name = 'KERNEL_DATA_INPAGE_ERROR';            class = 'storage';  hint = 'не прочитана страница данных с диска — диск, кабель, NVMe' }
+    0x0000009C = @{ name = 'MACHINE_CHECK_EXCEPTION';             class = 'hardware'; hint = 'аппаратное исключение CPU: питание, разгон, перегрев' }
+    0x0000009E = @{ name = 'USER_MODE_HEALTH_MONITOR';            class = 'driver';   hint = 'критическая служба не отвечала' }
+    0x000000A0 = @{ name = 'INTERNAL_POWER_ERROR';                class = 'hardware'; hint = 'внутренняя ошибка подсистемы питания' }
+    0x000000BE = @{ name = 'ATTEMPTED_WRITE_TO_READONLY_MEMORY';  class = 'driver';   hint = 'драйвер писал в память только для чтения' }
+    0x000000C2 = @{ name = 'BAD_POOL_CALLER';                     class = 'driver';   hint = 'некорректная работа драйвера с пулом' }
+    0x000000C5 = @{ name = 'DRIVER_CORRUPTED_EXPOOL';             class = 'memory';   hint = 'повреждение пула: драйвер или RAM' }
+    0x000000EF = @{ name = 'CRITICAL_PROCESS_DIED';               class = 'storage';  hint = 'критический процесс умер: повреждение системных файлов или диск' }
+    0x0000013A = @{ name = 'KERNEL_MODE_HEAP_CORRUPTION';         class = 'memory';   hint = 'повреждение кучи ядра: драйвер или RAM' }
+    0x00000144 = @{ name = 'BUGCODE_USB3_DRIVER';                 class = 'driver';   hint = 'ошибка драйвера USB3' }
+    0x00000153 = @{ name = 'KERNEL_LOCK_ENTRY_LEAKED_ON_THREAD_TERMINATION'; class = 'driver'; hint = 'утечка блокировки при завершении потока' }
+    0x00000154 = @{ name = 'UNEXPECTED_STORE_EXCEPTION';          class = 'memory';   hint = 'исключение в менеджере сжатой памяти: сбойная RAM, нестабильный XMP/EXPO или системный диск' }
+    0x00000156 = @{ name = 'WINSOCK_DETECTED_HUNG_CLOSESOCKET_LIVEDUMP'; class = 'driver'; hint = 'зависание сетевого стека' }
 }
 
 function Get-BugCheckInfo {
