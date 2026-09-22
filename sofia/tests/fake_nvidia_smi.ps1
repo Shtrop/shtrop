@@ -56,7 +56,9 @@ if ($argline -match '--query-gpu[= ]([^ ]+)') {
 if ($argline -match '--query-compute-apps[= ]([^ ]+)') {
     foreach ($p in @($state.compute_apps)) {
         if (-not $p) { continue }
-        ('{0}, {1}, {2} MiB' -f $p.pid, $p.process_name, $p.used_memory)
+        # Под WDDM настоящий nvidia-smi отдаёт [N/A] вместо объёма.
+        $mem = if ("$($p.used_memory)" -match '(?i)^n/?a$') { '[N/A]' } else { ('{0} MiB' -f $p.used_memory) }
+        ('{0}, {1}, {2}' -f $p.pid, $p.process_name, $mem)
     }
     exit 0
 }

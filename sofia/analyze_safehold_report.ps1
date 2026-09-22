@@ -114,8 +114,14 @@ $thermalHit = (($fTemp -and $fTemp.status -in @('WARN','FAIL')) -or
 $limitAtMax = ($fLimit -and $fLimit.status -eq 'WARN')
 # Несколько тяжёлых владельцев GPU — это не «две задачи», а удвоенный
 # транзиентный пик на той же линии питания.
-$multiOwner = ($fOwners -and $fOwners.status -eq 'FAIL')
+#
+# Считать по числу владельцев, а не по статусу находки: FAIL у «GPU owners»
+# бывает и по другой причине — когда карта занята, а владельца установить
+# нельзя. Это не про питание, и вес гипотезы транзиентов от него расти не должен.
+$multiOwner = ($s.gpu_owners -and [int]$s.gpu_owners.heavy_count -ge 2)
 $orphanVram = ($s.gpu_owners -and [int]$s.gpu_owners.orphan_vram_mib -gt 0)
+$ownerUnknown = ($s.gpu_owners -and "$($s.gpu_owners.attribution)" -eq 'not_measured' -and `
+                 [int]$s.gpu_owners.unattributed_mib -gt 0)
 
 Write-Head 'Улики'
 if ($blocked41) {
@@ -148,6 +154,11 @@ if ($s.gpu_owners) {
     Write-Host ("  Тяжёлых владельцев GPU  : {0}{1}" -f $s.gpu_owners.heavy_count, `
                 $(if ($orphanVram) { (", осиротевшая VRAM {0} MiB" -f $s.gpu_owners.orphan_vram_mib) } else { '' })) `
                -ForegroundColor $(if ($multiOwner) { 'Red' } else { 'Gray' })
+    if ($ownerUnknown) {
+        Write-Host ("  ВНИМАНИЕ: занято {0} MiB, владелец не установлен — per-process VRAM" -f $s.gpu_owners.memory_used_mib) -ForegroundColor Yellow
+        Write-Host '            под WDDM nvidia-smi не отдаёт. Пока владелец неизвестен,' -ForegroundColor Yellow
+        Write-Host '            тяжёлый маршрут не запускать: память может не освободиться.' -ForegroundColor Yellow
+    }
 }
 
 # ---------------------------------------------------------------------------

@@ -276,6 +276,47 @@ function Set-WinEventStub {
     $global:SofiaTest_WinEvents = @($Events)
 }
 
+function Set-GpuCounterStub {
+    <#
+        Задаёт, что вернут счётчики производительности Windows по VRAM.
+        @{ pid = MiB }. $null означает «счётчиков нет вовсе».
+    #>
+    param([hashtable] $PerPid)
+    $global:SofiaTest_GpuCounters = $PerPid
+}
+
+function Get-Counter {
+    <#
+        Заглушка cmdlet Get-Counter: отдаёт набор с именами экземпляров того
+        же вида, что настоящий (pid_<N>_luid_..._phys_<N>).
+    #>
+    [CmdletBinding()]
+    param(
+        [switch] $ListSet,
+        [string[]] $Counter
+    )
+    $per = $global:SofiaTest_GpuCounters
+    if ($null -eq $per) { throw [System.Exception]::new('No counter sets') }
+
+    $paths = @($per.Keys | ForEach-Object {
+        '\GPU Process Memory(pid_{0}_luid_0x00000000_0x0000D5F2_phys_0)\Local Usage' -f $_
+    })
+
+    if ($ListSet) {
+        return @([pscustomobject]@{ CounterSetName = 'GPU Process Memory'; PathsWithInstances = $paths })
+    }
+
+    $samples = @()
+    foreach ($p in @($Counter)) {
+        $m = [regex]::Match($p, 'pid_(\d+)')
+        if (-not $m.Success) { continue }
+        $procId = [int]$m.Groups[1].Value
+        if (-not $per.ContainsKey($procId)) { continue }
+        $samples += [pscustomobject]@{ Path = $p; CookedValue = ([double]$per[$procId] * 1MB) }
+    }
+    [pscustomobject]@{ CounterSamples = $samples }
+}
+
 function Get-WinEvent {
     <#
         Заглушка cmdlet Get-WinEvent. Определена глобально, поэтому её видит

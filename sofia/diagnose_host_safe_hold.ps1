@@ -406,6 +406,7 @@ Invoke-Section 'gpu' {
         Add-Finding -Status 'NOT_MEASURED' -Component 'GPU' -Evidence 'nvidia-smi не найден в PATH'
     } else {
         $memUsed = 0
+        $memTotal = 0
         $q = & nvidia-smi --query-gpu='name,temperature.gpu,power.draw,power.limit,power.max_limit,clocks.sm,utilization.gpu,memory.used,memory.total' --format=csv,noheader 2>&1
         $script:Report.sections['gpu_query'] = ($q | Out-String).Trim()
         Write-Host ("  {0}" -f ($q | Out-String).Trim())
@@ -417,6 +418,7 @@ Invoke-Section 'gpu' {
             $limit = [double]($fields[3] -replace '[^\d\.]', '')
             $maxL  = [double]($fields[4] -replace '[^\d\.]', '')
             if ($fields.Count -ge 8) { $memUsed = [int]([double]($fields[7] -replace '[^\d\.]', '')) }
+            if ($fields.Count -ge 9) { $memTotal = [int]([double]($fields[8] -replace '[^\d\.]', '')) }
             $tSt = if ($temp -ge 83) { 'FAIL' } elseif ($temp -ge 75) { 'WARN' } else { 'PASS' }
             Add-Finding -Status $tSt -Component 'GPU температура' -Evidence ("{0} C" -f $temp)
             if ($limit -ge $maxL) {
@@ -448,23 +450,44 @@ Invoke-Section 'gpu' {
         if ($script:HasGpuLib) {
             $holdActive = [bool]$script:Report.sections['host_safe_hold']
             $apps = ConvertFrom-NvidiaComputeApps -Text $procText
-            $own  = Get-GpuOwnerReport -Apps $apps -MemoryUsedMiB $memUsed -HoldActive $holdActive
+
+            # Под WDDM nvidia-smi не отдаёт used_memory, поэтому память берём
+            # из счётчиков Windows. Без этого занятая VRAM остаётся ничьей.
+            $counterMem = Get-GpuProcessMemoryMiB
+            $script:Report.sections['gpu_process_counters'] = @($counterMem.Keys | ForEach-Object {
+                [ordered]@{ pid = $_; used_mib = $counterMem[$_] }
+            })
+
+            $own = Get-GpuOwnerReport -Apps $apps -MemoryUsedMiB $memUsed -MemoryTotalMiB $memTotal `
+                                      -HoldActive $holdActive -CounterMemory $counterMem
 
             $script:Report.sections['gpu_owners'] = [ordered]@{
-                heavy_count     = $own.HeavyCount
-                heavy_used_mib  = $own.HeavyUsedMiB
-                orphan_vram_mib = $own.OrphanVramMiB
-                hold_active     = $holdActive
-                apps            = @($own.Apps | ForEach-Object {
-                    [ordered]@{ pid = $_.Pid; name = $_.Name; used_mib = $_.UsedMiB; class = $_.Class }
+                heavy_count      = $own.HeavyCount
+                heavy_used_mib   = $own.HeavyUsedMiB
+                attributed_mib   = $own.AttributedMiB
+                unattributed_mib = $own.UnattributedMiB
+                attribution      = $own.Attribution
+                orphan_vram_mib  = $own.OrphanVramMiB
+                memory_used_mib  = $memUsed
+                memory_total_mib = $memTotal
+                hold_active      = $holdActive
+                apps             = @($own.Apps | ForEach-Object {
+                    [ordered]@{
+                        pid = $_.Pid; name = $_.Name; used_mib = $_.UsedMiB
+                        mem_known = $_.MemKnown; mem_source = $_.MemSource; class = $_.Class
+                    }
                 })
             }
 
             if ($own.Apps.Count -gt 0) {
                 Write-Host '  --- владельцы GPU ---' -ForegroundColor DarkGray
                 foreach ($a in $own.Apps) {
-                    Write-Host ("    {0,-24} pid {1,-8} {2,7} MiB  [{3}]" -f $a.Name, $a.Pid, $a.UsedMiB, $a.Class)
+                    $mem = if ($a.MemKnown) { "{0,7} MiB" -f $a.UsedMiB } else { '  не отдана' }
+                    $src = if ($a.MemSource -eq 'perf-counter') { ' (счётчик)' } else { '' }
+                    Write-Host ("    {0,-24} pid {1,-8} {2}{3}  [{4}]" -f $a.Name, $a.Pid, $mem, $src, $a.Class)
                 }
+                Write-Host ("    отнесено {0} MiB из занятых {1} MiB (не отнесено {2} MiB)" -f `
+                            $own.AttributedMiB, $memUsed, $own.UnattributedMiB) -ForegroundColor DarkGray
             }
 
             Add-Finding -Status $own.Status -Component 'GPU owners' `

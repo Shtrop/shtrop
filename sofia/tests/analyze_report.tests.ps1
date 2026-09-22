@@ -111,3 +111,22 @@ Test 'отчёт без секции gpu_owners разбирается по-ст
         Assert-NotMatch 'Тяжёлых владельцев GPU' $out 'выдумывать данные нельзя'
     } finally { Remove-Sandbox $sb }
 }
+
+Test 'FAIL из-за неустановленного владельца не усиливает гипотезу транзиентов' {
+    # У находки "GPU owners" статус FAIL бывает по двум разным причинам.
+    # Конкуренция владельцев — про питание, неустановленный владелец — нет.
+    $sb = New-Sandbox 'analyze_owner_unknown'
+    try {
+        $rep = New-Report
+        $rep.sections.gpu_owners.heavy_count = 0
+        $rep.sections.gpu_owners.heavy_used_mib = 0
+        $rep.sections.gpu_owners.attribution = 'not_measured'
+        $rep.sections.gpu_owners.unattributed_mib = 30803
+        $rep.sections.gpu_owners.orphan_vram_mib = 30803
+        $rep.sections.gpu_owners.memory_used_mib = 30803
+        $out = Invoke-Analyzer -Report $rep -Dir $sb.Dir
+
+        Assert-Match 'владелец не установлен' $out 'предупреждение должно быть показано'
+        Assert-NotMatch 'пики складываются' $out 'это не довод в пользу транзиентов питания'
+    } finally { Remove-Sandbox $sb }
+}
