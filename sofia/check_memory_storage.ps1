@@ -61,7 +61,7 @@ try {
     Write-Host ''
     $dimms | Select-Object @{n='Слот';e={$_.DeviceLocator}},
                            @{n='ГБ';e={[math]::Round($_.Capacity/1GB,0)}},
-                           @{n='Паспорт МГц';e={$_.Speed}},
+                           @{n='Speed МГц';e={$_.Speed}},
                            @{n='Факт МГц';e={$_.ConfiguredClockSpeed}},
                            @{n='Производитель';e={$_.Manufacturer}},
                            @{n='Партномер';e={$_.PartNumber}} |
@@ -73,6 +73,8 @@ try {
     $jedec  = if ($isDdr5) { 4800 } else { 3200 }
 
     Add-F -Status 'PASS' -Component 'Объём RAM' -Evidence ("{0} ГБ в {1} модулях" -f $totalGb, $dimms.Count)
+    Write-Host '  Оба столбца частоты Windows берёт из текущей конфигурации, а не из паспорта модуля:' -ForegroundColor DarkGray
+    Write-Host '  паспортную частоту смотреть по партномеру на сайте производителя.' -ForegroundColor DarkGray
 
     if ($fact -gt $jedec) {
         Add-F -Status 'WARN' -Component 'XMP/EXPO' `
@@ -82,6 +84,12 @@ try {
         Add-F -Status 'PASS' -Component 'XMP/EXPO' -Evidence ("{0} МГц — в пределах JEDEC, разгон не активен" -f $fact)
     } else {
         Add-F -Status 'NOT_MEASURED' -Component 'XMP/EXPO' -Evidence 'фактическая частота не прочиталась'
+    }
+
+    if ($isDdr5 -and $dimms.Count -ge 4) {
+        Add-F -Status 'WARN' -Component 'Режим заполнения слотов' `
+              -Evidence ("{0} модуля DDR5 — по два на канал (2DPC)" -f $dimms.Count) `
+              -Next 'для DDR5 это самый тяжёлый режим для контроллера памяти: при 0x154 проверить прогон на двух модулях'
     }
 
     $parts = @($dimms | Select-Object -ExpandProperty PartNumber -Unique | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
@@ -108,10 +116,27 @@ try {
         }
         $last = ($whea | Sort-Object TimeCreated -Descending)[0]
         Write-Host ("  Последнее: {0}" -f $last.TimeCreated) -ForegroundColor DarkGray
-        Write-Host ("  {0}" -f (($last.Message -replace '\s+',' ').Substring(0, [math]::Min(300, $last.Message.Length)))) -ForegroundColor DarkGray
+
+        # Текст WHEA часто не отрендерен (нет ресурсов провайдера), поэтому
+        # берём поля напрямую из XML, а Message используем только если он есть.
+        if ($last.Message) {
+            $txt = ($last.Message -replace '\s+',' ')
+            Write-Host ("  {0}" -f $txt.Substring(0, [math]::Min(300, $txt.Length))) -ForegroundColor DarkGray
+        }
+        try {
+            $x = [xml]$last.ToXml()
+            $pairs = @()
+            foreach ($d in $x.Event.EventData.Data) {
+                $n = "$($d.Name)"; $v = "$($d.'#text')"
+                if ($n -and $v -and $v.Length -lt 60) { $pairs += ("{0}={1}" -f $n, $v) }
+            }
+            if ($pairs) { Write-Host ("  Поля: {0}" -f (($pairs | Select-Object -First 12) -join '  ')) -ForegroundColor DarkGray }
+        } catch { }
+
+        $ids = (($whea | Group-Object Id | ForEach-Object { "{0}x{1}" -f $_.Name, $_.Count }) -join ', ')
         Add-F -Status 'FAIL' -Component 'WHEA' `
-              -Evidence ("{0} аппаратных ошибок за {1} дн." -f $whea.Count, $Days) `
-              -Next 'это железо: питание, разгон, CPU или RAM — не драйвер'
+              -Evidence ("{0} аппаратных ошибок за {1} дн. (ID: {2}), последняя {3}" -f $whea.Count, $Days, $ids, $last.TimeCreated) `
+              -Next 'платформа сама зафиксировала аппаратную ошибку: питание, IMC/RAM, CPU — не драйвер'
     }
 } catch {
     if ($_.Exception.Message -match 'No events were found') {
@@ -161,6 +186,17 @@ if ($diskEvents.Count -eq 0) {
     Add-F -Status $st -Component 'Журнал дисков' `
           -Evidence ("{0} записей, из них значимых (7/51/55/98/129/153): {1}" -f $diskEvents.Count, $critical.Count) `
           -Next 'события 7/51/129/153 на системном диске напрямую объясняют 0x154'
+
+    # volmgr 161/162 — сбой записи аварийного дампа. Это переворачивает трактовку
+    # ресетов без дампа: часть из них могла быть BSOD, дамп которого не сохранился.
+    $dumpFail = @($diskEvents | Where-Object { $_.ProviderName -match 'volmgr' -and $_.Id -in 161, 162 })
+    if ($dumpFail.Count -gt 0) {
+        $lastDf = ($dumpFail | Sort-Object TimeCreated -Descending)[0]
+        Add-F -Status 'WARN' -Component 'Запись аварийного дампа' `
+              -Evidence ("volmgr {0} x{1}: системе не удалось сохранить дамп, последний раз {2}" -f `
+                         ($dumpFail[0].Id), $dumpFail.Count, $lastDf.TimeCreated) `
+              -Next 'ресет без дампа мог быть крахом, а не потерей питания — проверить размер и размещение pagefile на системном диске'
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -214,7 +250,7 @@ try {
     $sysDrive = ($env:SystemDrive)
     $dirty = & fsutil dirty query $sysDrive 2>&1 | Out-String
     Write-Host ("  {0}" -f $dirty.Trim()) -ForegroundColor DarkGray
-    if ($dirty -match 'не помечен|is not dirty|NOT Dirty') {
+    if ($dirty -match 'не является|не помечен|is not dirty|NOT Dirty') {
         Add-F -Status 'PASS' -Component 'Флаг тома' -Evidence ("{0} не помечен как грязный" -f $sysDrive)
     } elseif ($dirty -match 'помечен|is dirty') {
         Add-F -Status 'FAIL' -Component 'Флаг тома' -Evidence ("{0} помечен грязным — файловая система повреждена" -f $sysDrive) `
