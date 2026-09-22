@@ -78,6 +78,25 @@ $dumps = if ($s.minidumps) { @($s.minidumps).Count } else { 0 }
 $corr = if ($s.correlation_41_vs_render) { @($s.correlation_41_vs_render) } else { @() }
 $corrHits = @($corr | Where-Object { [int]$_.artifacts_20min -gt 0 }).Count
 
+# Коды остановки прямо из текста сохранённых событий 1001 — точная улика без доп. запусков
+$lib = Join-Path $PSScriptRoot 'lib_bugcheck.ps1'
+$haveLib = Test-Path $lib
+if ($haveLib) { . $lib }
+
+$stopCodes = @()
+if ($s.kernel_power -is [array]) {
+    foreach ($e in $s.kernel_power) {
+        if ([int]$e.id -ne 1001) { continue }
+        $msg = [string]$e.message
+        if ($msg -match '0x([0-9a-fA-F]{8})') {
+            $code = [uint32]::Parse($Matches[1], 'HexNumber')
+            $info = if ($haveLib) { Get-BugCheckInfo -Code $code }
+                    else { [pscustomobject]@{ Hex = ('0x{0:X8}' -f $code); Name = 'UNKNOWN'; Class = 'driver'; Hint = '' } }
+            $stopCodes += [pscustomobject]@{ Time = $e.time; Hex = $info.Hex; Name = $info.Name; Class = $info.Class; Hint = $info.Hint }
+        }
+    }
+}
+
 $findings = @($r.findings)
 function Get-Finding { param([string]$Name) ($findings | Where-Object { $_.component -eq $Name } | Select-Object -First 1) }
 
@@ -107,6 +126,15 @@ if ($blocked41) {
     }
 }
 Write-Host ("  BugCheck 1001 / дампы   : {0} / {1}" -f $bugchecks, $dumps)
+$covered = [math]::Max($bugchecks, $dumps)
+if ($count41 -gt 0 -and $covered -gt 0 -and $covered -lt $count41) {
+    Write-Host ("  ВНИМАНИЕ: дампы покрывают лишь {0} из {1} событий — остальные {2} прошли" -f $covered, $count41, ($count41 - $covered)) -ForegroundColor Yellow
+    Write-Host '            без дампа, то есть как потеря питания. Причин, вероятно, две.' -ForegroundColor Yellow
+}
+foreach ($sc in $stopCodes) {
+    Write-Host ("  Код остановки           : {0} {1}  ({2})" -f $sc.Hex, $sc.Name, $sc.Time) -ForegroundColor Yellow
+    if ($sc.Hint) { Write-Host ("                            {0}" -f $sc.Hint) -ForegroundColor DarkGray }
+}
 if ($corr.Count -gt 0) {
     Write-Host ("  Совпало с рендером      : {0} из {1} событий" -f $corrHits, $corr.Count)
 }
@@ -135,13 +163,29 @@ if (-not $blocked41) {
         $h.not_power += 5
         $why.not_power += 'событий Kernel-Power 41 за окно нет'
     } else {
-        if ($bugchecks -gt 0 -and $dumps -gt 0) {
-            # дамп + код остановки дают точный ответ, поэтому это всегда первый шаг
+        $covered = [math]::Max($bugchecks, $dumps)
+        if ($covered -gt 0) {
+            # дамп даёт точный ответ по своим событиям, поэтому разбор дампа всегда первый шаг
             $h.driver_bsod += 7
-            $why.driver_bsod += ("есть BugCheck и минидампы ({0}/{1}) — root cause определяется точно, а не гипотезой" -f $bugchecks, $dumps)
-        } elseif ($bugchecks -gt 0 -or $dumps -gt 0) {
-            $h.driver_bsod += 4
-            $why.driver_bsod += ("есть BugCheck или минидампы ({0}/{1}) — код остановки доступен" -f $bugchecks, $dumps)
+            $why.driver_bsod += ("есть BugCheck и минидампы ({0}/{1}) — по этим событиям root cause определяется точно" -f $bugchecks, $dumps)
+
+            # ...но только по своим: события без дампа - это отдельная причина
+            $uncovered = $count41 - $covered
+            if ($uncovered -gt 0) {
+                $h.gpu_transient += 2; $h.mains_psu += 2
+                $note = ("{0} из {1} событий прошли без дампа — это потеря питания, а не BSOD" -f $uncovered, $count41)
+                $why.gpu_transient += $note
+                $why.mains_psu     += $note
+            }
+
+            foreach ($sc in $stopCodes) {
+                switch ($sc.Class) {
+                    'gpu'      { $h.gpu_transient += 2; $why.gpu_transient += ("код {0} {1} указывает на видеоподсистему" -f $sc.Hex, $sc.Name) }
+                    'hardware' { $h.mains_psu += 3;     $why.mains_psu     += ("код {0} {1} — аппаратная причина, не драйвер" -f $sc.Hex, $sc.Name) }
+                    'memory'   { $h.driver_bsod += 1;   $why.driver_bsod   += ("код {0} {1} указывает на память" -f $sc.Hex, $sc.Name) }
+                    default    { }
+                }
+            }
         } else {
             $h.gpu_transient += 1; $h.mains_psu += 1
             $why.gpu_transient += 'ресет без BSOD-дампа — похоже на потерю питания, а не крах драйвера'
@@ -227,9 +271,15 @@ if ($blocked41) {
     $verdict = 'FAIL'
     switch ($top.Key) {
         'driver_bsod' {
-            $next += 'Разобрать свежий минидамп — он прямо называет виновный драйвер:'
-            $next += '  windbg -z C:\Windows\Minidump\<последний>.dmp  затем  !analyze -v'
-            $next += 'До этого никаких изменений питания не делать: гипотеза GPU вторична.'
+            $next += 'Получить код остановки и виновника — без установки отладчика:'
+            $next += '  .\analyze_minidump.ps1'
+            $next += 'Скрипт читает событие 1001, заголовок дампа и, если есть, прогоняет !analyze -v.'
+            $uncovered = $count41 - [math]::Max($bugchecks, $dumps)
+            if ($uncovered -gt 0) {
+                $next += ''
+                $next += ("Затем отдельно закрыть {0} событий без дампа: это потеря питания," -f $uncovered)
+                $next += 'а не крах драйвера — ИБП и проверка PSU, см. раздел mains_psu в runbook.'
+            }
         }
         'thermal' {
             $next += 'Снять температурный профиль под нагрузкой и проверить охлаждение:'
