@@ -131,6 +131,7 @@ $priorObserved  = 0.0   # часы наблюдения, набранные пр
 $segmentIndex   = 1
 $limitFirst     = $null # power limit на начало всего окна, а не сеанса
 $resumed        = $false
+$script:ResumedLimitValues = $null
 
 if ($Resume -and (Test-Path $statePath)) {
     try {
@@ -141,6 +142,13 @@ if ($Resume -and (Test-Path $statePath)) {
             $segmentIndex  = [int]$prev.segments + 1
             if ($null -ne $prev.power_limit_w_first -and "$($prev.power_limit_w_first)") {
                 $limitFirst = [double]$prev.power_limit_w_first
+            }
+            # Набор виденных значений тоже переживает перезапуск. Иначе смена
+            # лимита РОВНО на перезагрузке — то есть штатный способ его
+            # потерять — не замечалась бы вовсе: в новом сеансе значение одно,
+            # и «не менялся» выглядело бы правдой.
+            if ($prev.power_limit_values) {
+                $script:ResumedLimitValues = @($prev.power_limit_values | ForEach-Object { [double]$_ })
             }
             $resumed = $true
         }
@@ -182,6 +190,7 @@ $eventsSeen  = @()
 $wheaSeen    = @()
 $limitLast   = $null
 $limitValues = @()
+if ($script:ResumedLimitValues) { $limitValues = @($script:ResumedLimitValues) }
 
 # Доступ к журналу проверяется пробой на каждом опросе: если права пропали
 # посреди окна, «событий не было» перестаёт быть доказательством. Потеря
@@ -202,6 +211,7 @@ function Save-WindowState {
         segments           = $segmentIndex
         required_hours     = $RequiredHours
         power_limit_w_first = $limitFirst
+        power_limit_values  = @($limitValues)
         csv                = $csv
     } | ConvertTo-Json -Depth 5 | Out-File -FilePath $statePath -Encoding UTF8
 }
@@ -214,7 +224,9 @@ while ((Get-Date) -lt $end) {
 
     if ($hasNvidia) {
         try {
-            $q = & nvidia-smi --query-gpu="temperature.gpu,power.draw,power.limit,utilization.gpu,memory.used" --format=csv,noheader 2>&1
+            # -i обязателен: без него многокарточная система даёт несколько
+            # строк, Out-String склеивает их, и поля разных карт перемешиваются.
+            $q = & nvidia-smi -i 0 --query-gpu="temperature.gpu,power.draw,power.limit,utilization.gpu,memory.used" --format=csv,noheader 2>&1
             $f = ($q | Out-String).Trim().Split(',') | ForEach-Object { $_.Trim() }
             if ($f.Count -ge 5) {
                 $temp  = ($f[0] -replace '[^\d\.]','')
@@ -309,7 +321,9 @@ $clean   = ($eventsSeen.Count -eq 0 -and $wheaSeen.Count -eq 0)
 $verdict = if ($everBlocked) { 'NOT_MEASURED' } elseif ($clean) { 'PASS' } else { 'FAIL' }
 
 # Смягчение, которое не держалось всё окно, обесценивает окно: наблюдали
-# один режим питания, а в production вернётся другой.
+# один режим питания, а в production вернётся другой. Значения копятся по
+# всему окну, включая прошлые сеансы: смена лимита на перезагрузке — штатный
+# способ его потерять, и не заметить её было бы хуже всего.
 $limitChanged = ($limitValues.Count -gt 1)
 
 $blockers = @()

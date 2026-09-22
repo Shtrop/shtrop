@@ -382,15 +382,19 @@ if ($s.gpu_owners -and [int]$s.gpu_owners.orphan_vram_mib -gt 0) {
     if ("$($s.gpu_owners.attribution)" -eq 'not_measured') {
         $alsoDo += '  Владельца установить не удалось: ни nvidia-smi, ни счётчики Windows не отдали память по процессам.'
     }
-    if ([int]$s.gpu_owners.dead_count -gt 0) {
-        $deadNames = @($s.gpu_owners.apps | Where-Object { "$($_.class)" -eq 'dead' } |
-                       ForEach-Object { "{0}:{1}" -f $_.name, $_.pid }) -join ', '
-        $alsoDo += ("  Причина найдена: nvidia-smi числит процессы, которых больше нет — {0} шт. ({1})." -f `
-                    $s.gpu_owners.dead_count, $deadNames)
-        $alsoDo += '  Это незакрытые контексты GPU. Сам драйвер их не отдаст.'
-    }
     $alsoDo += '  Освободить штатным механизмом студии. Если не отдаётся — память не вернул драйвер'
     $alsoDo += '  после завершившихся процессов, и она уйдёт только с перезагрузкой.'
+}
+
+# Мёртвые владельцы — отдельная находка, а не приписка к разрыву в памяти:
+# контекст бывает не закрыт и тогда, когда не отнесённой памяти мало.
+if ($s.gpu_owners -and [int]$s.gpu_owners.dead_count -gt 0) {
+    $deadNames = @($s.gpu_owners.apps | Where-Object { "$($_.class)" -eq 'dead' } |
+                   ForEach-Object { "{0}:{1}" -f $_.name, $_.pid }) -join ', '
+    $alsoDo += ("nvidia-smi числит процессы, которых больше нет в системе — {0} шт. ({1})." -f `
+                $s.gpu_owners.dead_count, $deadNames)
+    $alsoDo += '  Это незакрытые контексты GPU: память числится за тем, кого некому попросить её отдать.'
+    $alsoDo += '  Сам драйвер их не освободит — либо штатный механизм студии, либо перезагрузка.'
 }
 
 if ($limitAtMax -and $top.Key -ne 'gpu_transient') {

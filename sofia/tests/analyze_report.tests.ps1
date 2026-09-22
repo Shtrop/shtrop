@@ -243,3 +243,28 @@ Test 'чистый отчёт не порождает пустой раздел 
         Assert-NotMatch 'Закрыть независимо от гипотезы' $out 'пустого раздела быть не должно'
     } finally { Remove-Sandbox $sb }
 }
+
+Test 'мёртвые владельцы GPU попадают в план даже при малом разрыве в памяти' {
+    # Раньше эта находка была вложена в блок про не отнесённую VRAM, а он
+    # выводится только когда разрыв превысил порог. Незакрытый контекст бывает
+    # и при небольшом разрыве — и тогда FAIL молча исчезал из плана.
+    $sb = New-Sandbox 'analyze_plan_dead'
+    try {
+        $rep = New-Report
+        $rep.sections.gpu_owners.heavy_count = 1
+        $rep.sections.gpu_owners.orphan_vram_mib = 0
+        $rep.sections.gpu_owners.unattributed_mib = 300
+        $rep.sections.gpu_owners.dead_count = 2
+        $rep.sections.gpu_owners.apps = @(
+            [ordered]@{ pid = 27900; name = 'python.exe'; class = 'heavy' },
+            [ordered]@{ pid = 19692; name = 'python.exe'; class = 'dead' },
+            [ordered]@{ pid = 18110; name = 'python.exe'; class = 'dead' }
+        )
+        $out = Invoke-Analyzer -Report $rep -Dir $sb.Dir
+
+        Assert-Match 'которых больше нет' $out 'находка должна быть в плане'
+        Assert-Match '19692' $out 'виновники названы'
+        Assert-Match '18110' $out 'оба'
+        Assert-Match 'драйвер' $out 'и сказано, что сам драйвер их не отдаст'
+    } finally { Remove-Sandbox $sb }
+}

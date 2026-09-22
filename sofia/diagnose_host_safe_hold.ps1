@@ -425,7 +425,10 @@ Invoke-Section 'gpu' {
     } else {
         $memUsed = 0
         $memTotal = 0
-        $q = & nvidia-smi --query-gpu='name,temperature.gpu,power.draw,power.limit,power.max_limit,clocks.sm,utilization.gpu,memory.used,memory.total' --format=csv,noheader 2>&1
+        # Без -i вывод многокарточной системы — несколько строк, а Out-String
+        # склеивает их в одну: Split(',') тогда смешивает поля разных карт, и
+        # memory.total превращается в мусор вроде 326075090.
+        $q = & nvidia-smi -i 0 --query-gpu='name,temperature.gpu,power.draw,power.limit,power.max_limit,clocks.sm,utilization.gpu,memory.used,memory.total' --format=csv,noheader 2>&1
         $script:Report.sections['gpu_query'] = ($q | Out-String).Trim()
         Write-Host ("  {0}" -f ($q | Out-String).Trim())
 

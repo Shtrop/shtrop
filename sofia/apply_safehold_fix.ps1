@@ -83,6 +83,16 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Ненулевой код возврата внешней команды здесь — ожидаемый ответ, а не сбой:
+# «задачи нет» у schtasks, «нет прав» у nvidia-smi. В PowerShell 7 такой код
+# может стать завершающей ошибкой из-за ErrorActionPreference = 'Stop', и тогда
+# безобидный -Action Status падал бы на машине без закреплённой задачи.
+# В Windows PowerShell 5.1 переменной нет — проверка это учитывает.
+if (Test-Path Variable:PSNativeCommandUseErrorActionPreference) {
+    $PSNativeCommandUseErrorActionPreference = $false
+}
+
 $rollbackPath = Join-Path $StateDir ("gpu{0}_powerlimit_rollback.json" -f $GpuIndex)
 $plPersistPath = Join-Path $StateDir ("gpu{0}_powerlimit_persist_rollback.json" -f $GpuIndex)
 $plTaskName = "SofiaAIStudio_GpuPowerLimit_{0}" -f $GpuIndex
@@ -196,8 +206,13 @@ function Get-NvidiaSmiPath {
 function Test-PersistTask {
     # $null — проверить нечем (нет schtasks); иначе есть задача или нет.
     if (-not (Get-Command schtasks -ErrorAction SilentlyContinue)) { return $null }
-    $null = & schtasks /Query /TN $plTaskName 2>&1
-    return ($LASTEXITCODE -eq 0)
+    try {
+        $null = & schtasks /Query /TN $plTaskName 2>&1
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        # Отсутствие задачи не должно выглядеть как сбой инструмента.
+        return $false
+    }
 }
 
 function New-PowerLimitWrapper {

@@ -152,3 +152,33 @@ Test 'стабильный power limit не мешает выходу из hold'
         Assert-True ([bool]$r.hold_exit_ready) 'при нулевом пороге и чистом окне выход разрешён'
     } finally { Remove-Sandbox $sb }
 }
+
+Test 'смена power limit на перезагрузке замечается после -Resume' {
+    # Лимит теряется именно на перезагрузке, а окно её переживает. Если
+    # набор виденных значений сбрасывать посессионно, в новом сеансе значение
+    # одно — и «лимит не менялся» выглядело бы правдой при смене 450 -> 600.
+    $sb = New-Sandbox 'watch_pl_resume'
+    try {
+        $out = Join-Path $sb.Dir 'out'
+        Install-FakeNvidiaSmi -Dir $sb.Dir -State @{ power_limit = 450 } | Out-Null
+        Set-WinEventStub -Mode ok -Events @()
+
+        Invoke-Watcher -OutDir $out | Out-Null
+
+        $statePath = Join-Path $out 'window_state.json'
+        $st = Get-Content $statePath -Raw | ConvertFrom-Json
+        Assert-True (@($st.power_limit_values).Count -ge 1) 'значения лимита должны сохраняться в состоянии окна'
+
+        # После перезагрузки лимит вернулся к максимуму платы.
+        $gs = Join-Path $sb.Dir 'bin/gpu_state.json'
+        $g = Get-Content $gs -Raw | ConvertFrom-Json
+        $g.power_limit = 600
+        $g | ConvertTo-Json -Depth 6 | Out-File -FilePath $gs -Encoding UTF8
+
+        $r = Invoke-Watcher -OutDir $out -Arguments @{ Resume = $true; RequiredHours = 0 }
+
+        Assert-True ([bool]$r.power_limit_changed) 'смена лимита между сеансами обязана быть замечена'
+        Assert-True (-not $r.hold_exit_ready) 'окно измеряло два разных режима питания'
+        Assert-Match 'power_limit_changed' ($r.hold_exit_blockers -join ';') 'причина должна быть названа'
+    } finally { Remove-Sandbox $sb }
+}

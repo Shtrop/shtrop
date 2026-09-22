@@ -66,3 +66,36 @@ Test 'проверка ничего не меняет и советует сам
     $out = Invoke-MemCheck
     Assert-Match 'Отключить XMP/EXPO' $out 'первым шагом должен идти бесплатный обратимый тест'
 }
+
+Test 'чистый прогон проверки памяти не объявляется отказом' {
+    # Сообщение об УСПЕХЕ само содержит слово об ошибках: «detected no errors»,
+    # «не обнаружило ошибок». Прежнее условие ловило это по тексту и отправляло
+    # владельца искать несуществующий дефект RAM.
+    Set-WinEventStub -Mode ok -Events @(
+        (New-TestEvent -Id 1201 -Provider 'Microsoft-Windows-MemoryDiagnostics-Results' `
+                       -Time (Get-Date).AddDays(-2) `
+                       -Message 'The Windows Memory Diagnostic tested the computer memory and detected no errors.')
+    )
+    $out = Invoke-MemCheck
+    Assert-Match 'PASS\s*\]\s*Проверка памяти Windows' $out 'чистый прогон — это PASS'
+    Assert-NotMatch 'FAIL\s*\]\s*Проверка памяти Windows' $out 'и точно не FAIL'
+}
+
+Test 'прогон с ошибками объявляется отказом' {
+    Set-WinEventStub -Mode ok -Events @(
+        (New-TestEvent -Id 1202 -Provider 'Microsoft-Windows-MemoryDiagnostics-Results' `
+                       -Time (Get-Date).AddDays(-2) `
+                       -Message 'Hardware problems were detected.')
+    )
+    $out = Invoke-MemCheck
+    Assert-Match 'FAIL\s*\]\s*Проверка памяти Windows' $out 'событие 1202 — настоящие ошибки'
+}
+
+Test 'событие без вердикта не выдаётся ни за PASS, ни за FAIL' {
+    Set-WinEventStub -Mode ok -Events @(
+        (New-TestEvent -Id 1101 -Provider 'Microsoft-Windows-MemoryDiagnostics-Results' `
+                       -Time (Get-Date).AddDays(-2) -Message 'Some other record.')
+    )
+    $out = Invoke-MemCheck
+    Assert-Match 'NOT_MEASURED\s*\]\s*Проверка памяти Windows' $out 'вердикта нет — значит не измерено'
+}
