@@ -1,0 +1,466 @@
+{
+  "generated_by": "scripts/export_registries.py",
+  "note": "Generated from the live AgentRegistry. 'executable' means the role has an implementation the runner can invoke; a role without one is spec-only and cannot be routed to.",
+  "total": 25,
+  "executing": [
+    "sofia.growth.engine",
+    "sofia.reel.cover",
+    "sofia.reel.critic",
+    "sofia.reel.director",
+    "sofia.reel.editor",
+    "sofia.reel.final_gate",
+    "sofia.reel.hook",
+    "sofia.reel.idea",
+    "sofia.reel.lipsync",
+    "sofia.reel.music",
+    "sofia.reel.repair",
+    "sofia.reel.script",
+    "sofia.reel.shot_director",
+    "sofia.reel.storyboard",
+    "sofia.reel.subtitles",
+    "sofia.reel.trend",
+    "sofia.reel.video",
+    "sofia.reel.voice",
+    "sofia.voice.critic.identity",
+    "sofia.voice.critic.pronunciation",
+    "sofia.voice.critic.prosody",
+    "sofia.voice.critic.semantic",
+    "sofia.voice.director",
+    "sofia.voice.generator",
+    "sofia.voice.repair"
+  ],
+  "spec_only": [],
+  "teams": {
+    "growth": [
+      {
+        "name": "sofia.growth.engine",
+        "role": "GrowthEngine",
+        "team": "growth",
+        "capabilities": [
+          "reel.growth"
+        ],
+        "executable": true,
+        "timeout_s": 300,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Supplies trend, audience, KPI target and hook hypothesis.",
+        "tags": []
+      }
+    ],
+    "reel": [
+      {
+        "name": "sofia.reel.cover",
+        "role": "CoverAgent",
+        "team": "reel",
+        "capabilities": [
+          "reel.cover"
+        ],
+        "executable": true,
+        "timeout_s": 300,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Per-reel cover candidate and its QA.",
+        "tags": []
+      },
+      {
+        "name": "sofia.reel.critic",
+        "role": "ReelCritic",
+        "team": "reel",
+        "capabilities": [
+          "reel.qa"
+        ],
+        "executable": true,
+        "timeout_s": 600,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Hook, story, scene function, CTA, caption match.",
+        "tags": []
+      },
+      {
+        "name": "sofia.reel.director",
+        "role": "ReelDirector",
+        "team": "reel",
+        "capabilities": [
+          "reel.direction"
+        ],
+        "executable": true,
+        "timeout_s": 7200,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Single logical owner of the Reel, end to end.",
+        "tags": []
+      },
+      {
+        "name": "sofia.reel.editor",
+        "role": "EditorAgent",
+        "team": "reel",
+        "capabilities": [
+          "reel.edit"
+        ],
+        "executable": true,
+        "timeout_s": 1800,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Cuts, pacing, B-roll, ducking, safe zones, transitions.",
+        "tags": []
+      },
+      {
+        "name": "sofia.reel.final_gate",
+        "role": "FinalGate",
+        "team": "reel",
+        "capabilities": [
+          "reel.final_gate"
+        ],
+        "executable": true,
+        "timeout_s": 600,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Aggregates every category fail-closed; decode is not enough.",
+        "tags": []
+      },
+      {
+        "name": "sofia.reel.hook",
+        "role": "HookAgent",
+        "team": "reel",
+        "capabilities": [
+          "reel.hook"
+        ],
+        "executable": true,
+        "timeout_s": 120,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Owns the opening beat.",
+        "tags": []
+      },
+      {
+        "name": "sofia.reel.idea",
+        "role": "IdeaAgent",
+        "team": "reel",
+        "capabilities": [
+          "reel.idea"
+        ],
+        "executable": true,
+        "timeout_s": 180,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Idea and content purpose from the trend.",
+        "tags": []
+      },
+      {
+        "name": "sofia.reel.lipsync",
+        "role": "LipSyncAgent",
+        "team": "reel",
+        "capabilities": [
+          "reel.lipsync"
+        ],
+        "executable": true,
+        "timeout_s": 3600,
+        "max_attempts": 1,
+        "requires_gpu": true,
+        "description": "Champion lip-sync; new models enter only as challengers.",
+        "tags": []
+      },
+      {
+        "name": "sofia.reel.music",
+        "role": "Music/SFX Agent",
+        "team": "reel",
+        "capabilities": [
+          "reel.music_sfx"
+        ],
+        "executable": true,
+        "timeout_s": 600,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Music must not mask the voice; ducking is verified.",
+        "tags": []
+      },
+      {
+        "name": "sofia.reel.repair",
+        "role": "RepairAgent",
+        "team": "reel",
+        "capabilities": [
+          "reel.repair"
+        ],
+        "executable": true,
+        "timeout_s": 120,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Routes each defect to the narrowest component.",
+        "tags": []
+      },
+      {
+        "name": "sofia.reel.script",
+        "role": "ScriptAgent",
+        "team": "reel",
+        "capabilities": [
+          "reel.script"
+        ],
+        "executable": true,
+        "timeout_s": 180,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Beat-complete, speakable script.",
+        "tags": []
+      },
+      {
+        "name": "sofia.reel.shot_director",
+        "role": "ShotDirector",
+        "team": "reel",
+        "capabilities": [
+          "reel.shots"
+        ],
+        "executable": true,
+        "timeout_s": 180,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Shot types, generator profiles and source selection.",
+        "tags": []
+      },
+      {
+        "name": "sofia.reel.storyboard",
+        "role": "StoryboardAgent",
+        "team": "reel",
+        "capabilities": [
+          "reel.storyboard"
+        ],
+        "executable": true,
+        "timeout_s": 180,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Every scene gets an explicit on-screen function.",
+        "tags": []
+      },
+      {
+        "name": "sofia.reel.subtitles",
+        "role": "SubtitleAgent",
+        "team": "reel",
+        "capabilities": [
+          "reel.subtitles"
+        ],
+        "executable": true,
+        "timeout_s": 300,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Subtitles must match real speech, timing and safe zones.",
+        "tags": []
+      },
+      {
+        "name": "sofia.reel.trend",
+        "role": "TrendAgent",
+        "team": "reel",
+        "capabilities": [
+          "reel.trend"
+        ],
+        "executable": true,
+        "timeout_s": 120,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Consumes Growth Engine trend/KPI/audience input.",
+        "tags": []
+      },
+      {
+        "name": "sofia.reel.video",
+        "role": "VideoAgent",
+        "team": "reel",
+        "capabilities": [
+          "reel.video"
+        ],
+        "executable": true,
+        "timeout_s": 5400,
+        "max_attempts": 2,
+        "requires_gpu": true,
+        "description": "Renders each shot with its type's profile.",
+        "tags": []
+      },
+      {
+        "name": "sofia.reel.voice",
+        "role": "VoiceTeam",
+        "team": "reel",
+        "capabilities": [
+          "voice.generation"
+        ],
+        "executable": true,
+        "timeout_s": 1800,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Delegates to the Sofia Voice Team (fail-closed).",
+        "tags": []
+      }
+    ],
+    "voice": [
+      {
+        "name": "sofia.voice.critic.identity",
+        "role": "VoiceIdentityCritic",
+        "team": "voice",
+        "capabilities": [
+          "voice.qa.identity"
+        ],
+        "executable": true,
+        "timeout_s": 180,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "The voice is still Sofia, including across RU/UA/EN.",
+        "tags": []
+      },
+      {
+        "name": "sofia.voice.critic.pronunciation",
+        "role": "PronunciationCritic",
+        "team": "voice",
+        "capabilities": [
+          "voice.qa.pronunciation"
+        ],
+        "executable": true,
+        "timeout_s": 180,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "WER, stress, numbers, names and borrowed words.",
+        "tags": []
+      },
+      {
+        "name": "sofia.voice.critic.prosody",
+        "role": "ProsodyCritic",
+        "team": "voice",
+        "capabilities": [
+          "voice.qa.prosody"
+        ],
+        "executable": true,
+        "timeout_s": 120,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Rhythm, pauses, emotion, robotic delivery, overacting.",
+        "tags": []
+      },
+      {
+        "name": "sofia.voice.critic.semantic",
+        "role": "SemanticCritic",
+        "team": "voice",
+        "capabilities": [
+          "voice.qa.semantic"
+        ],
+        "executable": true,
+        "timeout_s": 120,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Spoken result must not change the script's meaning.",
+        "tags": []
+      },
+      {
+        "name": "sofia.voice.director",
+        "role": "VoiceDirector",
+        "team": "voice",
+        "capabilities": [
+          "voice.direction"
+        ],
+        "executable": true,
+        "timeout_s": 30,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Decides language, emotion, pace, tone, style and scene context.",
+        "tags": []
+      },
+      {
+        "name": "sofia.voice.generator",
+        "role": "VoiceGenerator",
+        "team": "voice",
+        "capabilities": [
+          "voice.generation"
+        ],
+        "executable": true,
+        "timeout_s": 300,
+        "max_attempts": 2,
+        "requires_gpu": true,
+        "description": "Synthesises speech through the canonical Sofia TTS backend.",
+        "tags": []
+      },
+      {
+        "name": "sofia.voice.repair",
+        "role": "VoiceRepairAgent",
+        "team": "voice",
+        "capabilities": [
+          "voice.repair"
+        ],
+        "executable": true,
+        "timeout_s": 60,
+        "max_attempts": 1,
+        "requires_gpu": false,
+        "description": "Repairs only the diagnosed word/phrase/sentence/prosody.",
+        "tags": []
+      }
+    ]
+  },
+  "capabilities": {
+    "voice.direction": [
+      "sofia.voice.director"
+    ],
+    "voice.generation": [
+      "sofia.reel.voice",
+      "sofia.voice.generator"
+    ],
+    "voice.qa.pronunciation": [
+      "sofia.voice.critic.pronunciation"
+    ],
+    "voice.qa.identity": [
+      "sofia.voice.critic.identity"
+    ],
+    "voice.qa.prosody": [
+      "sofia.voice.critic.prosody"
+    ],
+    "voice.qa.semantic": [
+      "sofia.voice.critic.semantic"
+    ],
+    "voice.repair": [
+      "sofia.voice.repair"
+    ],
+    "reel.direction": [
+      "sofia.reel.director"
+    ],
+    "reel.trend": [
+      "sofia.reel.trend"
+    ],
+    "reel.idea": [
+      "sofia.reel.idea"
+    ],
+    "reel.hook": [
+      "sofia.reel.hook"
+    ],
+    "reel.script": [
+      "sofia.reel.script"
+    ],
+    "reel.storyboard": [
+      "sofia.reel.storyboard"
+    ],
+    "reel.shots": [
+      "sofia.reel.shot_director"
+    ],
+    "reel.video": [
+      "sofia.reel.video"
+    ],
+    "reel.lipsync": [
+      "sofia.reel.lipsync"
+    ],
+    "reel.edit": [
+      "sofia.reel.editor"
+    ],
+    "reel.subtitles": [
+      "sofia.reel.subtitles"
+    ],
+    "reel.music_sfx": [
+      "sofia.reel.music"
+    ],
+    "reel.cover": [
+      "sofia.reel.cover"
+    ],
+    "reel.qa": [
+      "sofia.reel.critic"
+    ],
+    "reel.final_gate": [
+      "sofia.reel.final_gate"
+    ],
+    "reel.repair": [
+      "sofia.reel.repair"
+    ],
+    "reel.growth": [
+      "sofia.growth.engine"
+    ]
+  }
+}

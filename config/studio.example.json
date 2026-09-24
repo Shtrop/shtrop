@@ -1,0 +1,64 @@
+{
+  "_comment": [
+    "Copy to config/studio.json on the studio machine and fill in real paths.",
+    "Every field left empty makes the corresponding verifier report NOT_MEASURED,",
+    "which blocks fail-closed. That is intended: wire a backend or accept the block."
+  ],
+
+  "tts_endpoint": "http://127.0.0.1:5681/api/tts",
+  "speaker_wavs": {
+    "ru": ["D:\\AI_CONTENT\\Sofia\\voice\\refs\\sofia_ru_01.wav",
+           "D:\\AI_CONTENT\\Sofia\\voice\\refs\\sofia_ru_02.wav"],
+    "uk": ["D:\\AI_CONTENT\\Sofia\\voice\\refs\\sofia_uk_01.wav"],
+    "en": ["D:\\AI_CONTENT\\Sofia\\voice\\refs\\sofia_en_01.wav"]
+  },
+
+  "_reference_clips_note": [
+    "These are the canonical Sofia voiceprints. Without them the identity critic",
+    "fails with 'a generic fallback voice is not Sofia'. UA in particular needs a",
+    "real Ukrainian Sofia clone, not a multilingual fallback."
+  ],
+  "reference_clips": {
+    "ru": ["D:\\AI_CONTENT\\Sofia\\voice\\refs\\sofia_ru_01.wav"],
+    "uk": ["D:\\AI_CONTENT\\Sofia\\voice\\refs\\sofia_uk_01.wav"],
+    "en": ["D:\\AI_CONTENT\\Sofia\\voice\\refs\\sofia_en_01.wav"]
+  },
+  "embeddings": {
+    "ru": "",
+    "uk": "",
+    "en": ""
+  },
+
+  "asr_binary": "whisper",
+  "asr_model": "large-v3",
+
+  "comfyui_endpoint": "http://127.0.0.1:8188",
+  "comfyui_workflows": {
+    "identity_first_720p": "D:\\AI_CONTENT\\Sofia\\workflows\\wan22_i2v_pulid_720p.json",
+    "talking_720p_lipsync": "D:\\AI_CONTENT\\Sofia\\workflows\\wan22_i2v_pulid_talking.json",
+    "payoff_720p": "D:\\AI_CONTENT\\Sofia\\workflows\\wan22_i2v_pulid_720p.json",
+    "medium_720p": "D:\\AI_CONTENT\\Sofia\\workflows\\wan22_i2v_720p.json",
+    "broll_1080p_fast": "D:\\AI_CONTENT\\Sofia\\workflows\\wan22_t2v_fast.json",
+    "detail_macro": "D:\\AI_CONTENT\\Sofia\\workflows\\wan22_t2v_fast.json"
+  },
+
+  "lipsync_runner": "D:\\AI_CONTENT\\Sofia\\lipsync\\run_champion.py",
+  "_challenger_note": [
+    "New lip-sync technologies (LongCat, HighSync, ...) enter here as Challengers",
+    "only. They never replace the champion without winning a benchmark."
+  ],
+  "lipsync_challengers": {},
+
+  "ffmpeg": "ffmpeg",
+  "ffprobe": "ffprobe",
+
+  "sofia_references": {
+    "default": "D:\\AI_CONTENT\\Sofia\\generated\\sofia_reference_720p.png",
+    "FACE_CRITICAL": "D:\\AI_CONTENT\\Sofia\\generated\\sofia_reference_720p.png",
+    "TALKING": "D:\\AI_CONTENT\\Sofia\\generated\\sofia_reference_talking.png",
+    "PAYOFF": "D:\\AI_CONTENT\\Sofia\\generated\\sofia_reference_720p.png"
+  },
+
+  "lock_dir": "D:\\AI_CONTENT\\Sofia\\control_flags",
+  "growth_memory": "D:\\AI_CONTENT\\Sofia\\analytics\\publication_history.json"
+}

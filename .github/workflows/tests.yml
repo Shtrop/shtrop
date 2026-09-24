@@ -1,0 +1,42 @@
+name: tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test dependencies
+        # The library itself is standard-library only. pytest runs the suite and
+        # imageio-ffmpeg supplies the encoder the end-to-end tests need; without
+        # it those tests skip rather than fail, which would hide regressions.
+        run: python -m pip install --upgrade pip pytest imageio-ffmpeg
+
+      - name: Run the test suite
+        run: python -m pytest tests/ -q
+
+      - name: Registries match the live registry
+        # The registries are generated. If a role is added or renamed without
+        # regenerating them, the committed files drift from reality.
+        run: |
+          python scripts/export_registries.py
+          git diff --exit-code -- sofia/registry/
+
+      - name: Preflight reports honestly on a machine with no studio backends
+        # Expected to exit 1 here: no GPU, no XTTS, no Sofia references. A zero
+        # exit on this runner would mean the preflight is not actually checking.
+        run: |
+          if python scripts/preflight.py; then
+            echo "preflight claimed READY on a runner with no studio backends"
+            exit 1
+          fi

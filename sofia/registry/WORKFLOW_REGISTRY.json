@@ -1,0 +1,385 @@
+{
+  "generated_by": "scripts/export_registries.py",
+  "workflows": {
+    "voice_clip": {
+      "owner": "VoiceDirector",
+      "steps": [
+        "VoiceDirector.brief",
+        "VoiceGenerator.generate",
+        "PronunciationCritic.review",
+        "VoiceIdentityCritic.review",
+        "ProsodyCritic.review",
+        "SemanticCritic.review",
+        "VoiceRepairAgent.plan (targeted)",
+        "re-verify"
+      ],
+      "critical_gates": [
+        "voice.pronunciation",
+        "voice.identity",
+        "voice.prosody",
+        "voice.semantic"
+      ],
+      "fail_closed": true,
+      "outcomes": [
+        "PASS",
+        "REPAIR",
+        "HOLD",
+        "FAIL",
+        "BLOCKED"
+      ]
+    },
+    "voice_acceptance_campaign": {
+      "owner": "VoiceDirector",
+      "min_clips_per_language": 20,
+      "coverage": {
+        "RU": {
+          "clips": 22,
+          "lengths": {
+            "short": 10,
+            "medium": 9,
+            "long": 3
+          },
+          "emotions": {
+            "warm": 4,
+            "excited": 3,
+            "serious": 4,
+            "playful": 5,
+            "neutral": 3,
+            "confiding": 3
+          },
+          "hard_cases": {
+            "numbers": 2,
+            "names": 1,
+            "list": 3,
+            "question": 2,
+            "borrowed": 2
+          }
+        },
+        "UA": {
+          "clips": 22,
+          "lengths": {
+            "short": 10,
+            "medium": 9,
+            "long": 3
+          },
+          "emotions": {
+            "warm": 4,
+            "excited": 3,
+            "serious": 4,
+            "playful": 5,
+            "neutral": 3,
+            "confiding": 3
+          },
+          "hard_cases": {
+            "numbers": 2,
+            "names": 1,
+            "list": 3,
+            "question": 2,
+            "borrowed": 2
+          }
+        },
+        "EN": {
+          "clips": 22,
+          "lengths": {
+            "short": 10,
+            "medium": 9,
+            "long": 3
+          },
+          "emotions": {
+            "warm": 4,
+            "excited": 3,
+            "serious": 4,
+            "playful": 5,
+            "neutral": 3,
+            "confiding": 3
+          },
+          "hard_cases": {
+            "numbers": 2,
+            "names": 1,
+            "list": 3,
+            "question": 2,
+            "borrowed": 2
+          }
+        }
+      }
+    },
+    "reel_e2e": {
+      "owner": "ReelDirector",
+      "single_owner": true,
+      "stages": [
+        "CREATED",
+        "BRIEF_DONE",
+        "SCRIPT_DONE",
+        "SHOTS_DONE",
+        "VOICE_DONE",
+        "VIDEO_DONE",
+        "LIPSYNC_DONE",
+        "EDIT_DONE",
+        "FINAL_QA",
+        "READY_FOR_OWNER_REVIEW"
+      ],
+      "pipeline": [
+        "TREND",
+        "IDEA",
+        "CONTENT PURPOSE",
+        "HOOK",
+        "SCRIPT",
+        "STORYBOARD",
+        "SHOT LIST",
+        "SOURCE SELECTION",
+        "VIDEO GENERATION",
+        "VIDEO QA",
+        "VOICE",
+        "VOICE QA",
+        "LIP-SYNC",
+        "LIP-SYNC QA",
+        "EDIT",
+        "MUSIC",
+        "SFX",
+        "SUBTITLES",
+        "COVER",
+        "FINAL PERCEPTUAL QA",
+        "APPROVAL",
+        "QUEUE"
+      ],
+      "final_gate_categories": [
+        "reel.decode",
+        "reel.story",
+        "reel.video",
+        "reel.voice",
+        "reel.lipsync",
+        "reel.edit",
+        "reel.subtitles",
+        "reel.audio_mix",
+        "reel.cover",
+        "reel.perceptual"
+      ],
+      "backend_measurement_contract": {
+        "video": {
+          "identity": "similarity of the rendered face to the Sofia reference, 0-1. Required on face-critical and talking shots; B-roll and detail shots are not asked for it, which is what keeps GPU cost and the identity-failure surface down.",
+          "face_drift": "how far identity moves across the shot, 0-1. A shot that starts as Sofia and ends as someone else passes a mean-identity check.",
+          "sharpness": "focus/detail of the rendered frames, 0-1.",
+          "ai_artifact_score": "how much the shot reads as generated, 0-1, lower is better: warped hands, melted edges, impossible motion."
+        },
+        "lipsync": {
+          "phoneme_accuracy": "how well mouth shapes match the spoken phonemes, 0-1.",
+          "mouth_quality": "mouth interior and lip rendering, 0-1.",
+          "jaw_quality": "jaw motion plausibility, 0-1.",
+          "teeth_quality": "teeth rendering, 0-1 — a classic lip-sync tell.",
+          "eye_quality": "eye life; dead eyes read as fake however good the mouth is.",
+          "identity": "face identity in the synced result, 0-1.",
+          "face_drift": "identity movement across the synced shot, 0-1.",
+          "av_offset_ms": "audio/video offset in milliseconds, lower is better. Perfect mouth shapes at the wrong time are still bad lip-sync."
+        },
+        "lower_is_better": [
+          "ai_artifact_score",
+          "av_offset_ms",
+          "face_drift"
+        ],
+        "note": "Attach these to Shot.measurements as sofia.core.verdict.Measurement values. A missing one is NOT_MEASURED and blocks the gate; it is never treated as a pass."
+      },
+      "scorecard": {
+        "measured_locally": [
+          "STORY",
+          "IDENTITY",
+          "VOICE",
+          "LIPSYNC",
+          "EDITING",
+          "COVER",
+          "REALISM"
+        ],
+        "needs_published_analytics": {
+          "HOOK": "hook strength is an audience outcome (how many keep watching past the first seconds); the gates can check that a hook exists and is in the opening shot, not that it works",
+          "RETENTION": "retention is measurable only from platform analytics on a published Reel, and publishing is on HOLD"
+        }
+      },
+      "terminal_state_on_pass": "READY_FOR_OWNER_REVIEW",
+      "publishing": "HOLD (no publish path exists in code)"
+    },
+    "repair_routing": {
+      "owner": "RepairAgent",
+      "routes": {
+        "BAD_HOOK": {
+          "defect": "BAD_HOOK",
+          "component": "HookAgent",
+          "resume_from": "BRIEF_DONE",
+          "scope": "hook + opening shot",
+          "regenerate_all": false
+        },
+        "BAD_SCRIPT": {
+          "defect": "BAD_SCRIPT",
+          "component": "ScriptAgent",
+          "resume_from": "BRIEF_DONE",
+          "scope": "script lines",
+          "regenerate_all": false
+        },
+        "BAD_SOURCE": {
+          "defect": "BAD_SOURCE",
+          "component": "ShotDirector",
+          "resume_from": "SCRIPT_DONE",
+          "scope": "source selection",
+          "regenerate_all": false
+        },
+        "IDENTITY": {
+          "defect": "IDENTITY",
+          "component": "VideoAgent",
+          "resume_from": "SHOTS_DONE",
+          "scope": "affected face-critical shots only (IDENTITY_FIRST)",
+          "regenerate_all": false
+        },
+        "SHOT": {
+          "defect": "SHOT",
+          "component": "VideoAgent",
+          "resume_from": "SHOTS_DONE",
+          "scope": "the single failing shot",
+          "regenerate_all": false
+        },
+        "VOICE": {
+          "defect": "VOICE",
+          "component": "VoiceTeam",
+          "resume_from": "SHOTS_DONE",
+          "scope": "the failing voice clip",
+          "regenerate_all": false
+        },
+        "PRONUNCIATION": {
+          "defect": "PRONUNCIATION",
+          "component": "VoiceTeam",
+          "resume_from": "SHOTS_DONE",
+          "scope": "the mispronounced word/phrase only",
+          "regenerate_all": false
+        },
+        "LIPSYNC": {
+          "defect": "LIPSYNC",
+          "component": "LipSyncAgent",
+          "resume_from": "VIDEO_DONE",
+          "scope": "the talking shot",
+          "regenerate_all": false
+        },
+        "EDIT": {
+          "defect": "EDIT",
+          "component": "EditorAgent",
+          "resume_from": "LIPSYNC_DONE",
+          "scope": "the edit timeline",
+          "regenerate_all": false
+        },
+        "SUBTITLES": {
+          "defect": "SUBTITLES",
+          "component": "SubtitleAgent",
+          "resume_from": "EDIT_DONE",
+          "scope": "subtitle cues",
+          "regenerate_all": false
+        },
+        "MUSIC": {
+          "defect": "MUSIC",
+          "component": "Music/SFX Agent",
+          "resume_from": "EDIT_DONE",
+          "scope": "music bed and ducking",
+          "regenerate_all": false
+        },
+        "COVER": {
+          "defect": "COVER",
+          "component": "CoverAgent",
+          "resume_from": "EDIT_DONE",
+          "scope": "cover candidate",
+          "regenerate_all": false
+        },
+        "STORY_CONTINUITY": {
+          "defect": "STORY_CONTINUITY",
+          "component": "ReelDirector",
+          "resume_from": "BRIEF_DONE",
+          "scope": "story arc and shot functions",
+          "regenerate_all": true
+        },
+        "NOT_MEASURED": {
+          "defect": "NOT_MEASURED",
+          "component": "infrastructure",
+          "resume_from": "FINAL_QA",
+          "scope": "no regeneration can fix an unmeasurable gate — fix the verifier",
+          "regenerate_all": false
+        }
+      }
+    },
+    "shot_profiles": {
+      "owner": "ShotDirector",
+      "profiles": {
+        "FACE_CRITICAL": {
+          "name": "identity_first_720p",
+          "model": "wan2.2-i2v+pulid",
+          "resolution": "720x1280",
+          "fps": 24,
+          "needs_identity_gate": true,
+          "needs_lipsync": false,
+          "vram_gb": 22.0,
+          "est_seconds_per_second": 55.0,
+          "notes": "IDENTITY_FIRST: strict identity gate, never lower the threshold."
+        },
+        "TALKING": {
+          "name": "talking_720p_lipsync",
+          "model": "wan2.2-i2v+pulid+lipsync",
+          "resolution": "720x1280",
+          "fps": 24,
+          "needs_identity_gate": true,
+          "needs_lipsync": true,
+          "vram_gb": 24.0,
+          "est_seconds_per_second": 75.0,
+          "notes": "Face and mouth both gated; the champion lip-sync model applies."
+        },
+        "PAYOFF": {
+          "name": "payoff_720p",
+          "model": "wan2.2-i2v+pulid",
+          "resolution": "720x1280",
+          "fps": 24,
+          "needs_identity_gate": true,
+          "needs_lipsync": false,
+          "vram_gb": 22.0,
+          "est_seconds_per_second": 55.0,
+          "notes": ""
+        },
+        "MEDIUM": {
+          "name": "medium_720p",
+          "model": "wan2.2-i2v",
+          "resolution": "720x1280",
+          "fps": 24,
+          "needs_identity_gate": false,
+          "needs_lipsync": false,
+          "vram_gb": 16.0,
+          "est_seconds_per_second": 35.0,
+          "notes": "Face may be present but is not the subject; soft identity check only."
+        },
+        "B_ROLL": {
+          "name": "broll_1080p_fast",
+          "model": "wan2.2-t2v-fast",
+          "resolution": "1080x1920",
+          "fps": 24,
+          "needs_identity_gate": false,
+          "needs_lipsync": false,
+          "vram_gb": 12.0,
+          "est_seconds_per_second": 18.0,
+          "notes": "No face required — cheapest path, best visual variety."
+        },
+        "DETAIL": {
+          "name": "detail_macro",
+          "model": "wan2.2-t2v-fast",
+          "resolution": "1080x1920",
+          "fps": 24,
+          "needs_identity_gate": false,
+          "needs_lipsync": false,
+          "vram_gb": 10.0,
+          "est_seconds_per_second": 14.0,
+          "notes": "Hands, cup, screen, texture. No identity pipeline at all."
+        },
+        "TRANSITION": {
+          "name": "transition_cheap",
+          "model": "procedural",
+          "resolution": "1080x1920",
+          "fps": 24,
+          "needs_identity_gate": false,
+          "needs_lipsync": false,
+          "vram_gb": 0.0,
+          "est_seconds_per_second": 1.0,
+          "notes": "Editor-side; no video model needed."
+        }
+      }
+    }
+  }
+}
