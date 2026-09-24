@@ -1,0 +1,5 @@
+# Патчи и shell-скрипты не должны конвертироваться в CRLF при клоне на Windows:
+# git apply сверяет контекст побайтово и падает на CRLF-патче против LF-исходников.
+*.patch -text
+*.sh text eol=lf
+*.ps1 text eol=crlf
