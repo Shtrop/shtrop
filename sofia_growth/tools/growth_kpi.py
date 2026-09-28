@@ -23,6 +23,7 @@ import sys
 from pathlib import Path
 
 NOT_MEASURED = "NOT_MEASURED"
+UNVERIFIABLE = "UNVERIFIABLE"
 
 # Внешние ориентиры 2026 (открытые источники, не данные Sofia).
 SENDS_PER_REACH_STRONG = 0.01
@@ -405,10 +406,55 @@ def next_action(metrics: dict) -> str:
     return " ".join(parts)
 
 
+def verify_sources(payload: dict) -> list[dict]:
+    """Проверяет, существуют ли ещё файлы, из которых собран снимок.
+
+    Снимок живёт дольше своих источников: временный каталог прогона исчезает,
+    студию переносят, выгрузку удаляют. Пока файла нет, подлинность проверить
+    нечем — такой источник не REAL и не SHADOW, он UNVERIFIABLE.
+    """
+    verified = []
+    for source in payload.get("sources", []):
+        source = dict(source)
+        path = source.get("path")
+        source["_present"] = bool(path) and Path(path).exists()
+        if not source["_present"]:
+            source["evidence_label"] = UNVERIFIABLE
+        verified.append(source)
+    return verified
+
+
+def effective_evidence(payload: dict, sources: list[dict] | None = None) -> str:
+    """Доказательность прогона с поправкой на недоступные источники.
+
+    Метка из снимка описывает момент сбора. Если файлы с тех пор пропали,
+    прежний REAL повторно не подтверждается: все источники недоступны —
+    UNVERIFIABLE, часть — MIXED по слабейшему звену.
+    """
+    evidence = payload.get("evidence_label", "REAL")
+    sources = verify_sources(payload) if sources is None else sources
+    if not sources:
+        return evidence
+    absent = [s for s in sources if not s.get("_present", True)]
+    if not absent:
+        return evidence
+    if len(absent) == len(sources):
+        return UNVERIFIABLE
+    return evidence if evidence != "REAL" else "MIXED"
+
+
+def evidence_note(evidence: str) -> str:
+    if evidence == "REAL":
+        return ""
+    if evidence == UNVERIFIABLE:
+        return "  ← источники снимка недоступны, подлинность не подтверждается"
+    return "  ← НЕ метрики Instagram, теневой/обучающий контур"
+
+
 def render(payload: dict, metrics: dict) -> str:
     measured, missing = split_measured(metrics)
-    sources = payload.get("sources", [])
-    evidence = payload.get("evidence_label", "REAL")
+    sources = verify_sources(payload)
+    evidence = effective_evidence(payload, sources)
     lines = [
         "# KPI роста Sofia",
         "",
@@ -421,9 +467,17 @@ def render(payload: dict, metrics: dict) -> str:
         f"Источники данных: {len(sources) or NOT_MEASURED} | доказательность: {evidence}",
     ]
     for source in sources:
+        absent = "" if source.get("_present", True) else " — файл недоступен"
         lines.append(f"  - [{source.get('evidence_label', 'REAL')}] `{source['path']}` "
-                     f"(строк: {source.get('rows', '?')}, sha256:{source.get('sha256', '?')})")
-    if evidence != "REAL":
+                     f"(строк: {source.get('rows', '?')}, sha256:{source.get('sha256', '?')})"
+                     f"{absent}")
+    if evidence == UNVERIFIABLE:
+        lines += ["",
+                  "> **ВНИМАНИЕ: доказательность UNVERIFIABLE.** Файлы, из которых собран снимок, "
+                  "больше не существуют: сверить числа не с чем. Это не значит, что данные "
+                  "ложные, — значит, что подтвердить их нечем, и основанием для выводов о росте "
+                  "они служить не могут. Пересобрать: tools/ingest_insights.py --studio <корень студии>."]
+    elif evidence != "REAL":
         lines += ["",
                   f"> **ВНИМАНИЕ: доказательность {evidence}.** Данные получены из теневого или "
                   "обучающего контура и НЕ являются метриками Instagram. Все значения ниже "
@@ -518,27 +572,26 @@ def render(payload: dict, metrics: dict) -> str:
 
 
 def label(value, evidence: str = "REAL") -> str:
-    """Метка значения. Теневой источник никогда не становится REAL."""
+    """Метка значения. Не-REAL источник никогда не становится REAL."""
     if value is None:
         return NOT_MEASURED
-    return evidence if evidence in ("SHADOW", "MIXED") else "REAL"
+    return "REAL" if evidence == "REAL" else evidence
 
 
 def summary_block(payload: dict, metrics: dict) -> str:
     measured, missing = split_measured(metrics)
-    evidence = payload.get("evidence_label", "REAL")
+    sources = verify_sources(payload)
+    evidence = effective_evidence(payload, sources)
     complete = (metrics["trend_attribution"] and metrics["followers_baseline"] is not None
                 and metrics["sends_per_reach"] is not None)
     # Теневые данные не могут подтвердить цикл: механика работает, рост — нет.
     loop = "VERIFIED" if (complete and evidence == "REAL") else "PARTIAL"
-    sources = payload.get("sources", [])
     span = metrics.get("data_span")
     window_note = (f"WINDOW: {metrics['window_days'] or 'весь диапазон'} дн. | "
                    f"публикаций с метриками в окне: {metrics['posts_with_metrics_in_window']} "
                    f"из {metrics['posts_with_metrics_total']}")
     lines = [
-        f"EVIDENCE: {evidence}" + ("" if evidence == "REAL"
-                                   else "  ← НЕ метрики Instagram, теневой/обучающий контур"),
+        f"EVIDENCE: {evidence}" + evidence_note(evidence),
         f"DATA SPAN: {span[0]} — {span[1]} ({metrics['data_span_days']} дн.)" if span
         else "DATA SPAN: NOT_MEASURED",
         window_note,
@@ -559,8 +612,9 @@ def summary_block(payload: dict, metrics: dict) -> str:
         "",
         "REAL DATA SOURCE:",
     ]
-    lines += [f"  [{s.get('evidence_label', 'REAL')}] {s['path']}" for s in sources] \
-        or [f"  {NOT_MEASURED}"]
+    lines += [f"  [{s.get('evidence_label', 'REAL')}] {s['path']}"
+              + ("" if s.get("_present", True) else " — файл недоступен")
+              for s in sources] or [f"  {NOT_MEASURED}"]
     action = next_action(metrics)
     total_posts = metrics["posts_with_metrics_total"]
     in_window = metrics["posts_with_metrics_in_window"]
@@ -568,7 +622,11 @@ def summary_block(payload: dict, metrics: dict) -> str:
         action = (f"Окно {metrics['window_days']} дн. захватило только {in_window} публикаций "
                   f"с метриками из {total_posts} доступных — выводы по нему делать нельзя. "
                   f"Пересчитать по всему диапазону: --days 0. " + action)
-    if evidence != "REAL":
+    if evidence == UNVERIFIABLE:
+        action = ("Снимок не подтверждается: его источники недоступны. Пересобрать данные со "
+                  "студии (tools/ingest_insights.py --studio <корень студии>) прежде, чем менять "
+                  "план по этим числам. " + action)
+    elif evidence != "REAL":
         action = ("Реальных метрик Instagram нет — контент-план по этим данным не меняется. "
                   "Разбор теневых чисел приведён только как проверка механики: " + action)
     lines += ["", "NEXT GROWTH ACTION:", f"  {action}"]
@@ -578,10 +636,11 @@ def summary_block(payload: dict, metrics: dict) -> str:
 def build_memory(payload: dict, metrics: dict, previous: dict | None) -> dict:
     """Growth memory: накапливает измеренные исходы форматов/трендов.
 
-    Доказательность источника переносится в каждую запись: по теневым данным
-    движок не станет менять приоритет форматов в реальном плане.
+    Доказательность источника переносится в каждую запись: по теневым и
+    неподтверждаемым данным движок не станет менять приоритет форматов в
+    реальном плане.
     """
-    evidence = payload.get("evidence_label", "REAL")
+    evidence = effective_evidence(payload)
     memory = previous or {"schema_version": "1.1", "entries": {}}
     memory["evidence_label"] = evidence
     memory.setdefault("entries", {})
@@ -632,6 +691,8 @@ def verdict_for(row: dict) -> str:
 def atomic_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
+    if not text.endswith("\n"):
+        text += "\n"
     tmp.write_text(text, encoding="utf-8")
     tmp.replace(path)
 

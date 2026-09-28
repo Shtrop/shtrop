@@ -687,7 +687,47 @@ def main() -> int:
         check("AUTOPILOT", "--push" not in result.stdout and "Push:" not in result.stdout,
               "без --push ничего не отправляется: по умолчанию только локальные файлы")
 
-        print(f"\n=== 18. Изоляция: репозиторий не загрязнён ===")
+        print(f"\n=== 18. Снимок переживает свои источники ===")
+        # Снимок хранится дольше файлов, из которых собран: временный каталог
+        # прогона исчезает, студию переносят, выгрузку удаляют. Пока источника
+        # нет, проверить подлинность нечем — и выдавать такой снимок за REAL
+        # нельзя: именно так фикстура однажды попала в отчёт как реальные метрики.
+        orphan = work / "orphan_snapshots.json"
+        orphan_memory = work / "orphan_memory.json"
+        payload = json.loads(snapshots.read_text(encoding="utf-8"))
+        gone = work / "gone" / "content_queue.db"
+        for source in payload["sources"]:
+            source["path"] = str(gone)
+        orphan.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        result = run([str(TOOLS / "growth_kpi.py"), "--snapshots", str(orphan),
+                      "--days", "0", "--summary", "--write-memory", str(orphan_memory)],
+                     expect=(0, 1))
+        check("UNVERIFIABLE", "EVIDENCE: UNVERIFIABLE" in result.stdout,
+              "снимок с исчезнувшими источниками не остаётся REAL")
+        check("UNVERIFIABLE", "файл недоступен" in result.stdout,
+              "в списке источников прямо сказано, что файла нет")
+        check("UNVERIFIABLE", "GROWTH LOOP: PARTIAL" in result.stdout,
+              "неподтверждаемые данные не закрывают цикл как VERIFIED")
+        check("UNVERIFIABLE", "ingest_insights.py --studio" in result.stdout,
+              "названо, чем чинить: пересбор данных со студии")
+        orphan_stored = json.loads(orphan_memory.read_text(encoding="utf-8"))
+        check("UNVERIFIABLE", orphan_stored["evidence_label"] == "UNVERIFIABLE",
+              "в growth memory записана неподтверждаемость, а не REAL")
+        check("UNVERIFIABLE", all(entry["evidence_label"] == "UNVERIFIABLE"
+                                  for entry in orphan_stored["entries"].values()),
+              "каждая запись памяти несёт метку своего источника")
+        result = run([str(TOOLS / "trend_radar.py"), "--json", "--memory", str(orphan_memory)],
+                     expect=(0, 2))
+        orphan_backlog = json.loads(result.stdout)["backlog"]
+        check("UNVERIFIABLE", not any(i["evidence_label"] == "REAL" for i in orphan_backlog),
+              "неподтверждаемая память не двигает бэклог как измеренная")
+        # Живой снимок тем же путём остаётся REAL: проверка не должна глушить реальные данные.
+        result = run([str(TOOLS / "growth_kpi.py"), "--snapshots", str(snapshots),
+                      "--days", "0", "--summary"], expect=(0, 1))
+        check("UNVERIFIABLE", "EVIDENCE: REAL" in result.stdout,
+              "снимок с существующими источниками по-прежнему REAL")
+
+        print(f"\n=== 19. Изоляция: репозиторий не загрязнён ===")
         real_snapshots = BASE / "data" / "followers_snapshots.json"
         check("ISOLATION", not real_snapshots.exists() or "SYNTHETIC" not in
               real_snapshots.read_text(encoding="utf-8"),

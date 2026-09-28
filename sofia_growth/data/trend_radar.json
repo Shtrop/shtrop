@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "radar_date": "2026-09-21",
-  "window_days": 14,
+  "radar_date": "2026-09-28",
+  "window_days": 7,
   "collected_by": "web research (open sources)",
   "evidence_label": "AI ANALYSIS",
   "disclaimer": "Сигналы собраны из открытых публикаций о платформе, а не из аккаунта Sofia. Это не REAL-метрики Instagram. Оценки attention — PREDICTED.",
@@ -43,10 +43,12 @@
     },
     {
       "id": "rank-longer-reels-reach",
-      "title": "Reels до 3 минут попадают в рекомендации",
-      "detail": "Длинный формат перестал быть штрафом, но конкурирует с retention-логикой. Использовать только под сильную историю.",
+      "title": "Длина Reels: обзоры расходятся, решает удержание",
+      "detail": "Reels до 3 минут попадают в Explore. Но по длине источники противоречат друг другу: часть обзоров даёт пик медианных просмотров на 45-60 с, часть — на 7-15 с из-за веса досматриваемости. Расхождение не усреднено. Рабочее правило одно: оптимизировать долю досмотров, а не длину; 10 с с удержанием 80% сильнее 60 с с удержанием 30%.",
       "confidence": "low",
-      "source": "https://www.fanpagekarma.com/insights/the-instagram-algorithm-2026-how-to-adapt-your-strategy/"
+      "source": "https://www.moonb.io/blog/instagram-reel-length",
+      "status": "CONFLICTING",
+      "source_conflicting": "https://www.usefastlane.ai/blog/instagram-reels-algorithm-2026"
     },
     {
       "id": "meta-shares-up-comments-down",
@@ -68,6 +70,56 @@
       "detail": "Сентябрьские обзоры ставят saves и shares двумя сильнейшими сигналами вовлечения, лайки — слабейшим. Раньше saves шли заметно ниже sends.",
       "confidence": "medium",
       "source": "https://buffer.com/resources/instagram-algorithms/"
+    },
+    {
+      "id": "rank-likes-per-reach-weakest",
+      "title": "Третий подтверждённый сигнал — likes per reach, самый слабый из трёх",
+      "detail": "Mosseri называет тройку: watch time, sends per reach, likes per reach. Лайки работают на охват среди подписчиков, пересылки — среди неподписчиков. Лайк — слабейший из трёх, поэтому цель по лайкам как KPI роста бессмысленна.",
+      "confidence": "medium",
+      "source": "https://blckalpaca.at/en/knowledge-base/social-media/social-media-algorithms-distribution/instagram-algorithm-2026",
+      "first_seen": "2026-09-28"
+    },
+    {
+      "id": "surface-stories-no-discovery",
+      "title": "Stories не дают нефолловерского охвата вообще",
+      "detail": "Stories адресованы уже существующим подписчикам: типовой охват 2-9% от подписчиков против 13-27% у постов, выхода на неподписчиков нет по устройству поверхности. Ежедневные Stories поднимают охват до ~11.4%, Stories вместе с Reels в тот же день — до ~22.8%, то есть Stories усиливают Reels, но не заменяют их. Прямое следствие для Sofia: 53 из 70 публикаций — Stories, то есть большая часть выпуска физически не могла принести новых подписчиков.",
+      "confidence": "medium",
+      "source": "https://blog.hootsuite.com/instagram-algorithm/",
+      "source_benchmarks": "https://www.upgrow.com/blog/instagram-stories-2026-completion-rates-views-engagement-benchmarks",
+      "first_seen": "2026-09-28"
+    },
+    {
+      "id": "surface-format-reach-ratio",
+      "title": "Охват по форматам: Reels > карусель > одиночное фото",
+      "detail": "Исследования 2026 дают Reels ~2.25x охвата одиночного фото и ~1.36x охвата карусели; карусель — порядка 3x охвата одиночного фото и вдвое больше сохранений, чем Reels. Цифры у разных исследований расходятся, порядок — нет. Карусель получает второй шанс: при высоком swipe-through платформа переподаёт её через 24-48 часов тем, кто не пролистал. Одиночное фото — слабейший формат по охвату, и именно это единственный публикуемый у Sofia формат постов (17 из 70).",
+      "confidence": "medium",
+      "source": "https://collabkit.me/blog/instagram-reels-vs-carousels-vs-images-data-study-2026",
+      "source_secondary": "https://www.socialinsider.io/social-media-benchmarks/instagram",
+      "first_seen": "2026-09-28"
+    },
+    {
+      "id": "rank-3sec-hold-rate",
+      "title": "Удержание на 3-й секунде как порог дальнейшего распространения",
+      "detail": "Ролики с hold rate выше 60% на 3-й секунде расходятся, по оценке обзора, в 5-10 раз шире, чем ролики ниже 40%. Множитель взят из одного вторичного источника и не подтверждён Meta, поэтому confidence low; направление совпадает с уже подтверждённым skip rate.",
+      "confidence": "low",
+      "source": "https://www.truefuturemedia.com/articles/instagram-reels-reach-2026-business-growth-guide",
+      "first_seen": "2026-09-28"
+    },
+    {
+      "id": "rank-repost-credits-original",
+      "title": "Репост (сентябрь 2026) не строит собственную дистрибуцию",
+      "detail": "Обновлённый репост позволяет пересылать чужие публичные Reels и посты в свой профиль, но лайки, комментарии и просмотры идут в статистику оригинала, репост живёт в отдельной вкладке Reposted и не попадает в сетку. Вывод: репост — инструмент курирования, а не роста; с учётом штрафа за неоригинальность закладывать его в план роста нельзя.",
+      "confidence": "medium",
+      "source": "https://www.newsbytesapp.com/news/science/instagram-now-lets-you-repost-grid-posts-and-reels/tldr",
+      "first_seen": "2026-09-28"
+    },
+    {
+      "id": "surface-tv-quality-bar",
+      "title": "Reels смотрят на телевизоре — планка разрешения выросла",
+      "detail": "Instagram for TV (Fire TV с декабря 2025, Google TV с февраля 2026) крутит Reels каналами, автоматически и со звуком, на большом экране. Это не новость недели, но в радаре не было: рендер 480x832 на телевизоре выглядит браком, тогда как на телефоне ещё проходил. Это не контентный формат, а планка производства, поэтому сигнал держим в правилах платформы, а не в бэклоге экспериментов. Подкрепляет блокер 1: рендерить 1080x1920.",
+      "confidence": "medium",
+      "source": "https://about.instagram.com/blog/announcements/instagram-tv-app",
+      "first_seen": "2026-09-28"
     }
   ],
   "format_signals": [
@@ -128,20 +180,20 @@
     {
       "id": "fmt-saveable-carousel",
       "title": "Сохраняемые карусели 8-10 слайдов, 4:5, хук <10 слов",
-      "detail": "Дешёвый для фото-pipeline способ добирать сохранения и профильные визиты вне Reels.",
+      "detail": "Дешёвый для фото-pipeline способ добирать сохранения и профильные визиты вне Reels: 8-10 слайдов, 4:5, хук до 10 слов на первом слайде — его видит большинство, и он должен заработать свайп. При высоком swipe-through карусель переподаётся через 24-48 часов.",
       "sofia_fit": "high",
       "production_cost": "low",
       "confidence": "medium",
-      "source": "https://make-influencer.ai/guides/ai-influencer-instagram"
+      "source": "https://www.notes2pic.com/blog/instagram-carousel-statistics"
     },
     {
       "id": "fmt-episodic-series",
       "title": "Эпизодические серии вместо разовых трендов",
-      "detail": "Возвращаемость и досматриваемость выше у контента с продолжением: зритель приходит за следующей частью, а не за одним роликом.",
+      "detail": "Возвращаемость и досматриваемость выше у контента с продолжением. С 2 июня 2026 Meta тестирует Series: серия получает свою страницу, вкладку в профиле и кнопку Watch Next, зашедший с четвёртого эпизода может пройти всю серию. Тест ограничен отобранными авторами, которые уже публиковали сериями, — рассчитывать на доступ нельзя, но формат сам по себе работает и без функции.",
       "sofia_fit": "high",
       "production_cost": "medium",
       "confidence": "medium",
-      "source": "https://manychat.com/blog/instagram-trends-for-creators-2026/"
+      "source": "https://www.russh.com/what-is-instagram-series/"
     },
     {
       "id": "fmt-original-audio",
@@ -189,11 +241,13 @@
     {
       "id": "aud-ai-profile-label-policy",
       "title": "Instagram ограничивает охват нераскрытых AI-профилей",
-      "detail": "Meta объявила 31 августа 2026: аккаунты, построенные вокруг AI-персоны без раскрытия, получают пониженную дистрибуцию в рекомендациях, включая Reels и Explore. Метка 'AI creator' заменена на явную 'AI-generated profile'. Корректно раскрытый AI-профиль сохраняет обычный охват без штрафа.",
+      "detail": "Meta объявила 31 августа 2026: аккаунты вокруг AI-персоны без раскрытия получают пониженную дистрибуцию. Обзоры сентября формулируют цену резче: публикации нераскрытого AI-профиля не показываются в Reels и Explore тем, кто ещё не подписан, то есть нефолловерский охват падает до нуля — а это единственный канал новых подписчиков. Метка 'AI creator' заменена на 'AI-generated profile'. Корректно раскрытый профиль сохраняет обычный охват без штрафа. Редактирование фото, генерация фона и правка подписей метки профиля не требуют.",
       "impact_on_sofia": "critical",
       "confidence": "high",
-      "source": "https://www.affiversemedia.com/instagram-undisclosed-ai-profile-reach-limits/"
+      "source": "https://techcrunch.com/2026/08/31/instagram-puts-new-limits-on-undisclosed-ai-profiles/",
+      "source_secondary": "https://truescho.com/en/blog/instagram-ai-generated-profile-labels-2026"
     }
   ],
-  "previous_radar_date": "2026-09-15"
+  "previous_radar_date": "2026-09-21",
+  "source_access_note": "Прямое чтение страниц из этой сессии закрыто сетевой политикой окружения (egress policy): проверялись выдачи веб-поиска, а не сами страницы. Поэтому цифры из вторичных обзоров помечены confidence low/medium, а расхождения между обзорами оставлены как расхождения, а не усреднены."
 }
