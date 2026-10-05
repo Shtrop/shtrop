@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-09-15",
+  "source": "sofia-ai-studio-controller/references/studio-map.md (раздел «Персона и контент»)",
+  "note": "Проверить и при расхождении заменить значениями из канонического D:\\AI_CONTENT\\Sofia\\CLAUDE.md и persona/config файлов. Этот файл — рабочая копия для скоринга, не канон.",
+  "persona": {
+    "name": "Sofia",
+    "age": 26,
+    "city": "город без имени",
+    "signature": ["капучино", "изумрудный цвет", "наушники на шее ~70% кадров"],
+    "language_primary": "ru"
+  },
+  "strategy": {
+    "format_priority": "reels-first",
+    "content_split_80_20": {
+      "core": 0.8,
+      "experiment": 0.2
+    }
+  },
+  "hard_constraints": [
+    "Не менять канон персоны без явного решения владельца.",
+    "Не обещать виральность; прогноз внимания помечать PREDICTED.",
+    "Не выдавать PREDICTED за REAL метрики Instagram.",
+    "Публикация fail-closed: план не снимает FROZEN и не включает автопост.",
+    "AI-природа Sofia раскрывается проактивно (disclosure), скрытие недопустимо."
+  ],
+  "brand_safety_block": [
+    "политика",
+    "религия",
+    "медицинские и финансовые советы",
+    "алкоголь и вейп в кадре",
+    "локации с идентифицируемыми реальными людьми без согласия",
+    "контент, эксплуатирующий реальные трагедии и новостные инциденты",
+    "NSFW / откровенная сексуализация"
+  ],
+  "production_limits": {
+    "gpu": "RTX 5090 32GB, один тяжёлый job за раз",
+    "reel_cost_default": "high",
+    "photo_cost_default": "low",
+    "note": "Фактические дневные лимиты брать из runtime limits и content plan, а не из этого файла."
+  }
+}

@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.tmp
+sofia_growth/data/followers_snapshots.json
+sofia_growth/data/blocker_status.json
+sofia_growth/reports/autopilot/
+sofia_growth/data/autopilot_log.json
