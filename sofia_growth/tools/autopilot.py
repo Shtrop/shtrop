@@ -65,6 +65,8 @@ def run_cycle(args) -> tuple[int, str]:
         cycle_args += ["--snapshots", str(args.snapshots)]
     if args.memory:
         cycle_args += ["--memory", str(args.memory)]
+    if args.plan_out:
+        cycle_args += ["--plan-out", str(args.plan_out)]
     result = run_tool(cycle_args)
     return result.returncode, (result.stdout or "") + (result.stderr or "")
 
@@ -148,6 +150,10 @@ def main() -> int:
                         default=BASE / "data" / "blocker_status.json",
                         help="где хранить историю состояния блокеров")
     parser.add_argument("--snapshots", type=Path, help="файл снимков аккаунта")
+    parser.add_argument("--plan-out", type=Path,
+                        help="куда записать контент-план; по умолчанию plans/<дата> в "
+                             "репозитории. Прогон без этого флага пишет в репозиторий даже "
+                             "если все остальные пути изолированы")
     parser.add_argument("--memory", type=Path, help="файл growth memory")
     parser.add_argument("--log", type=Path, default=BASE / "data" / "autopilot_log.json")
     parser.add_argument("--push", action="store_true",

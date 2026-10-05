@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -44,7 +45,25 @@ def run(args: list[str], expect: tuple[int, ...] = (0,),
     return result
 
 
+def plans_fingerprint() -> dict:
+    """Содержимое plans/ репозитория: имя → хеш.
+
+    Проверка по конкретному имени файла ничего не стоит: прогон пишет план на
+    завтрашнюю дату, и такой файл в репозитории уже может лежать — тест его не
+    заметит, а запись останется. Сравнивается весь каталог целиком.
+    """
+    folder = BASE / "plans"
+    if not folder.exists():
+        return {}
+    # Время изменения входит в отпечаток: перезапись тем же содержимым — это всё
+    # равно запись в репозиторий, и такой прогон не изолирован.
+    return {path.name: (hashlib.sha256(path.read_bytes()).hexdigest(),
+                        path.stat().st_mtime_ns)
+            for path in sorted(folder.glob("*.md"))}
+
+
 def main() -> int:
+    plans_before = plans_fingerprint()
     with tempfile.TemporaryDirectory(prefix="sofia_e2e_") as tmp:
         work = Path(tmp)
         fixtures = work / "studio"
@@ -666,7 +685,8 @@ def main() -> int:
                       "--status", str(ap_status), "--log", str(ap_log),
                       "--blocker-history", str(ap_root / "blockers.json"),
                       "--snapshots", str(ap_root / "snapshots.json"),
-                      "--memory", str(ap_root / "memory.json")], expect=(0, 1, 2))
+                      "--memory", str(ap_root / "memory.json"),
+                      "--plan-out", str(ap_root / "plan.md")], expect=(0, 1, 2))
         check("AUTOPILOT", ap_status.exists() and ap_log.exists(),
               "прогон оставляет статус и журнал — тихий сбой будет виден")
         ap = json.loads(ap_status.read_text(encoding="utf-8"))
@@ -727,14 +747,51 @@ def main() -> int:
         check("UNVERIFIABLE", "EVIDENCE: REAL" in result.stdout,
               "снимок с существующими источниками по-прежнему REAL")
 
-        print(f"\n=== 19. Изоляция: репозиторий не загрязнён ===")
+        print(f"\n=== 19. План не повторяется неделя за неделей ===")
+        # Ранжирование детерминировано, а замеров, которые его сдвинули бы, ещё нет.
+        # Без прокрутки генератор выдавал один и тот же план с теми же хуками каждую
+        # неделю — это бесполезно владельцу и попадает под понижение за неоригинальность.
+        plans_dir = work / "plans"
+        no_memory = work / "rotation_memory.json"
+
+        def gen(start: str, name: str) -> dict:
+            out = plans_dir / name
+            run([str(TOOLS / "plan_builder.py"), "--days", "14", "--start", start,
+                 "--memory", str(no_memory), "--out", str(out)])
+            rows = {}
+            for line in out.read_text(encoding="utf-8").splitlines():
+                if not line.startswith("| 20"):
+                    continue
+                cells = [cell.strip() for cell in line.strip("|").split("|")]
+                rows.setdefault(cells[2], []).append((cells[3], cells[4]))
+            return rows
+
+        first = gen("2026-11-03", "CONTENT_PLAN_2026-11-03_14d.md")
+        second = gen("2026-11-17", "CONTENT_PLAN_2026-11-17_14d.md")
+        core_first = {hook for _, hook in first.get("Reel (ядро)", [])}
+        core_second = {hook for _, hook in second.get("Reel (ядро)", [])}
+        check("ROTATION", core_first and core_second and core_first != core_second,
+              "хуки ядра во втором плане не те же, что в первом")
+        exp_first = {fmt for fmt, _ in first.get("Reel (эксперимент)", [])}
+        exp_second = {fmt for fmt, _ in second.get("Reel (эксперимент)", [])}
+        check("ROTATION", exp_first and exp_second and exp_first != exp_second,
+              "эксперименты прокручиваются: следующая гипотеза получает слот")
+        all_first = [hook for rows in first.values() for _, hook in rows]
+        check("ROTATION", all(hook != "ЗАПОЛНИТЬ: хука для формата нет в hook_bank.json"
+                             for hook in all_first),
+              "у каждого поставленного формата есть хук в банке")
+        repeat = gen("2026-11-17", "CONTENT_PLAN_2026-11-17_14d.md")
+        check("ROTATION", repeat == second,
+              "повторный прогон той же даты даёт тот же план, а не уползает по банку")
+
+        print(f"\n=== 20. Изоляция: репозиторий не загрязнён ===")
         real_snapshots = BASE / "data" / "followers_snapshots.json"
         check("ISOLATION", not real_snapshots.exists() or "SYNTHETIC" not in
               real_snapshots.read_text(encoding="utf-8"),
               "синтетика не попала в data/followers_snapshots.json")
 
-        check("ISOLATION", not (BASE / "plans" / "CONTENT_PLAN_2026-09-16_14d.md").exists(),
-              "тестовые планы не записаны в plans/")
+        check("ISOLATION", plans_fingerprint() == plans_before,
+              "каталог plans/ репозитория не изменён ни одним прогоном теста")
         check("ISOLATION", not (BASE / "data" / "blocker_status.json").exists(),
               "история блокеров из тестов не попала в data/")
         check("ISOLATION", not (BASE / "data" / "autopilot_status.json").exists()

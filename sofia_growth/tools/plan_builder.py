@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import argparse
+import collections
 import datetime as dt
 import json
 import subprocess
@@ -53,12 +54,45 @@ def backlog_from_radar(tools: Path, radar: Path, guardrails: Path, memory: Path)
     return payload.get("backlog", []), payload.get("stale", True)
 
 
+def plan_history(plans_dir: Path, exclude: Path | None = None
+                 ) -> tuple[collections.Counter, collections.Counter]:
+    """Что уже уходило в прежние планы: хуки и названия форматов.
+
+    Без этой истории генератор каждую неделю выдаёт один и тот же план: ранжирование
+    детерминировано, а замеров, которые его сдвинули бы, ещё нет. Повтор одних и тех
+    же хуков — это ещё и прямой риск понижения за неоригинальность.
+
+    История читается из самих планов, а не из отдельного файла состояния: планы уже
+    лежат в репозитории, и лишнее состояние рассинхронизировалось бы с ними.
+    """
+    hook_hits: collections.Counter = collections.Counter()
+    title_hits: collections.Counter = collections.Counter()
+    if not plans_dir.exists():
+        return hook_hits, title_hits
+    for path in sorted(plans_dir.glob("CONTENT_PLAN_*.md")):
+        # Перезапуск той же даты не должен считать свой прошлый вывод историей:
+        # иначе каждый повторный прогон уводил бы хуки всё дальше по банку.
+        if exclude and path.name == exclude.name:
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.startswith("| 20"):          # только строки таблицы слотов
+                continue
+            cells = [cell.strip() for cell in line.strip("|").split("|")]
+            if len(cells) < 6:
+                continue
+            title_hits[cells[3]] += 1
+            hook_hits[cells[4]] += 1
+    return hook_hits, title_hits
+
+
 def publish_dates(start: dt.date, days: int) -> list[dt.date]:
     return [start + dt.timedelta(days=offset) for offset in range(days)
             if (start + dt.timedelta(days=offset)).weekday() in PUBLISH_WEEKDAYS]
 
 
-def pick_formats(backlog: list[dict], slots: int) -> tuple[list[dict], list[dict]]:
+def pick_formats(backlog: list[dict], slots: int,
+                 planned_before: collections.Counter | None = None
+                 ) -> tuple[list[dict], list[dict]]:
     """Делит бэклог на ядро и эксперименты по правилу 80/20.
 
     Ядро — подтверждённые замерами форматы; пока замеров нет, ядром служат
@@ -66,6 +100,12 @@ def pick_formats(backlog: list[dict], slots: int) -> tuple[list[dict], list[dict
     формат не попал одновременно в ядро и в эксперименты.
     DROP-форматы исключаются полностью: память измерила, что они не работают.
     Карусельный слот выведен из обоих списков — у него отдельный слот в неделе.
+
+    Эксперименты дополнительно прокручиваются: среди НЕизмеренных форматов нет
+    данных, по которым один заслуживает слот больше другого, поэтому формат, ни
+    разу не стоявший в плане, идёт раньше уже пробованного. Иначе новая гипотеза
+    из радара ждёт слота неделями, а эксперименты повторяются одни и те же.
+    Измеренные форматы это не касается: их порядок задают данные.
     """
     def trusted(item: dict) -> bool:
         return bool(item.get("measured")) and item.get("evidence_label") == "REAL"
@@ -77,16 +117,30 @@ def pick_formats(backlog: list[dict], slots: int) -> tuple[list[dict], list[dict
     core = [item for item in usable if trusted(item)] or usable[:2]
     core_ids = {item["id"] for item in core}
     experiments = [item for item in usable if item["id"] not in core_ids]
+    history = planned_before or collections.Counter()
+    experiments = [item for _, item in
+                   sorted(enumerate(experiments),
+                          key=lambda pair: (history[pair[1]["title"]], pair[0]))]
     experiment_slots = max(1, round(slots * EXPERIMENT_SHARE)) if experiments else 0
     return core, experiments[:experiment_slots]
 
 
-def hook_for(hooks: dict, format_id: str, index: int) -> dict:
+def hook_for(hooks: dict, format_id: str, index: int,
+             history: collections.Counter | None = None) -> dict:
+    """Хук под формат: сначала тот, который использовался реже всего.
+
+    `index` — сколько раз формат уже занят в ЭТОМ плане, `history` — сколько раз
+    каждый хук уходил в прежние планы. Без истории генератор всегда начинал
+    с первого хука банка и выдавал неделя за неделей тот же набор.
+    """
     options = hooks.get("formats", {}).get(format_id, [])
     if not options:
         return {"hook": "ЗАПОЛНИТЬ: хука для формата нет в hook_bank.json",
                 "sendability": "ЗАПОЛНИТЬ"}
-    return options[index % len(options)]
+    history = history or collections.Counter()
+    order = sorted(range(len(options)),
+                   key=lambda pos: (history[options[pos]["hook"]], pos))
+    return options[order[index % len(order)]]
 
 
 def success_criterion(item: dict, baseline: dict | None) -> str:
@@ -114,8 +168,10 @@ def build(args) -> str:
     if not backlog:
         sys.exit("BLOCKED: бэклог пуст — нечего ставить в план.")
 
+    plans_dir = args.plans_dir or (args.out.parent if args.out else base / "plans")
+    hook_hits, title_hits = plan_history(plans_dir, args.out)
     dates = publish_dates(args.start, args.days)
-    core, experiments = pick_formats(backlog, len(dates))
+    core, experiments = pick_formats(backlog, len(dates), title_hits)
 
     carousel = next((item for item in backlog if item["id"] == CAROUSEL_FORMAT), None)
     reel_dates = [d for d in dates if not (carousel and d.weekday() == CAROUSEL_WEEKDAY)]
@@ -136,7 +192,7 @@ def build(args) -> str:
         index = used.get(item["id"], 0)
         used[item["id"]] = index + 1
         rows.append({"date": date, "slot": slot, "item": item,
-                     **hook_for(hooks, item["id"], index)})
+                     **hook_for(hooks, item["id"], index, hook_hits)})
 
     measured_count = sum(1 for row in rows if row["item"].get("evidence_label") == "REAL")
     dropped = [item for item in backlog
@@ -248,6 +304,9 @@ def main() -> int:
     parser.add_argument("--start", type=dt.date.fromisoformat, default=dt.date.today(),
                         help="дата начала, YYYY-MM-DD")
     parser.add_argument("--out", type=Path, help="куда записать план")
+    parser.add_argument("--plans-dir", type=Path,
+                        help="каталог прежних планов: по нему прокручиваются хуки и "
+                             "эксперименты (по умолчанию каталог --out, иначе plans/)")
     args = parser.parse_args()
 
     text = build(args)

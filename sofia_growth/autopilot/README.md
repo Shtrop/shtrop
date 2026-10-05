@@ -71,6 +71,18 @@ python sofia_growth\tools\autopilot.py --studio "D:\AI_CONTENT\Sofia" `
 Коды возврата: `0` — цикл прошёл полностью, `1` — часть стадий BLOCKED
 (обычно нет данных), `2` — стадия упала с ошибкой, смотреть отчёт.
 
+Пробный прогон, который не должен ничего писать в репозиторий, задаёт все пути
+явно — включая `--plan-out`: без этого флага план пишется в `sofia_growth/plans/`
+даже если остальное изолировано.
+
+```powershell
+python sofia_growth\tools\autopilot.py --studio "D:\AI_CONTENT\Sofia" `
+    --report-dir "$env:TEMP\sofia_dry\reports" --status "$env:TEMP\sofia_dry\status.json" `
+    --log "$env:TEMP\sofia_dry\log.json" --blocker-history "$env:TEMP\sofia_dry\blockers.json" `
+    --snapshots "$env:TEMP\sofia_dry\snapshots.json" --memory "$env:TEMP\sofia_dry\memory.json" `
+    --plan-out "$env:TEMP\sofia_dry\plan.md"
+```
+
 ## Оговорка по тестам
 
 Логика автопилота на Python и покрыта прогоном `tests/run_e2e.py`.

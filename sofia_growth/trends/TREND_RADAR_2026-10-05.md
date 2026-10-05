@@ -65,8 +65,11 @@ Mosseri резче прежней: **пересылка — сильнейший
   `confidence: low`), два формата — `fmt-loading-percentage`, `fmt-process-long-watch`.
   Уточнены `rank-sends-per-reach`, `rank-likes-per-reach-weakest`, `rank-longer-reels-reach`
   (остаётся `CONFLICTING`), `fmt-original-audio`.
-- `data/hook_bank.json`: 24 хука на 11 форматов (было 20 на 9).
+- `data/hook_bank.json`: 27 хуков на 11 форматов (было 20 на 9). Банк углублён сознательно:
+  прокрутка хуков в генераторе плана работает только там, где есть из чего выбирать.
 - `tools/trend_radar.py`: рычаги для двух новых форматов заданы явно, а не дефолтом.
+- `tools/plan_builder.py`: план больше не повторяется неделя за неделей — хуки и
+  эксперименты прокручиваются по истории прежних планов (см. комментарий к PR).
 
 ## Источники
 
