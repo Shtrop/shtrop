@@ -40,6 +40,8 @@ FORMAT_LEVERS = {
     "fmt-transition-sketch-to-reality": ["skip_rate", "watch_time"],
     "fmt-storytime-direct-to-camera": ["watch_time", "profile_visits"],
     "fmt-saveable-carousel": ["saves", "profile_visits"],
+    "fmt-loading-percentage": ["watch_time", "skip_rate"],
+    "fmt-process-long-watch": ["watch_time", "saves"],
 }
 
 FIT_SCORE = {"high": 1.0, "medium": 0.65, "low": 0.3}

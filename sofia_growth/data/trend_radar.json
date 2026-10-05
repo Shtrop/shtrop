@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "radar_date": "2026-09-28",
+  "radar_date": "2026-10-05",
   "window_days": 7,
   "collected_by": "web research (open sources)",
   "evidence_label": "AI ANALYSIS",
@@ -9,9 +9,10 @@
     {
       "id": "rank-sends-per-reach",
       "title": "Sends per reach — сильнейший сигнал для нефолловерского охвата",
-      "detail": "DM-пересылки весят ~3-5x лайка для охвата вне подписчиков. Ориентир: 1-2% shares/reach — сильно, >3% — вирусное распространение через DM.",
+      "detail": "DM-пересылки весят ~3-5x лайка для охвата вне подписчиков. Ориентир: 1-2% shares/reach — сильно, >3% — вирусное распространение через DM. Октябрьские обзоры приводят формулировку Mosseri ещё резче: пересылка — сильнейший сигнал, который у платформы вообще есть, потому что это адресная рекомендация конкретному неподписчику.",
       "confidence": "high",
-      "source": "https://postproval.com/instagram-algorithm-2026-the-3-ranking-metrics-that-matter-most/"
+      "source": "https://postproval.com/instagram-algorithm-2026-the-3-ranking-metrics-that-matter-most/",
+      "source_secondary": "https://www.socialync.io/blog/adam-mosseri-shares-instagram-algorithm-2026"
     },
     {
       "id": "rank-watch-time-total-seconds",
@@ -44,11 +45,12 @@
     {
       "id": "rank-longer-reels-reach",
       "title": "Длина Reels: обзоры расходятся, решает удержание",
-      "detail": "Reels до 3 минут попадают в Explore. Но по длине источники противоречат друг другу: часть обзоров даёт пик медианных просмотров на 45-60 с, часть — на 7-15 с из-за веса досматриваемости. Расхождение не усреднено. Рабочее правило одно: оптимизировать долю досмотров, а не длину; 10 с с удержанием 80% сильнее 60 с с удержанием 30%.",
+      "detail": "Reels до 3 минут попадают в Explore. По длине источники противоречат друг другу: часть обзоров даёт пик медианных просмотров на 45-60 с, часть — на 7-15 с из-за веса досматриваемости; в октябре появилось третье утверждение — ролики ДЛИННЕЕ трёх минут перестают подаваться неподписчикам, причём тот же обзор рядом пишет обратное. Расхождение не усреднено и не снято. Рабочее правило одно: оптимизировать долю досмотров, а не длину; 10 с с удержанием 80% сильнее 60 с с удержанием 30%. Практический вывод: не заходить за 3 минуты, пока это не подтверждено измерением на аккаунте.",
       "confidence": "low",
       "source": "https://www.moonb.io/blog/instagram-reel-length",
       "status": "CONFLICTING",
-      "source_conflicting": "https://www.usefastlane.ai/blog/instagram-reels-algorithm-2026"
+      "source_conflicting": "https://www.usefastlane.ai/blog/instagram-reels-algorithm-2026",
+      "source_conflicting_2": "https://gyre.pro/blog/instagram-algorithm-updates-and-tips-to-boost-your-visibility"
     },
     {
       "id": "meta-shares-up-comments-down",
@@ -74,7 +76,7 @@
     {
       "id": "rank-likes-per-reach-weakest",
       "title": "Третий подтверждённый сигнал — likes per reach, самый слабый из трёх",
-      "detail": "Mosseri называет тройку: watch time, sends per reach, likes per reach. Лайки работают на охват среди подписчиков, пересылки — среди неподписчиков. Лайк — слабейший из трёх, поэтому цель по лайкам как KPI роста бессмысленна.",
+      "detail": "Mosseri называет тройку: watch time, sends per reach, likes per reach. Уточнение октября его же словами: лайки чуть важнее для connected content (свои подписчики), пересылки — для unconnected (неподписчики). Лайк — слабейший из трёх, поэтому цель по лайкам как KPI роста бессмысленна; для роста считать sends.",
       "confidence": "medium",
       "source": "https://blckalpaca.at/en/knowledge-base/social-media/social-media-algorithms-distribution/instagram-algorithm-2026",
       "first_seen": "2026-09-28"
@@ -120,6 +122,14 @@
       "confidence": "medium",
       "source": "https://about.instagram.com/blog/announcements/instagram-tv-app",
       "first_seen": "2026-09-28"
+    },
+    {
+      "id": "prod-jump-cut-cadence",
+      "title": "Смена кадра каждые 3-5 секунд как производственная норма",
+      "detail": "Обзор октября приводит оценку: ролики с монтажной склейкой каждые 3-5 секунд в 72% чаще уходят в вирусный разнос. Цифра из одного вторичного источника и платформой не подтверждена, поэтому confidence low; направление совпадает с уже подтверждёнными skip rate и долей досмотров — статичный план теряет зрителя. Для студии это требование к раскадровке, а не контентный формат.",
+      "confidence": "low",
+      "source": "https://insights.vaizle.com/instagram-reel-trends/",
+      "first_seen": "2026-10-05"
     }
   ],
   "format_signals": [
@@ -198,11 +208,31 @@
     {
       "id": "fmt-original-audio",
       "title": "Оригинальное аудио вместо трендовых треков",
-      "detail": "Своё аудио сигнализирует алгоритму о свежем контенте и не попадает под понижение за переиспользование. Для студии с XTTS это дешёвый ход.",
+      "detail": "Своё аудио сигнализирует алгоритму о свежем контенте и не попадает под понижение за переиспользование. Для студии с XTTS это дешёвый ход. Уточнение октября: решает не «своё против трендового», а соответствие аудио жанру кадра — речь под сценку, узнаваемый трек под переход, сдержанная музыка под уязвимость, энергичный — под монтаж-трансформацию.",
       "sofia_fit": "high",
       "production_cost": "low",
       "confidence": "medium",
       "source": "https://thesocialcontentfactory.com/reel-trends"
+    },
+    {
+      "id": "fmt-loading-percentage",
+      "title": "Loading-процент: 0% → 100% вместо «до/после»",
+      "detail": "Кадр начинается с 0% и подписи-загрузки, процент растёт с каждой склейкой, финальный образ раскрывается на 100%. Счётчик держит зрителя до конца — прямая работа на долю досмотров, и петля стыкуется сама собой. Для студии это раскадровка из уже существующих рендеров, без новых моделей.",
+      "sofia_fit": "high",
+      "production_cost": "low",
+      "confidence": "low",
+      "source": "https://insights.vaizle.com/instagram-reel-trends/",
+      "first_seen": "2026-10-05"
+    },
+    {
+      "id": "fmt-process-long-watch",
+      "title": "Процесс целиком: длинный watch time без короткого формата",
+      "detail": "Детальный процесс — кофе, уход, еда, сборка — набирает долгое удержание, выходя за рамки короткого ролика. Для Sofia это канон персоны буквально: капучино как процесс, а не как реквизит. Риск: процесс без хука в первом кадре умирает на skip rate, поэтому начинать с результата и только потом разворачивать путь к нему.",
+      "sofia_fit": "high",
+      "production_cost": "medium",
+      "confidence": "low",
+      "source": "https://newengen.com/insights/instagram-trends/",
+      "first_seen": "2026-10-05"
     }
   ],
   "audience_signals": [
@@ -246,8 +276,17 @@
       "confidence": "high",
       "source": "https://techcrunch.com/2026/08/31/instagram-puts-new-limits-on-undisclosed-ai-profiles/",
       "source_secondary": "https://truescho.com/en/blog/instagram-ai-generated-profile-labels-2026"
+    },
+    {
+      "id": "aud-reels-engagement-up",
+      "title": "Вовлечение на Reels выросло ~24.8% год к году",
+      "detail": "Reels обгоняют остальные форматы по охвату, взаимодействиям и вовлечению, и разрыв за год вырос. Цифра из сводки вторичного источника, у Meta не подтверждена, поэтому confidence low. Для Sofia это не новый сигнал, а ещё один довод: поверхность, которая у неё не используется, именно та, где вовлечение растёт.",
+      "impact_on_sofia": "planning",
+      "confidence": "low",
+      "source": "https://metricool.com/instagram-trends/",
+      "first_seen": "2026-10-05"
     }
   ],
-  "previous_radar_date": "2026-09-21",
+  "previous_radar_date": "2026-09-28",
   "source_access_note": "Прямое чтение страниц из этой сессии закрыто сетевой политикой окружения (egress policy): проверялись выдачи веб-поиска, а не сами страницы. Поэтому цифры из вторичных обзоров помечены confidence low/medium, а расхождения между обзорами оставлены как расхождения, а не усреднены."
 }
