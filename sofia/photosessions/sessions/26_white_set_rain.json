@@ -1,0 +1,95 @@
+{
+  "session_id": "S26",
+  "slug": "white_set_rain",
+  "title": "White Set in the Rain",
+  "title_ru": "Белый комплект и дождь",
+  "reference_source": "Бельевая линия — максимальный гламурный регистр, 8 кадров, без наушников",
+  "mood_ru": "Серый дождливый свет, белое бельё, его рубашка на плечах. Холодно и нежно.",
+  "base_seed": 126000,
+  "aspect": "4:5",
+  "allure": "lingerie editorial glamour at its boldest, set with full opaque lining, deep neckline and high-cut briefs, sculpted waist and long legs fully on show, unhurried commanding sensuality, direct gaze, crisp white set under an oversized shirt hanging off both shoulders",
+  "film": "shot on Fujifilm Pro 400H, cool muted grain",
+  "wardrobe": {
+    "code": "Z",
+    "notes_ru": "Белый бельевой комплект с подкладкой + огромная белая рубашка с плеч.",
+    "prompt": "crisp white lingerie set with full opaque lining, plain smooth cups and high-cut briefs, oversized white men's shirt worn open and hanging off both shoulders, silver star pendant, damp loose hair, bare feet"
+  },
+  "location": {
+    "notes_ru": "Тихая квартира в дождь, глубокий подоконник, капли по стеклу.",
+    "prompt": "quiet apartment on a rainy afternoon, tall window covered in rain streaks, deep windowsill with a linen cushion, grey city blurred beyond, pale walls, dark wood floor, one unlit lamp"
+  },
+  "shots": [
+    {
+      "title_ru": "Рубашка падает с плеч у окна",
+      "pose": "standing at the rain-streaked window letting the oversized white shirt slide off both shoulders to her elbows over the white set, back arched, head turned to the lens",
+      "camera": "35mm lens, eye level, three-quarter front angle, full body framing",
+      "light": "flat cold daylight through the wet glass, rain shadows moving across her skin",
+      "id": "S26-01",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "title_ru": "На подоконнике, колени подняты",
+      "pose": "sitting up on the deep windowsill with both knees drawn up and apart, shirt open, one hand on the cold glass beside her, level unsmiling gaze into the lens",
+      "camera": "50mm lens, eye level, frontal, full body framing",
+      "light": "cool window light as the only key, dark room swallowing everything behind her",
+      "id": "S26-02",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "id": "S26-03",
+      "priority": "core",
+      "title_ru": "Прогиб, взгляд через плечо",
+      "pose": "kneeling back on her heels on the deep linen-cushioned windowsill, spine deeply arched, one hand planted beside her, head turned over the shoulder holding direct eye contact with the lens",
+      "camera": "35mm lens, slightly above eye level, back three-quarter angle, full body vertical framing",
+      "light": "broad cold daylight through the rain-streaked glass, faint warm spill from the hallway behind her",
+      "headphones": false
+    },
+    {
+      "id": "S26-04",
+      "priority": "core",
+      "title_ru": "Отражение",
+      "pose": "standing close to the dark window glass itself, one hand flat on the surface, hip pushed out, chin lowered, meeting the camera past her own reflection",
+      "camera": "50mm lens, eye level, over-the-shoulder into the reflection, thigh-up framing",
+      "light": "broad cold daylight through the rain-streaked glass, faint warm spill from the hallway behind her",
+      "headphones": false
+    },
+    {
+      "id": "S26-05",
+      "priority": "core",
+      "title_ru": "Против света",
+      "pose": "standing at the tall rain-streaked window with one forearm raised against the frame, weight settled on one hip, the long line of her back and legs read against the light, head turned just enough to find the lens",
+      "camera": "35mm lens, eye level, back three-quarter angle, full body vertical framing",
+      "light": "broad cold daylight through the rain-streaked glass, faint warm spill from the hallway behind her",
+      "headphones": false
+    },
+    {
+      "id": "S26-06",
+      "priority": "core",
+      "title_ru": "Полулёжа, нога вытянута",
+      "pose": "reclining back on the deep linen-cushioned windowsill propped on both elbows, one knee raised and the other leg stretched long, ribcage lifted, chin up, half-lidded gaze straight down the lens",
+      "camera": "35mm lens, low camera at surface level, three-quarter front angle, full body framing",
+      "light": "broad cold daylight through the rain-streaked glass, faint warm spill from the hallway behind her",
+      "headphones": false
+    },
+    {
+      "id": "S26-07",
+      "priority": "core",
+      "title_ru": "В рост, рука в волосах",
+      "pose": "standing tall in the middle of the dim room facing the window, one hand pushing back through her hair with the elbow raised, weight on one leg so the hip breaks the line, chin down and eyes up into the lens",
+      "camera": "50mm lens, slightly low angle, frontal, full body framing",
+      "light": "broad cold daylight through the rain-streaked glass, faint warm spill from the hallway behind her",
+      "headphones": false
+    },
+    {
+      "id": "S26-08",
+      "priority": "filler",
+      "title_ru": "Деталь",
+      "pose": "cropped detail composition of raindrops on the glass in front of her shoulder and the open shirt cuff at her wrist, face out of frame, fingers relaxed and naturally posed",
+      "camera": "85mm lens, close detail framing, very shallow depth of field",
+      "light": "broad cold daylight through the rain-streaked glass, faint warm spill from the hallway behind her",
+      "headphones": false
+    }
+  ]
+}

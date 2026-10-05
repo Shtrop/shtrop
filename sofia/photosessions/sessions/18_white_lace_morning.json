@@ -1,0 +1,113 @@
+{
+  "session_id": "S18",
+  "slug": "white_lace_morning",
+  "title": "White Lace Morning",
+  "title_ru": "Белое кружево утром",
+  "reference_source": "Серия в кружевном белье — гламурный будуарный регистр",
+  "mood_ru": "Утро, белая постель, мягкий свет через тюль. Нежное белое кружево.",
+  "base_seed": 118000,
+  "aspect": "4:5",
+  "allure": "lace lingerie editorial glamour, delicate lace set with full opaque lining, sculpted waist and long legs, soft boudoir light gliding over the lace, assured sensual gaze, white lace glowing in the soft morning light",
+  "wardrobe": {
+    "code": "R",
+    "notes_ru": "Белый кружевной комплект с подкладкой, тонкие бретели, атласный бант.",
+    "prompt": "ivory white lace lingerie set with full opaque lining, fine floral lace, thin satin straps and a tiny satin bow at the centre, matching lace briefs, silver star pendant, loose soft waves, bare feet"
+  },
+  "location": {
+    "notes_ru": "Светлая спальня утром, белое бельё, тюль, пионы.",
+    "prompt": "bright bedroom in the morning, crisp white linen bed, sheer curtains diffusing the sun, white peonies in a glass vase, pale oak floor, open book on the sheets, dust floating in the light"
+  },
+  "shots": [
+    {
+      "title_ru": "На белой постели, прогиб",
+      "pose": "kneeling back on her heels in the middle of the white bed in the lace set, spine deeply arched, both hands lifting her hair off her neck, chin down and eyes lifted into the lens",
+      "camera": "35mm lens, slightly above eye level, frontal, full body framing",
+      "light": "soft morning sun through sheer curtains wrapping her completely, warm bounce off white linen",
+      "id": "S18-01",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "title_ru": "Портрет в утреннем свете",
+      "pose": "close portrait lying on her side on the pillow, one hand under her cheek, lace strap slipping off the shoulder, lips parted, soft sleepy eye contact",
+      "camera": "85mm portrait lens, low camera at pillow level, head-and-shoulders framing",
+      "light": "large soft window key, natural skin texture, warm catchlight in both eyes",
+      "id": "S18-02",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "id": "S18-03",
+      "priority": "core",
+      "title_ru": "Прогиб, взгляд через плечо",
+      "pose": "kneeling back on her heels on the crisp white linen bed, spine deeply arched, one hand planted beside her, head turned over the shoulder holding direct eye contact with the lens",
+      "camera": "35mm lens, slightly above eye level, back three-quarter angle, full body vertical framing",
+      "light": "big soft morning sun diffused through the sheer curtain, warm bounce off the white bedding filling every shadow",
+      "headphones": false
+    },
+    {
+      "id": "S18-04",
+      "priority": "core",
+      "title_ru": "Отражение",
+      "pose": "standing close to the leaning floor mirror, one hand resting on the surface, hip pushed out, chin lowered, holding her own gaze while the camera catches her and the reflection at once",
+      "camera": "50mm lens, eye level, over-the-shoulder into the reflection, thigh-up framing",
+      "light": "big soft morning sun diffused through the sheer curtain, warm bounce off the white bedding filling every shadow",
+      "headphones": false
+    },
+    {
+      "id": "S18-05",
+      "priority": "core",
+      "title_ru": "Силуэт против света",
+      "pose": "standing at the tall curtained window with one forearm raised against the frame, weight settled on one hip, back to the camera, long line of the spine on show, looking away into the light",
+      "camera": "35mm lens, eye level, back view, full body vertical framing",
+      "light": "big soft morning sun diffused through the sheer curtain, warm bounce off the white bedding filling every shadow",
+      "headphones": false
+    },
+    {
+      "id": "S18-06",
+      "priority": "core",
+      "title_ru": "Полулёжа, нога вытянута",
+      "pose": "reclining back on the crisp white linen bed propped on both elbows, one knee raised and the other leg stretched long, ribcage lifted, chin up, half-lidded gaze straight down the lens",
+      "camera": "35mm lens, low camera at surface level, three-quarter front angle, full body framing",
+      "light": "big soft morning sun diffused through the sheer curtain, warm bounce off the white bedding filling every shadow",
+      "headphones": false
+    },
+    {
+      "id": "S18-07",
+      "priority": "filler",
+      "title_ru": "Деталь",
+      "pose": "cropped detail composition of the satin bow at the centre of the lace and the pendant above it, face out of frame, fingers relaxed and naturally posed",
+      "camera": "85mm lens, close detail framing, very shallow depth of field",
+      "light": "big soft morning sun diffused through the sheer curtain, warm bounce off the white bedding filling every shadow",
+      "headphones": false
+    },
+    {
+      "id": "S18-08",
+      "priority": "core",
+      "title_ru": "Вид сверху",
+      "pose": "lying on her back on the crisp white linen bed, one arm thrown above her head, the other hand resting on her waist, hair fanned out, knees softly bent, eyes lifted to the lens",
+      "camera": "35mm lens, directly overhead top-down angle, full body framing",
+      "light": "big soft morning sun diffused through the sheer curtain, warm bounce off the white bedding filling every shadow",
+      "headphones": false
+    },
+    {
+      "id": "S18-09",
+      "priority": "core",
+      "title_ru": "В рост, рука в волосах",
+      "pose": "standing tall barefoot in the pool of morning sun on the floor, one hand pushing back through her hair with the elbow raised, weight shifted onto one leg so the hip breaks the line, chin down and eyes up into the lens",
+      "camera": "50mm lens, slightly low angle, frontal, full body framing",
+      "light": "big soft morning sun diffused through the sheer curtain, warm bounce off the white bedding filling every shadow",
+      "headphones": false
+    },
+    {
+      "id": "S18-10",
+      "priority": "core",
+      "title_ru": "Общий план",
+      "pose": "seen small across the space across the bright quiet bedroom, caught mid-movement and not looking at the camera, the room itself carrying the mood",
+      "camera": "24mm wide lens, eye level, wide environmental full-body shot",
+      "light": "big soft morning sun diffused through the sheer curtain, warm bounce off the white bedding filling every shadow",
+      "headphones": false
+    }
+  ],
+  "film": "shot on Kodak Portra 400, high-key airy grain"
+}

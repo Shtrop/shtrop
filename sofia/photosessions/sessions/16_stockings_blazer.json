@@ -1,0 +1,113 @@
+{
+  "session_id": "S16",
+  "slug": "stockings_blazer",
+  "title": "Stockings and Blazer",
+  "title_ru": "Чулки и пиджак",
+  "reference_source": "Максимальный гламурный регистр в рамках одетого кадра",
+  "mood_ru": "Отельный люкс ночью, бархат и виски. Чулки, боди и чужой пиджак.",
+  "base_seed": 116000,
+  "aspect": "4:5",
+  "allure": "late-night glamour, sheer hold-up stockings and a lace-trim bodysuit under an oversized blazer sliding off both shoulders, long legs crossed, cool amused gaze",
+  "wardrobe": {
+    "code": "P",
+    "notes_ru": "Чёрные чулки, боди с кружевной отделкой, огромный мужской пиджак с плеч.",
+    "prompt": "sheer black hold-up stockings, black bodysuit with lace trim, oversized men's blazer draped off both shoulders, black heels, silver star pendant, hair loosely pinned up"
+  },
+  "location": {
+    "notes_ru": "Тёмный отельный люкс, бархатное кресло, торшер, город за окном.",
+    "prompt": "dark hotel suite at night, deep green velvet armchair, brass floor lamp, whisky glass on a side table, heavy drapes, wide city window glowing behind"
+  },
+  "shots": [
+    {
+      "title_ru": "В бархатном кресле",
+      "pose": "sitting deep in the velvet armchair with her legs crossed high, blazer hanging open off both shoulders, one arm stretched along the back of the chair, cool amused look at the lens",
+      "camera": "35mm lens, eye level, three-quarter front angle, full body framing",
+      "light": "warm brass lamp close on one side, city window glow cool behind the chair",
+      "id": "S16-01",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "title_ru": "Чулок, у окна",
+      "pose": "standing at the city window with one heel up on the sill, adjusting the lace top of the stocking, blazer sliding down her arms, head turned to hold the lens",
+      "camera": "50mm lens, low angle, side three-quarter, full body framing",
+      "light": "cool city light silhouetting the leg and the blazer, warm lamp accent from inside the room",
+      "id": "S16-02",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "id": "S16-03",
+      "priority": "core",
+      "title_ru": "Прогиб, взгляд через плечо",
+      "pose": "kneeling back on her heels on the deep velvet armchair, spine deeply arched, one hand planted beside her, head turned over the shoulder holding direct eye contact with the lens",
+      "camera": "35mm lens, slightly above eye level, back three-quarter angle, full body vertical framing",
+      "light": "warm brass lamp light close on one side of her, cool city window light along her opposite edge",
+      "headphones": false
+    },
+    {
+      "id": "S16-04",
+      "priority": "core",
+      "title_ru": "Отражение",
+      "pose": "standing close to the gilt mirror above the console, one hand resting on the surface, hip pushed out, chin lowered, holding her own gaze while the camera catches her and the reflection at once",
+      "camera": "50mm lens, eye level, over-the-shoulder into the reflection, thigh-up framing",
+      "light": "warm brass lamp light close on one side of her, cool city window light along her opposite edge",
+      "headphones": false
+    },
+    {
+      "id": "S16-05",
+      "priority": "core",
+      "title_ru": "Силуэт против света",
+      "pose": "standing at the wide city window with one forearm raised against the frame, weight settled on one hip, back to the camera, long line of the spine on show, looking away into the light",
+      "camera": "35mm lens, eye level, back view, full body vertical framing",
+      "light": "warm brass lamp light close on one side of her, cool city window light along her opposite edge",
+      "headphones": false
+    },
+    {
+      "id": "S16-06",
+      "priority": "core",
+      "title_ru": "Полулёжа, нога вытянута",
+      "pose": "reclining back on the deep velvet armchair propped on both elbows, one knee raised and the other leg stretched long, ribcage lifted, chin up, half-lidded gaze straight down the lens",
+      "camera": "35mm lens, low camera at surface level, three-quarter front angle, full body framing",
+      "light": "warm brass lamp light close on one side of her, cool city window light along her opposite edge",
+      "headphones": false
+    },
+    {
+      "id": "S16-07",
+      "priority": "filler",
+      "title_ru": "Деталь",
+      "pose": "cropped detail composition of the lace top of the stocking and her hand resting on her thigh, face out of frame, fingers relaxed and naturally posed",
+      "camera": "85mm lens, close detail framing, very shallow depth of field",
+      "light": "warm brass lamp light close on one side of her, cool city window light along her opposite edge",
+      "headphones": false
+    },
+    {
+      "id": "S16-08",
+      "priority": "core",
+      "title_ru": "Вид сверху",
+      "pose": "lying on her back on the deep velvet armchair, one arm thrown above her head, the other hand resting on her waist, hair fanned out, knees softly bent, eyes lifted to the lens",
+      "camera": "35mm lens, directly overhead top-down angle, full body framing",
+      "light": "warm brass lamp light close on one side of her, cool city window light along her opposite edge",
+      "headphones": false
+    },
+    {
+      "id": "S16-09",
+      "priority": "core",
+      "title_ru": "В рост, рука в волосах",
+      "pose": "standing tall beside the armchair with the blazer hanging open, one hand pushing back through her hair with the elbow raised, weight shifted onto one leg so the hip breaks the line, chin down and eyes up into the lens",
+      "camera": "50mm lens, slightly low angle, frontal, full body framing",
+      "light": "warm brass lamp light close on one side of her, cool city window light along her opposite edge",
+      "headphones": false
+    },
+    {
+      "id": "S16-10",
+      "priority": "core",
+      "title_ru": "Общий план",
+      "pose": "seen small across the space across the dim hotel suite, caught mid-movement and not looking at the camera, the room itself carrying the mood",
+      "camera": "24mm wide lens, eye level, wide environmental full-body shot",
+      "light": "warm brass lamp light close on one side of her, cool city window light along her opposite edge",
+      "headphones": false
+    }
+  ],
+  "film": "shot on Cinestill 800T, tungsten cast and grain in the velvet shadows"
+}

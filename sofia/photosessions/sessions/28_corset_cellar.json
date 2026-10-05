@@ -1,0 +1,95 @@
+{
+  "session_id": "S28",
+  "slug": "corset_cellar",
+  "title": "Corset by Candlelight",
+  "title_ru": "Корсет при свечах",
+  "reference_source": "Бельевая линия — максимальный гламурный регистр, 8 кадров, без наушников",
+  "mood_ru": "Кирпичный погреб, десятки свечей, корсет с подвязками. Самый тёмный и плотный свет.",
+  "base_seed": 128000,
+  "aspect": "4:5",
+  "allure": "lingerie editorial glamour at its boldest, set with full opaque lining, deep neckline and high-cut briefs, sculpted waist and long legs fully on show, unhurried commanding sensuality, direct gaze, laced corset with garter straps and stockings, candle flame on bare skin",
+  "film": "shot on Cinestill 800T pushed one stop, heavy grain and candle halation",
+  "wardrobe": {
+    "code": "AB",
+    "notes_ru": "Корсет со шнуровкой + подвязки и чулки, плотная ткань.",
+    "prompt": "black laced corset with structured boning and full opaque lining, matching garter belt with straps clipped to sheer black stockings, high-cut briefs, silver star pendant, hair loose and falling forward, bare feet"
+  },
+  "location": {
+    "notes_ru": "Кирпичный погреб, дубовые бочки, только свечи как источник света.",
+    "prompt": "brick vaulted wine cellar, rows of dusty bottles, old oak barrels, dozens of lit candles on the stone floor and ledges, cobwebs in the corners, no other light source"
+  },
+  "shots": [
+    {
+      "title_ru": "Затягивает шнуровку",
+      "pose": "standing among the candles with her back half to the camera, both hands pulling the corset laces tight behind her, shoulder blades drawn together, head turned to find the lens",
+      "camera": "50mm lens, eye level, back three-quarter angle, thigh-up framing",
+      "light": "dozens of candle flames from below and the side, deep black brick behind",
+      "id": "S28-01",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "title_ru": "На дубовой бочке",
+      "pose": "sitting on the old oak barrel with one heel up on its rim, elbow on that knee, the other leg long to the floor, garter strap taut, slow heavy-lidded look at the camera",
+      "camera": "35mm lens, low camera, three-quarter front, full body framing",
+      "light": "candlelight pooling warm on her legs and chest, everything beyond falling to black",
+      "id": "S28-02",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "id": "S28-03",
+      "priority": "core",
+      "title_ru": "Прогиб, взгляд через плечо",
+      "pose": "kneeling back on her heels on the flat top of the oak barrel, spine deeply arched, one hand planted beside her, head turned over the shoulder holding direct eye contact with the lens",
+      "camera": "35mm lens, slightly above eye level, back three-quarter angle, full body vertical framing",
+      "light": "dozens of candle flames from below, flickering warm, one cooler shaft from the cellar archway behind her",
+      "headphones": false
+    },
+    {
+      "id": "S28-04",
+      "priority": "core",
+      "title_ru": "Отражение",
+      "pose": "standing close to a dark sheet of glass leaning against the brick, one hand flat on the surface, hip pushed out, chin lowered, meeting the camera past her own reflection",
+      "camera": "50mm lens, eye level, over-the-shoulder into the reflection, thigh-up framing",
+      "light": "dozens of candle flames from below, flickering warm, one cooler shaft from the cellar archway behind her",
+      "headphones": false
+    },
+    {
+      "id": "S28-05",
+      "priority": "core",
+      "title_ru": "Против света",
+      "pose": "standing at the narrow cellar archway with light beyond with one forearm raised against the frame, weight settled on one hip, the long line of her back and legs read against the light, head turned just enough to find the lens",
+      "camera": "35mm lens, eye level, back three-quarter angle, full body vertical framing",
+      "light": "dozens of candle flames from below, flickering warm, one cooler shaft from the cellar archway behind her",
+      "headphones": false
+    },
+    {
+      "id": "S28-06",
+      "priority": "core",
+      "title_ru": "Полулёжа, нога вытянута",
+      "pose": "reclining back on the flat top of the oak barrel propped on both elbows, one knee raised and the other leg stretched long, ribcage lifted, chin up, half-lidded gaze straight down the lens",
+      "camera": "35mm lens, low camera at surface level, three-quarter front angle, full body framing",
+      "light": "dozens of candle flames from below, flickering warm, one cooler shaft from the cellar archway behind her",
+      "headphones": false
+    },
+    {
+      "id": "S28-07",
+      "priority": "core",
+      "title_ru": "В рост, рука в волосах",
+      "pose": "standing tall among the candles on the stone floor, one hand pushing back through her hair with the elbow raised, weight on one leg so the hip breaks the line, chin down and eyes up into the lens",
+      "camera": "50mm lens, slightly low angle, frontal, full body framing",
+      "light": "dozens of candle flames from below, flickering warm, one cooler shaft from the cellar archway behind her",
+      "headphones": false
+    },
+    {
+      "id": "S28-08",
+      "priority": "filler",
+      "title_ru": "Деталь",
+      "pose": "cropped detail composition of the garter strap clipped to the stocking top and the corset lacing at her waist, face out of frame, fingers relaxed and naturally posed",
+      "camera": "85mm lens, close detail framing, very shallow depth of field",
+      "light": "dozens of candle flames from below, flickering warm, one cooler shaft from the cellar archway behind her",
+      "headphones": false
+    }
+  ]
+}

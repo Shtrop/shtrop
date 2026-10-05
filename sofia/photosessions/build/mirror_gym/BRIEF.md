@@ -1,0 +1,139 @@
+# Зеркальный зал (Mirror Room)
+
+**ID сессии:** `S15` · **Кадров:** 10 · **Формат:** 4:5 · **Base seed:** 115000
+
+**Референс:** Максимальный гламурный регистр в рамках одетого кадра
+
+**Настроение:** Ночной зал, зеркала в полный рост, неон. Микро-комплект и пот.
+
+**Подача (слой на каждом кадре):**
+
+```text
+athletic micro-set glamour, tiny emerald top and micro shorts, toned abdomen and long legs fully on show, skin damp with real sweat, hard confident stare
+```
+
+## Гардероб (единый для всех кадров)
+
+`O` — Изумрудный микро-комплект: короткий топ и очень короткие шорты, плотная ткань.
+
+```text
+tiny emerald green sports bra and matching micro training shorts, opaque fabric, skin damp with real sweat, white low sneakers, silver star pendant, dark hair in a high messy bun
+```
+
+## Локация
+
+Приватный зеркальный зал ночью, чёрное железо, неоновая полоса.
+
+```text
+private mirrored gym at night, floor-to-ceiling mirrors on every wall, matte black equipment, a single neon light strip, chalk dust in the air, dark rubber floor
+```
+
+## Раскадровка
+
+| # | Кадр | Тип | Оптика / ракурс | Наушники | Seed |
+|---|------|-----|-----------------|----------|------|
+| S15-01 | Отражения в ряд | hero | 35mm lens | — | 115001 |
+| S15-02 | Тяга у зеркала | hero | 50mm lens | — | 115002 |
+| S15-03 | Прогиб, взгляд через плечо | core | 35mm lens | — | 115003 |
+| S15-04 | Отражение | core | 50mm lens | — | 115004 |
+| S15-05 | Силуэт против света | core | 35mm lens | — | 115005 |
+| S15-06 | Полулёжа, нога вытянута | core | 35mm lens | — | 115006 |
+| S15-07 | Деталь | filler | 85mm lens | — | 115007 |
+| S15-08 | Вид сверху | core | 35mm lens | — | 115008 |
+| S15-09 | В рост, рука в волосах | core | 50mm lens | — | 115009 |
+| S15-10 | Общий план | core | 24mm wide lens | — | 115010 |
+
+Наушники на шее: 0/10 кадров (канон-ориентир — 70% по всему дню, не по одной сессии).
+
+## Технический прогон
+
+- Pipeline: ComfyUI + FLUX + Sofia LoRA/PuLID
+- Разрешение: 896x1152, апскейл 1.5x latent + face detailer pass
+- Steps 30, guidance 3.5, sampler `TODO_FROM_STUDIO_WORKFLOW`
+- Плёнка сессии: shot on Cinestill 800T, neon halation and visible grain in the mirrors
+- Против пластика см. `REALISM.md`: guidance, вес LoRA, face detailer, зерно
+- LoRA `TODO_FROM_PERSONA_CONFIG`, PuLID `TODO_FROM_PERSONA_CONFIG` — подставить из persona config
+- Seed: per-session base seed, +1 per shot; hero shots get 4 seed variants; по 4 варианта на кадр
+- GPU: RTX 5090 32GB — один GPU job за раз, проверять gpu_resource_scheduler
+
+## Промпты по кадрам
+
+### S15-01 — Отражения в ряд
+
+*hero · seed 115001*
+
+```text
+Sofia, 26-year-old woman, athletic hourglass figure, tiny emerald green sports bra and matching micro training shorts, opaque fabric, skin damp with real sweat, white low sneakers, silver star pendant, dark hair in a high messy bun, standing between two mirror walls so her figure repeats away into the distance, both thumbs hooked in the waistband of the micro shorts, abdomen tensed, hard unsmiling stare into the lens, athletic micro-set glamour, tiny emerald top and micro shorts, toned abdomen and long legs fully on show, skin damp with real sweat, hard confident stare, real human skin with visible pores and fine peach fuzz, small blemishes and uneven tone left unretouched, faint redness at the knuckles, elbows and knees, shine only where skin is really oily, fine creases at the wrists and the inside of the elbow, a few stray hairs out of place, makeup that reads as applied by hand rather than airbrushed, the proportions of a real athletic woman, 35mm lens, eye level, frontal, full body framing, shot on Cinestill 800T, neon halation and visible grain in the mirrors, single cool neon strip raking across her torso, mirrors throwing the light back from every side, handheld frame tilted a degree or two off level, private mirrored gym at night, floor-to-ceiling mirrors on every wall, matte black equipment, a single neon light strip, chalk dust in the air, dark rubber floor, suggestive glamour editorial, sensual magazine styling, body-conscious flattering framing, confident alluring presence, candid unretouched photograph, shot on a full-frame camera with a fast prime lens wide open, available light only, true-to-life muted colour, slight lens vignetting, mild chromatic aberration towards the edges, fine film grain, imperfect focus falloff, natural motion in the hands and hair
+```
+
+### S15-02 — Тяга у зеркала
+
+*hero · seed 115002*
+
+```text
+Sofia, 26-year-old woman, athletic hourglass figure, tiny emerald green sports bra and matching micro training shorts, opaque fabric, skin damp with real sweat, white low sneakers, silver star pendant, dark hair in a high messy bun, bent-over single-arm row facing the mirror wall so the camera reads both her back and her reflection at once, elbow high, spine long, sweat on her skin, glancing sideways to the lens, athletic micro-set glamour, tiny emerald top and micro shorts, toned abdomen and long legs fully on show, skin damp with real sweat, hard confident stare, real human skin with visible pores and fine peach fuzz, small blemishes and uneven tone left unretouched, faint redness at the knuckles, elbows and knees, shine only where skin is really oily, fine creases at the wrists and the inside of the elbow, a few stray hairs out of place, makeup that reads as applied by hand rather than airbrushed, the proportions of a real athletic woman, 50mm lens, eye level, side angle, waist-up framing, shot on Cinestill 800T, neon halation and visible grain in the mirrors, neon strip from above, mirror bounce filling the shadow side, slightly underexposed, shadows crushed a little, private mirrored gym at night, floor-to-ceiling mirrors on every wall, matte black equipment, a single neon light strip, chalk dust in the air, dark rubber floor, suggestive glamour editorial, sensual magazine styling, body-conscious flattering framing, confident alluring presence, candid unretouched photograph, shot on a full-frame camera with a fast prime lens wide open, available light only, true-to-life muted colour, slight lens vignetting, mild chromatic aberration towards the edges, fine film grain, imperfect focus falloff, natural motion in the hands and hair
+```
+
+### S15-03 — Прогиб, взгляд через плечо
+
+*core · seed 115003*
+
+```text
+Sofia, 26-year-old woman, athletic hourglass figure, tiny emerald green sports bra and matching micro training shorts, opaque fabric, skin damp with real sweat, white low sneakers, silver star pendant, dark hair in a high messy bun, kneeling back on her heels on the black padded bench, spine deeply arched, one hand planted beside her, head turned over the shoulder holding direct eye contact with the lens, athletic micro-set glamour, tiny emerald top and micro shorts, toned abdomen and long legs fully on show, skin damp with real sweat, hard confident stare, real human skin with visible pores and fine peach fuzz, small blemishes and uneven tone left unretouched, faint redness at the knuckles, elbows and knees, shine only where skin is really oily, fine creases at the wrists and the inside of the elbow, a few stray hairs out of place, makeup that reads as applied by hand rather than airbrushed, the proportions of a real athletic woman, 35mm lens, slightly above eye level, back three-quarter angle, full body vertical framing, shot on Cinestill 800T, neon halation and visible grain in the mirrors, a single cool neon strip raking across her body, mirror reflections throwing a second light back onto her, one highlight blown out where the light hits hardest, private mirrored gym at night, floor-to-ceiling mirrors on every wall, matte black equipment, a single neon light strip, chalk dust in the air, dark rubber floor, suggestive glamour editorial, sensual magazine styling, body-conscious flattering framing, confident alluring presence, candid unretouched photograph, shot on a full-frame camera with a fast prime lens wide open, available light only, true-to-life muted colour, slight lens vignetting, mild chromatic aberration towards the edges, fine film grain, imperfect focus falloff, natural motion in the hands and hair
+```
+
+### S15-04 — Отражение
+
+*core · seed 115004*
+
+```text
+Sofia, 26-year-old woman, athletic hourglass figure, tiny emerald green sports bra and matching micro training shorts, opaque fabric, skin damp with real sweat, white low sneakers, silver star pendant, dark hair in a high messy bun, standing close to the floor-to-ceiling mirror wall, one hand resting on the surface, hip pushed out, chin lowered, holding her own gaze while the camera catches her and the reflection at once, athletic micro-set glamour, tiny emerald top and micro shorts, toned abdomen and long legs fully on show, skin damp with real sweat, hard confident stare, real human skin with visible pores and fine peach fuzz, small blemishes and uneven tone left unretouched, faint redness at the knuckles, elbows and knees, shine only where skin is really oily, fine creases at the wrists and the inside of the elbow, a few stray hairs out of place, makeup that reads as applied by hand rather than airbrushed, the proportions of a real athletic woman, 50mm lens, eye level, over-the-shoulder into the reflection, thigh-up framing, shot on Cinestill 800T, neon halation and visible grain in the mirrors, a single cool neon strip raking across her body, mirror reflections throwing a second light back onto her, focus landing a touch behind the eyes, sharpest on the ear, private mirrored gym at night, floor-to-ceiling mirrors on every wall, matte black equipment, a single neon light strip, chalk dust in the air, dark rubber floor, suggestive glamour editorial, sensual magazine styling, body-conscious flattering framing, confident alluring presence, candid unretouched photograph, shot on a full-frame camera with a fast prime lens wide open, available light only, true-to-life muted colour, slight lens vignetting, mild chromatic aberration towards the edges, fine film grain, imperfect focus falloff, natural motion in the hands and hair
+```
+
+### S15-05 — Силуэт против света
+
+*core · seed 115005*
+
+```text
+Sofia, 26-year-old woman, athletic hourglass figure, tiny emerald green sports bra and matching micro training shorts, opaque fabric, skin damp with real sweat, white low sneakers, silver star pendant, dark hair in a high messy bun, standing at the dark mirrored wall at the end of the room with one forearm raised against the frame, weight settled on one hip, back to the camera, long line of the spine on show, looking away into the light, athletic micro-set glamour, tiny emerald top and micro shorts, toned abdomen and long legs fully on show, skin damp with real sweat, hard confident stare, real human skin with visible pores and fine peach fuzz, small blemishes and uneven tone left unretouched, faint redness at the knuckles, elbows and knees, shine only where skin is really oily, fine creases at the wrists and the inside of the elbow, a few stray hairs out of place, makeup that reads as applied by hand rather than airbrushed, the proportions of a real athletic woman, 35mm lens, eye level, back view, full body vertical framing, shot on Cinestill 800T, neon halation and visible grain in the mirrors, a single cool neon strip raking across her body, mirror reflections throwing a second light back onto her, faint haze from a smudge on the front element, private mirrored gym at night, floor-to-ceiling mirrors on every wall, matte black equipment, a single neon light strip, chalk dust in the air, dark rubber floor, suggestive glamour editorial, sensual magazine styling, body-conscious flattering framing, confident alluring presence, candid unretouched photograph, shot on a full-frame camera with a fast prime lens wide open, available light only, true-to-life muted colour, slight lens vignetting, mild chromatic aberration towards the edges, fine film grain, imperfect focus falloff, natural motion in the hands and hair
+```
+
+### S15-06 — Полулёжа, нога вытянута
+
+*core · seed 115006*
+
+```text
+Sofia, 26-year-old woman, athletic hourglass figure, tiny emerald green sports bra and matching micro training shorts, opaque fabric, skin damp with real sweat, white low sneakers, silver star pendant, dark hair in a high messy bun, reclining back on the black padded bench propped on both elbows, one knee raised and the other leg stretched long, ribcage lifted, chin up, half-lidded gaze straight down the lens, athletic micro-set glamour, tiny emerald top and micro shorts, toned abdomen and long legs fully on show, skin damp with real sweat, hard confident stare, real human skin with visible pores and fine peach fuzz, small blemishes and uneven tone left unretouched, faint redness at the knuckles, elbows and knees, shine only where skin is really oily, fine creases at the wrists and the inside of the elbow, a few stray hairs out of place, makeup that reads as applied by hand rather than airbrushed, the proportions of a real athletic woman, 35mm lens, low camera at surface level, three-quarter front angle, full body framing, shot on Cinestill 800T, neon halation and visible grain in the mirrors, a single cool neon strip raking across her body, mirror reflections throwing a second light back onto her, slight motion blur in one hand from a slow shutter, private mirrored gym at night, floor-to-ceiling mirrors on every wall, matte black equipment, a single neon light strip, chalk dust in the air, dark rubber floor, suggestive glamour editorial, sensual magazine styling, body-conscious flattering framing, confident alluring presence, candid unretouched photograph, shot on a full-frame camera with a fast prime lens wide open, available light only, true-to-life muted colour, slight lens vignetting, mild chromatic aberration towards the edges, fine film grain, imperfect focus falloff, natural motion in the hands and hair
+```
+
+### S15-07 — Деталь
+
+*filler · seed 115007*
+
+```text
+Sofia, 26-year-old woman, athletic hourglass figure, tiny emerald green sports bra and matching micro training shorts, opaque fabric, skin damp with real sweat, white low sneakers, silver star pendant, dark hair in a high messy bun, cropped detail composition of sweat running down her spine and the waistband of the shorts, face out of frame, fingers relaxed and naturally posed, athletic micro-set glamour, tiny emerald top and micro shorts, toned abdomen and long legs fully on show, skin damp with real sweat, hard confident stare, real human skin with visible pores and fine peach fuzz, small blemishes and uneven tone left unretouched, faint redness at the knuckles, elbows and knees, shine only where skin is really oily, fine creases at the wrists and the inside of the elbow, a few stray hairs out of place, makeup that reads as applied by hand rather than airbrushed, the proportions of a real athletic woman, 85mm lens, close detail framing, very shallow depth of field, shot on Cinestill 800T, neon halation and visible grain in the mirrors, a single cool neon strip raking across her body, mirror reflections throwing a second light back onto her, subject a little off-centre with one shoulder cropped by the frame edge, private mirrored gym at night, floor-to-ceiling mirrors on every wall, matte black equipment, a single neon light strip, chalk dust in the air, dark rubber floor, suggestive glamour editorial, sensual magazine styling, body-conscious flattering framing, confident alluring presence, candid unretouched photograph, shot on a full-frame camera with a fast prime lens wide open, available light only, true-to-life muted colour, slight lens vignetting, mild chromatic aberration towards the edges, fine film grain, imperfect focus falloff, natural motion in the hands and hair
+```
+
+### S15-08 — Вид сверху
+
+*core · seed 115008*
+
+```text
+Sofia, 26-year-old woman, athletic hourglass figure, tiny emerald green sports bra and matching micro training shorts, opaque fabric, skin damp with real sweat, white low sneakers, silver star pendant, dark hair in a high messy bun, lying on her back on the black padded bench, one arm thrown above her head, the other hand resting on her waist, hair fanned out, knees softly bent, eyes lifted to the lens, athletic micro-set glamour, tiny emerald top and micro shorts, toned abdomen and long legs fully on show, skin damp with real sweat, hard confident stare, real human skin with visible pores and fine peach fuzz, small blemishes and uneven tone left unretouched, faint redness at the knuckles, elbows and knees, shine only where skin is really oily, fine creases at the wrists and the inside of the elbow, a few stray hairs out of place, makeup that reads as applied by hand rather than airbrushed, the proportions of a real athletic woman, 35mm lens, directly overhead top-down angle, full body framing, shot on Cinestill 800T, neon halation and visible grain in the mirrors, a single cool neon strip raking across her body, mirror reflections throwing a second light back onto her, mild flare washing one corner of the frame, private mirrored gym at night, floor-to-ceiling mirrors on every wall, matte black equipment, a single neon light strip, chalk dust in the air, dark rubber floor, suggestive glamour editorial, sensual magazine styling, body-conscious flattering framing, confident alluring presence, candid unretouched photograph, shot on a full-frame camera with a fast prime lens wide open, available light only, true-to-life muted colour, slight lens vignetting, mild chromatic aberration towards the edges, fine film grain, imperfect focus falloff, natural motion in the hands and hair
+```
+
+### S15-09 — В рост, рука в волосах
+
+*core · seed 115009*
+
+```text
+Sofia, 26-year-old woman, athletic hourglass figure, tiny emerald green sports bra and matching micro training shorts, opaque fabric, skin damp with real sweat, white low sneakers, silver star pendant, dark hair in a high messy bun, standing tall in front of the mirror wall, one hand pushing back through her hair with the elbow raised, weight shifted onto one leg so the hip breaks the line, chin down and eyes up into the lens, athletic micro-set glamour, tiny emerald top and micro shorts, toned abdomen and long legs fully on show, skin damp with real sweat, hard confident stare, real human skin with visible pores and fine peach fuzz, small blemishes and uneven tone left unretouched, faint redness at the knuckles, elbows and knees, shine only where skin is really oily, fine creases at the wrists and the inside of the elbow, a few stray hairs out of place, makeup that reads as applied by hand rather than airbrushed, the proportions of a real athletic woman, 50mm lens, slightly low angle, frontal, full body framing, shot on Cinestill 800T, neon halation and visible grain in the mirrors, a single cool neon strip raking across her body, mirror reflections throwing a second light back onto her, grain heavier in the shadows where the exposure was pushed, private mirrored gym at night, floor-to-ceiling mirrors on every wall, matte black equipment, a single neon light strip, chalk dust in the air, dark rubber floor, suggestive glamour editorial, sensual magazine styling, body-conscious flattering framing, confident alluring presence, candid unretouched photograph, shot on a full-frame camera with a fast prime lens wide open, available light only, true-to-life muted colour, slight lens vignetting, mild chromatic aberration towards the edges, fine film grain, imperfect focus falloff, natural motion in the hands and hair
+```
+
+### S15-10 — Общий план
+
+*core · seed 115010*
+
+```text
+Sofia, 26-year-old woman, athletic hourglass figure, tiny emerald green sports bra and matching micro training shorts, opaque fabric, skin damp with real sweat, white low sneakers, silver star pendant, dark hair in a high messy bun, seen small across the space reflected many times down the mirrored room, caught mid-movement and not looking at the camera, the room itself carrying the mood, athletic micro-set glamour, tiny emerald top and micro shorts, toned abdomen and long legs fully on show, skin damp with real sweat, hard confident stare, real human skin with visible pores and fine peach fuzz, small blemishes and uneven tone left unretouched, faint redness at the knuckles, elbows and knees, shine only where skin is really oily, fine creases at the wrists and the inside of the elbow, a few stray hairs out of place, makeup that reads as applied by hand rather than airbrushed, the proportions of a real athletic woman, 24mm wide lens, eye level, wide environmental full-body shot, shot on Cinestill 800T, neon halation and visible grain in the mirrors, a single cool neon strip raking across her body, mirror reflections throwing a second light back onto her, colour a touch cool and uncorrected straight out of camera, private mirrored gym at night, floor-to-ceiling mirrors on every wall, matte black equipment, a single neon light strip, chalk dust in the air, dark rubber floor, suggestive glamour editorial, sensual magazine styling, body-conscious flattering framing, confident alluring presence, candid unretouched photograph, shot on a full-frame camera with a fast prime lens wide open, available light only, true-to-life muted colour, slight lens vignetting, mild chromatic aberration towards the edges, fine film grain, imperfect focus falloff, natural motion in the hands and hair
+```

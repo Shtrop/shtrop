@@ -1,0 +1,95 @@
+{
+  "session_id": "S25",
+  "slug": "mocha_robe_closet",
+  "title": "Mocha and Silk",
+  "title_ru": "Мокко и шёлковый халат",
+  "reference_source": "Бельевая линия — максимальный гламурный регистр, 8 кадров, без наушников",
+  "mood_ru": "Зеркальная гардеробная, тёплые лампы, бельё цвета мокко и длинный халат.",
+  "base_seed": 125000,
+  "aspect": "4:5",
+  "allure": "lingerie editorial glamour at its boldest, set with full opaque lining, deep neckline and high-cut briefs, sculpted waist and long legs fully on show, unhurried commanding sensuality, direct gaze, mocha lace set under a long silk robe left hanging open",
+  "film": "shot on Kodak Portra 400, warm even grain",
+  "wardrobe": {
+    "code": "Y",
+    "notes_ru": "Кружевной комплект цвета мокко с подкладкой + длинный шёлковый халат.",
+    "prompt": "mocha brown lace lingerie set with full opaque lining, soft cup bra and high-leg briefs, long ivory silk robe worn open and slipping off both shoulders, silver star pendant, hair pinned up with loose strands, bare feet"
+  },
+  "location": {
+    "notes_ru": "Просторная гардеробная, зеркальные дверцы, тёплые лампы, бархатный пуф.",
+    "prompt": "spacious walk-in closet, mirrored wardrobe doors on both sides, warm strip lamps, velvet ottoman, rows of hanging clothes in muted tones, shoe shelves, soft carpet"
+  },
+  "shots": [
+    {
+      "title_ru": "Халат распахнут в зеркалах",
+      "pose": "standing between the mirrored wardrobe doors letting the long silk robe hang wide open over the mocha set, one hand on the door frame, hip pushed out, direct steady gaze",
+      "camera": "35mm lens, eye level, frontal with reflections on both sides, full body framing",
+      "light": "warm wardrobe lamps from above and the sides, soft even wrap",
+      "id": "S25-01",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "title_ru": "Сидя на пуфе, застёгивает ремешок",
+      "pose": "sitting on the velvet ottoman with one foot up on it, fastening the strap of a heel, back arched over the knee, robe slid off both shoulders, eyes lifted to the lens mid-motion",
+      "camera": "50mm lens, eye level, side three-quarter angle, full body framing",
+      "light": "warm lamp key from the side, soft falloff into the dark closet behind",
+      "id": "S25-02",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "id": "S25-03",
+      "priority": "core",
+      "title_ru": "Прогиб, взгляд через плечо",
+      "pose": "kneeling back on her heels on the velvet ottoman, spine deeply arched, one hand planted beside her, head turned over the shoulder holding direct eye contact with the lens",
+      "camera": "35mm lens, slightly above eye level, back three-quarter angle, full body vertical framing",
+      "light": "warm strip lamps wrapping her from above, mirror reflections filling the shadow side",
+      "headphones": false
+    },
+    {
+      "id": "S25-04",
+      "priority": "core",
+      "title_ru": "Отражение",
+      "pose": "standing close to the mirrored wardrobe door, one hand flat on the surface, hip pushed out, chin lowered, meeting the camera past her own reflection",
+      "camera": "50mm lens, eye level, over-the-shoulder into the reflection, thigh-up framing",
+      "light": "warm strip lamps wrapping her from above, mirror reflections filling the shadow side",
+      "headphones": false
+    },
+    {
+      "id": "S25-05",
+      "priority": "core",
+      "title_ru": "Против света",
+      "pose": "standing at the lit doorway of the closet with one forearm raised against the frame, weight settled on one hip, the long line of her back and legs read against the light, head turned just enough to find the lens",
+      "camera": "35mm lens, eye level, back three-quarter angle, full body vertical framing",
+      "light": "warm strip lamps wrapping her from above, mirror reflections filling the shadow side",
+      "headphones": false
+    },
+    {
+      "id": "S25-06",
+      "priority": "core",
+      "title_ru": "Полулёжа, нога вытянута",
+      "pose": "reclining back on the velvet ottoman propped on both elbows, one knee raised and the other leg stretched long, ribcage lifted, chin up, half-lidded gaze straight down the lens",
+      "camera": "35mm lens, low camera at surface level, three-quarter front angle, full body framing",
+      "light": "warm strip lamps wrapping her from above, mirror reflections filling the shadow side",
+      "headphones": false
+    },
+    {
+      "id": "S25-07",
+      "priority": "core",
+      "title_ru": "В рост, рука в волосах",
+      "pose": "standing tall between the two mirrored doors, one hand pushing back through her hair with the elbow raised, weight on one leg so the hip breaks the line, chin down and eyes up into the lens",
+      "camera": "50mm lens, slightly low angle, frontal, full body framing",
+      "light": "warm strip lamps wrapping her from above, mirror reflections filling the shadow side",
+      "headphones": false
+    },
+    {
+      "id": "S25-08",
+      "priority": "filler",
+      "title_ru": "Деталь",
+      "pose": "cropped detail composition of the lace edge of the bra under the open silk of the robe, face out of frame, fingers relaxed and naturally posed",
+      "camera": "85mm lens, close detail framing, very shallow depth of field",
+      "light": "warm strip lamps wrapping her from above, mirror reflections filling the shadow side",
+      "headphones": false
+    }
+  ]
+}

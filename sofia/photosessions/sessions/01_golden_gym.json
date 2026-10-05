@@ -1,0 +1,113 @@
+{
+  "session_id": "S01",
+  "slug": "golden_gym",
+  "title": "Golden Hour Gym",
+  "title_ru": "Золотой час в зале",
+  "reference_source": "Референс 1 — тяга гантели в наклоне, панорамный зал на закате",
+  "mood_ru": "Собранная, потная, уверенная. Без улыбки в хиро-кадрах, взгляд в объектив.",
+  "base_seed": 101000,
+  "aspect": "4:5",
+  "wardrobe": {
+    "code": "A",
+    "prompt": "tight dusty mauve seamless sports bra with a deep scoop neckline with thin spaghetti straps, oversized light heather grey wide-leg cotton sweatpants with white drawstring, white low-profile sneakers, thin silver chain with small star pendant, dark brown messy high bun with damp loose face-framing strands, bare face with visible skin texture and a natural sheen",
+    "notes_ru": "Один и тот же комплект во всех 10 кадрах. Пыльно-сиреневый топ + светло-серые широкие джоггеры."
+  },
+  "location": {
+    "prompt": "upscale rooftop gym at golden hour, floor-to-ceiling windows overlooking a hazy city skyline, black rubber dumbbell rack, matte black squat rack, large potted monstera and palm plants, dark grey tile floor with soft reflections, rolled purple yoga mat, transparent shaker bottle, black leather flat bench with a dark grey towel",
+    "notes_ru": "Одна локация, время — закат. Свет держать тёплым и контровым во всех кадрах."
+  },
+  "shots": [
+    {
+      "id": "S01-01",
+      "priority": "hero",
+      "title_ru": "Тяга гантели в наклоне (реконструкция референса)",
+      "pose": "bent-over single-arm dumbbell row, torso hinged forward about 45 degrees, right palm braced flat on the towel-covered bench, left hand gripping a heavy black dumbbell pulled up to the hip, elbow high and back, spine long, legs staggered, head lifted with direct intense eye contact into the lens",
+      "camera": "35mm lens, chest-level eye line, three-quarter front angle, full body vertical framing",
+      "light": "warm low sunset backlight through the windows rimming the shoulders and arms, soft bounced fill on the face, soft highlights on the collarbones",
+      "headphones": false
+    },
+    {
+      "id": "S01-02",
+      "priority": "core",
+      "title_ru": "Та же тяга, профиль снизу",
+      "pose": "same bent-over single-arm dumbbell row captured at the top of the pull, shoulder blade retracted, forearm tensed, looking down at the floor in concentration, loose strands falling forward",
+      "camera": "50mm lens, low camera placed near floor level, strict side profile, mid-body to head framing",
+      "light": "strong contre-jour sunset flare from the windows, deep shadows in the foreground, warm amber rim on the back and arm",
+      "headphones": false
+    },
+    {
+      "id": "S01-03",
+      "priority": "core",
+      "title_ru": "Пауза на скамье, наушники на шее",
+      "pose": "sitting on the edge of the flat bench, elbows on knees, hands loosely wrapping a fabric lifting strap, head tilted down, eyes lowered, quiet focus between sets",
+      "camera": "50mm lens, slightly above eye level, frontal, waist-up framing",
+      "light": "warm window light from camera left, gentle falloff into the dark gym on the right, catchlight in the lowered eyes",
+      "headphones": true
+    },
+    {
+      "id": "S01-04",
+      "priority": "core",
+      "title_ru": "У стойки с гантелями, спиной к камере",
+      "pose": "standing at the dumbbell rack with back three-quarter to camera, right arm reaching out to lift a dumbbell off the rack, weight shifted onto one hip, head turned in profile toward the weights",
+      "camera": "35mm lens, eye level, three-quarter back angle, full body vertical framing",
+      "light": "sunset window light from the far side silhouetting the arm, cool ambient fill from ceiling spots on the back",
+      "headphones": false
+    },
+    {
+      "id": "S01-05",
+      "priority": "core",
+      "title_ru": "Выпад с гантелями, широкий план зала",
+      "pose": "deep split-squat lunge holding a dumbbell in each hand at her sides, front knee stacked over ankle, back heel lifted, torso upright, jaw set, gaze fixed forward past the lens",
+      "camera": "24mm wide lens, low angle, wide full-body framing showing the scale of the gym and the city windows",
+      "light": "broad golden hour wash across the floor, long shadows stretching toward camera, warm haze in the air",
+      "headphones": false
+    },
+    {
+      "id": "S01-06",
+      "priority": "core",
+      "title_ru": "У силовой рамы, полуулыбка",
+      "pose": "leaning sideways against the squat rack, one forearm resting on the barbell, ankles crossed, chest rising from exertion, faint half-smile with direct eye contact",
+      "camera": "50mm lens, eye level, frontal, thigh-up framing",
+      "light": "warm key from the window camera right, soft silver bounce fill, sweat catching the highlights on the shoulders",
+      "headphones": true
+    },
+    {
+      "id": "S01-07",
+      "priority": "hero",
+      "title_ru": "Крупный портрет, контровой свет",
+      "pose": "close portrait, chin slightly lowered, looking straight up into the lens from under the brows, damp strands stuck to the temple, lips parted from breathing",
+      "camera": "85mm portrait lens, eye level, tight head-and-shoulders framing, creamy background bokeh",
+      "light": "hard golden rim light outlining the jaw and the loose hair, soft warm fill on the face, star pendant catching a specular glint",
+      "headphones": false
+    },
+    {
+      "id": "S01-08",
+      "priority": "core",
+      "title_ru": "Пол, шейкер, контровой закат",
+      "pose": "sitting on the floor beside the rolled yoga mat, legs extended and ankles crossed, one hand behind for support, the other lifting the transparent shaker bottle toward her mouth, head tipped back slightly",
+      "camera": "35mm lens, low camera at floor level, three-quarter front angle, full body framing",
+      "light": "direct backlight from the sunset windows, lens flare across the frame, warm bounce off the tile floor onto the face",
+      "headphones": false
+    },
+    {
+      "id": "S01-09",
+      "priority": "core",
+      "title_ru": "Растяжка-силуэт у панорамного окна",
+      "pose": "standing facing the window in a long overhead stretch, both arms raised and wrists crossed, torso elongated, weight on one leg, head tilted back looking at the skyline, shot from behind",
+      "camera": "50mm lens, eye level, back view, full body vertical framing against the window",
+      "light": "near-silhouette against the burning orange sky, thin warm rim along the arms and shoulders, dark gym interior around her",
+      "headphones": false
+    },
+    {
+      "id": "S01-10",
+      "priority": "core",
+      "title_ru": "Финал сессии: полотенце на шее, шаг в камеру",
+      "pose": "walking toward the camera with the grey towel draped around her neck, both hands holding the towel ends, mid-stride, chin up, calm satisfied expression with direct eye contact",
+      "camera": "35mm lens, slightly low angle, frontal, knee-up framing with motion-blurred gym background",
+      "light": "warm sunset flare blooming behind her shoulder, soft frontal fill, glowing dust in the air",
+      "headphones": true
+    }
+  ],
+  "allure": "athletic glamour mood, deep scoop neckline of the sports bra, toned waist and shoulders on display, real sweat beading on her skin, strong arched posture, direct sultry eye contact",
+  "film": "shot on Kodak Portra 400, warm natural grain"
+}

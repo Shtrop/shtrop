@@ -1,0 +1,95 @@
+{
+  "session_id": "S31",
+  "slug": "silver_smoke_studio",
+  "title": "Silver and Smoke",
+  "title_ru": "Серебро и дым",
+  "reference_source": "Бельевая линия — максимальный гламурный регистр, 8 кадров, без наушников",
+  "mood_ru": "Ночная студия, дым, жёсткий импульс. Серебристый металлик-сет. Самый графичный набор.",
+  "base_seed": 131000,
+  "aspect": "4:5",
+  "allure": "lingerie editorial glamour at its boldest, set with full opaque lining, deep neckline and high-cut briefs, sculpted waist and long legs fully on show, unhurried commanding sensuality, direct gaze, liquid silver set catching a hard strobe through the smoke",
+  "film": "shot on Kodak Ektar 100, tight grain, hard clean blacks",
+  "wardrobe": {
+    "code": "AE",
+    "notes_ru": "Серебристый металлик-комплект с подкладкой, гладкая ткань.",
+    "prompt": "liquid silver metallic lingerie set with full opaque lining, smooth structured cups and high-cut briefs, silver star pendant, sleek wet-look hair pulled back, bare feet"
+  },
+  "location": {
+    "notes_ru": "Тёмная студия с дымом, один жёсткий импульсный источник, чёрный куб.",
+    "prompt": "dark photo studio filled with drifting smoke, single hard strobe head, black seamless floor and backdrop, low black cube, light stands just out of frame, beams visible in the haze"
+  },
+  "shots": [
+    {
+      "title_ru": "В дыму, руки над головой",
+      "pose": "standing in the drifting smoke in the silver set, both arms raised overhead with wrists crossed, ribcage lifted, back arched, chin up, eyes half closed against the light",
+      "camera": "85mm lens, eye level, frontal, full body framing",
+      "light": "one hard strobe from the side carving her silhouette out of the smoke",
+      "id": "S31-01",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "title_ru": "Сидя на кубе, нога вытянута",
+      "pose": "sitting on the low black cube with one leg extended long and pointed, the other bent, leaning back on both hands, head tipped back and then turned straight into the lens",
+      "camera": "35mm lens, low camera, three-quarter front, full body framing",
+      "light": "hard strobe from above and behind, smoke glowing, deep black floor",
+      "id": "S31-02",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "id": "S31-03",
+      "priority": "core",
+      "title_ru": "Прогиб, взгляд через плечо",
+      "pose": "kneeling back on her heels on the low black cube, spine deeply arched, one hand planted beside her, head turned over the shoulder holding direct eye contact with the lens",
+      "camera": "35mm lens, slightly above eye level, back three-quarter angle, full body vertical framing",
+      "light": "one hard strobe raking across her through the smoke, a second narrow strobe drawing a bright line down her opposite side",
+      "headphones": false
+    },
+    {
+      "id": "S31-04",
+      "priority": "core",
+      "title_ru": "Отражение",
+      "pose": "standing close to a tall sheet of mirror at the edge of the set, one hand flat on the surface, hip pushed out, chin lowered, meeting the camera past her own reflection",
+      "camera": "50mm lens, eye level, over-the-shoulder into the reflection, thigh-up framing",
+      "light": "one hard strobe raking across her through the smoke, a second narrow strobe drawing a bright line down her opposite side",
+      "headphones": false
+    },
+    {
+      "id": "S31-05",
+      "priority": "core",
+      "title_ru": "Против света",
+      "pose": "standing at the bright edge of the strobe beam with one forearm raised against the frame, weight settled on one hip, the long line of her back and legs read against the light, head turned just enough to find the lens",
+      "camera": "35mm lens, eye level, back three-quarter angle, full body vertical framing",
+      "light": "one hard strobe raking across her through the smoke, a second narrow strobe drawing a bright line down her opposite side",
+      "headphones": false
+    },
+    {
+      "id": "S31-06",
+      "priority": "core",
+      "title_ru": "Полулёжа, нога вытянута",
+      "pose": "reclining back on the low black cube propped on both elbows, one knee raised and the other leg stretched long, ribcage lifted, chin up, half-lidded gaze straight down the lens",
+      "camera": "35mm lens, low camera at surface level, three-quarter front angle, full body framing",
+      "light": "one hard strobe raking across her through the smoke, a second narrow strobe drawing a bright line down her opposite side",
+      "headphones": false
+    },
+    {
+      "id": "S31-07",
+      "priority": "core",
+      "title_ru": "В рост, рука в волосах",
+      "pose": "standing tall in the middle of the smoke-filled set, one hand pushing back through her hair with the elbow raised, weight on one leg so the hip breaks the line, chin down and eyes up into the lens",
+      "camera": "50mm lens, slightly low angle, frontal, full body framing",
+      "light": "one hard strobe raking across her through the smoke, a second narrow strobe drawing a bright line down her opposite side",
+      "headphones": false
+    },
+    {
+      "id": "S31-08",
+      "priority": "filler",
+      "title_ru": "Деталь",
+      "pose": "cropped detail composition of the metallic fabric edge across her hip catching a hard specular line, face out of frame, fingers relaxed and naturally posed",
+      "camera": "85mm lens, close detail framing, very shallow depth of field",
+      "light": "one hard strobe raking across her through the smoke, a second narrow strobe drawing a bright line down her opposite side",
+      "headphones": false
+    }
+  ]
+}

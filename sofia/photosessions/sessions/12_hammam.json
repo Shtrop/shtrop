@@ -1,0 +1,113 @@
+{
+  "session_id": "S12",
+  "slug": "hammam",
+  "title": "Hammam Steam",
+  "title_ru": "Хаммам",
+  "reference_source": "Максимальный гламурный регистр в рамках одетого кадра",
+  "mood_ru": "Мрамор, пар, арочные окна. Льняная простыня и жар.",
+  "base_seed": 112000,
+  "aspect": "4:5",
+  "allure": "steam-room glamour, linen sheet wrapped low and tucked at the chest, bare shoulders, back and legs, skin damp with heat, languid half-closed eyes",
+  "wardrobe": {
+    "code": "L",
+    "notes_ru": "Льняная простыня, обёрнута и заправлена на груди. Влажная кожа.",
+    "prompt": "white linen sheet wrapped around her body and tucked at the chest, bare shoulders and bare legs, skin damp and glowing from the heat, hair pinned up with damp strands escaping, no jewellery but the silver star pendant"
+  },
+  "location": {
+    "notes_ru": "Мраморный хаммам, пар, латунные чаши, свет через арочные окна.",
+    "prompt": "marble hammam chamber, thick steam, warm stone slab in the centre, brass bowls of water, arched windows throwing dappled light through the vapour, worn grey-veined marble"
+  },
+  "shots": [
+    {
+      "title_ru": "На мраморной плите",
+      "pose": "lying on her side along the warm marble slab, linen draped low across her hip, propped up on one elbow with the other hand on the stone, languid direct gaze through the steam",
+      "camera": "35mm lens, low camera at slab level, side three-quarter angle, full body framing",
+      "light": "shafts of window light cutting down through the steam onto her body, wet marble glow underneath",
+      "id": "S12-01",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "title_ru": "Вода из латунной чаши",
+      "pose": "kneeling on the marble, pouring water from a brass bowl over her own shoulder, head tipped back, eyes closed, linen clinging where the water runs",
+      "camera": "50mm lens, eye level, three-quarter front angle, waist-up framing",
+      "light": "backlit steam behind her, warm daylight glinting off the brass and the running water",
+      "id": "S12-02",
+      "priority": "hero",
+      "headphones": false
+    },
+    {
+      "id": "S12-03",
+      "priority": "core",
+      "title_ru": "Прогиб, взгляд через плечо",
+      "pose": "kneeling back on her heels on the warm marble slab, spine deeply arched, one hand planted beside her, head turned over the shoulder holding direct eye contact with the lens",
+      "camera": "35mm lens, slightly above eye level, back three-quarter angle, full body vertical framing",
+      "light": "shafts of daylight cutting down through the steam, soft glow bouncing off the wet marble around her",
+      "headphones": false
+    },
+    {
+      "id": "S12-04",
+      "priority": "core",
+      "title_ru": "Отражение",
+      "pose": "standing close to the polished wet marble wall, one hand resting on the surface, hip pushed out, chin lowered, holding her own gaze while the camera catches her and the reflection at once",
+      "camera": "50mm lens, eye level, over-the-shoulder into the reflection, thigh-up framing",
+      "light": "shafts of daylight cutting down through the steam, soft glow bouncing off the wet marble around her",
+      "headphones": false
+    },
+    {
+      "id": "S12-05",
+      "priority": "core",
+      "title_ru": "Силуэт против света",
+      "pose": "standing at the arched window pouring light through the steam with one forearm raised against the frame, weight settled on one hip, back to the camera, long line of the spine on show, looking away into the light",
+      "camera": "35mm lens, eye level, back view, full body vertical framing",
+      "light": "shafts of daylight cutting down through the steam, soft glow bouncing off the wet marble around her",
+      "headphones": false
+    },
+    {
+      "id": "S12-06",
+      "priority": "core",
+      "title_ru": "Полулёжа, нога вытянута",
+      "pose": "reclining back on the warm marble slab propped on both elbows, one knee raised and the other leg stretched long, ribcage lifted, chin up, half-lidded gaze straight down the lens",
+      "camera": "35mm lens, low camera at surface level, three-quarter front angle, full body framing",
+      "light": "shafts of daylight cutting down through the steam, soft glow bouncing off the wet marble around her",
+      "headphones": false
+    },
+    {
+      "id": "S12-07",
+      "priority": "filler",
+      "title_ru": "Деталь",
+      "pose": "cropped detail composition of beads of condensation on her shoulder and the edge of the linen, face out of frame, fingers relaxed and naturally posed",
+      "camera": "85mm lens, close detail framing, very shallow depth of field",
+      "light": "shafts of daylight cutting down through the steam, soft glow bouncing off the wet marble around her",
+      "headphones": false
+    },
+    {
+      "id": "S12-08",
+      "priority": "core",
+      "title_ru": "Вид сверху",
+      "pose": "lying on her back on the warm marble slab, one arm thrown above her head, the other hand resting on her waist, hair fanned out, knees softly bent, eyes lifted to the lens",
+      "camera": "35mm lens, directly overhead top-down angle, full body framing",
+      "light": "shafts of daylight cutting down through the steam, soft glow bouncing off the wet marble around her",
+      "headphones": false
+    },
+    {
+      "id": "S12-09",
+      "priority": "core",
+      "title_ru": "В рост, рука в волосах",
+      "pose": "standing tall in the middle of the steam-filled chamber, one hand pushing back through her hair with the elbow raised, weight shifted onto one leg so the hip breaks the line, chin down and eyes up into the lens",
+      "camera": "50mm lens, slightly low angle, frontal, full body framing",
+      "light": "shafts of daylight cutting down through the steam, soft glow bouncing off the wet marble around her",
+      "headphones": false
+    },
+    {
+      "id": "S12-10",
+      "priority": "core",
+      "title_ru": "Общий план",
+      "pose": "seen small across the space across the empty marble chamber, caught mid-movement and not looking at the camera, the room itself carrying the mood",
+      "camera": "24mm wide lens, eye level, wide environmental full-body shot",
+      "light": "shafts of daylight cutting down through the steam, soft glow bouncing off the wet marble around her",
+      "headphones": false
+    }
+  ],
+  "film": "shot on Fujifilm Pro 400H, flat humid tones and soft grain"
+}
