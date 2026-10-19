@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0",
+  "evidence_label": "REAL",
+  "note": "Growth memory: накопленные ИЗМЕРЕННЫЕ исходы форматов и трендов. Заполняется только growth_kpi.py --write-memory из реальных Insights. Пустая структура означает, что замеров ещё не было — это NOT_MEASURED, а не нулевой результат.",
+  "updated_at": null,
+  "baseline": null,
+  "entries": {}
+}
