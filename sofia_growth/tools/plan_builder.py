@@ -143,6 +143,15 @@ def hook_for(hooks: dict, format_id: str, index: int,
     return options[order[index % len(order)]]
 
 
+def slot_kind(item: dict) -> str:
+    """Название носителя для слота: подписать карусель как Reel — врать в плане.
+
+    Решается по id формата, а не по позиции в неделе: карусельный слот в середине
+    недели — не единственное место, где может оказаться не-видео формат.
+    """
+    return "Карусель" if "carousel" in item["id"] else "Reel"
+
+
 def success_criterion(item: dict, baseline: dict | None) -> str:
     lever = item["levers"][0]
     measured = item.get("measured") if item.get("evidence_label") == "REAL" else None
@@ -184,10 +193,10 @@ def build(args) -> str:
             item, slot = carousel, "Карусель"
         elif date in experiment_dates:
             item = experiments[sorted(experiment_dates).index(date) % len(experiments)]
-            slot = "Reel (эксперимент)"
+            slot = f"{slot_kind(item)} (эксперимент)"
         else:
             item = core[taken % len(core)]
-            slot = "Reel (ядро)"
+            slot = f"{slot_kind(item)} (ядро)"
             taken += 1
         index = used.get(item["id"], 0)
         used[item["id"]] = index + 1

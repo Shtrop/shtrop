@@ -42,6 +42,7 @@ FORMAT_LEVERS = {
     "fmt-saveable-carousel": ["saves", "profile_visits"],
     "fmt-loading-percentage": ["watch_time", "skip_rate"],
     "fmt-process-long-watch": ["watch_time", "saves"],
+    "fmt-carousel-with-music": ["saves", "profile_visits"],
 }
 
 FIT_SCORE = {"high": 1.0, "medium": 0.65, "low": 0.3}
